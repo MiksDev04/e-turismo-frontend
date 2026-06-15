@@ -166,7 +166,7 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
 
     setState(() => _businessId = session?.businessId);
 
-    // ── Fetch ──────────────────────────────────────────────────────────────
+    // ── Fetch ─────── ───────────────────────────────────────────────────────
     try {
       final messages = await _api.fetchInbox(_businessId!);
       if (mounted) {
