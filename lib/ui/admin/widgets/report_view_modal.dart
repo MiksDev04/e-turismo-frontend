@@ -32,6 +32,7 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
 
   bool _exportingExcel = false;
   bool _exportingPdf = false;
+  double _zoomScale = 1.0;
 
   final _reportService = ReportService();
 
@@ -39,6 +40,20 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
   void initState() {
     super.initState();
     _loadPdf();
+  }
+
+  void _handleZoom(bool increase) {
+    setState(() {
+      if (increase) {
+        _zoomScale = (_zoomScale + 0.1).clamp(0.5, 2.0);
+      } else {
+        _zoomScale = (_zoomScale - 0.1).clamp(0.5, 2.0);
+      }
+    });
+  }
+
+  void _resetZoom() {
+    setState(() => _zoomScale = 1.0);
   }
 
   Future<void> _loadPdf() async {
@@ -128,7 +143,7 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final topPadding = MediaQuery.of(context).padding.top;
-    final isMobile = size.width < 600;
+    final isMobile = size.width < 900;
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -162,6 +177,10 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
               onExportPdf: (_exportingPdf || _pdfBytes == null) ? null : _exportPdf,
               exportingPdf: _exportingPdf,
               onPrint: (_pdfBytes == null) ? null : _printPdf,
+              zoomScale: _zoomScale,
+              onZoomIn: () => _handleZoom(true),
+              onZoomOut: () => _handleZoom(false),
+              onResetZoom: _resetZoom,
             ),
             const Divider(color: AppColors.cardBorder, height: 1),
             Expanded(
@@ -169,7 +188,10 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
                   ? const _LoadingView()
                   : _error != null
                       ? _ErrorView(error: _error!)
-                      : _PdfView(pdfBytes: _pdfBytes!),
+                      : _PdfView(
+                          pdfBytes: _pdfBytes!,
+                          zoomScale: _zoomScale,
+                        ),
             ),
           ],
         ),
@@ -178,22 +200,103 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
   }
 }
 
-class _PdfView extends StatelessWidget {
-  const _PdfView({required this.pdfBytes});
+class _PdfView extends StatefulWidget {
+  const _PdfView({
+    super.key,
+    required this.pdfBytes,
+    required this.zoomScale,
+  });
+
   final Uint8List pdfBytes;
+  final double zoomScale;
+
+  @override
+  State<_PdfView> createState() => _PdfViewState();
+}
+
+class _PdfViewState extends State<_PdfView> {
+  final ScrollController _horizontalController = ScrollController();
+
+  @override
+  void dispose() {
+    _horizontalController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return PdfPreview(
-      build: (format) => pdfBytes,
-      useActions: false,
-      canChangePageFormat: false,
-      canChangeOrientation: false,
-      canDebug: false,
-      loadingWidget: const _LoadingView(),
-      onError: (context, error) => const _ErrorView(error: 'Could not render PDF.'),
-      pdfPreviewPageDecoration: const BoxDecoration(
-        color: Colors.transparent,
+    final size = MediaQuery.of(context).size;
+    final isMobile = size.width < 900;
+
+    // Estimate available width based on modal size and paddings
+    final modalWidth = isMobile ? size.width : size.width * 0.95;
+    final availableWidth = modalWidth - (isMobile ? 32 : 88);
+    final targetWidth = availableWidth * widget.zoomScale;
+
+    return Theme(
+      data: Theme.of(context).copyWith(
+        scrollbarTheme: ScrollbarThemeData(
+          thumbColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.hovered) ||
+                states.contains(WidgetState.dragged)) {
+              return AppColors.primaryCyan;
+            }
+            return AppColors.primaryCyan.withOpacity(0.5);
+          }),
+          trackColor: WidgetStateProperty.all(
+            AppColors.primaryCyan.withOpacity(0.05),
+          ),
+          trackVisibility: WidgetStateProperty.all(true),
+          thumbVisibility: WidgetStateProperty.all(true),
+          thickness: WidgetStateProperty.all(10),
+          radius: const Radius.circular(4),
+          interactive: true,
+        ),
+      ),
+      child: Container(
+        color: AppColors.backgroundDark,
+        child: Scrollbar(
+          controller: _horizontalController,
+          thumbVisibility: true,
+          trackVisibility: true,
+          notificationPredicate: (n) => n.metrics.axis == Axis.horizontal,
+          child: SingleChildScrollView(
+            controller: _horizontalController,
+            scrollDirection: Axis.horizontal,
+            child: Container(
+              width: targetWidth + 48,
+              alignment: Alignment.topCenter,
+              child: PdfPreview(
+                build: (format) => widget.pdfBytes,
+                useActions: false,
+                canChangePageFormat: false,
+                canChangeOrientation: false,
+                canDebug: false,
+                maxPageWidth: targetWidth,
+                loadingWidget: const _LoadingView(),
+                onError: (context, error) =>
+                    const _ErrorView(error: 'Could not render PDF.'),
+                scrollViewDecoration: const BoxDecoration(
+                  color: Colors.transparent,
+                ),
+                pdfPreviewPageDecoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(
+                      color: Colors.black.withOpacity(0.05), width: 0.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                previewPageMargin: const EdgeInsets.symmetric(
+                    horizontal: 24, vertical: 20),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -210,6 +313,10 @@ class _ModalHeader extends StatelessWidget {
     required this.onExportPdf,
     required this.exportingPdf,
     required this.onPrint,
+    required this.zoomScale,
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.onResetZoom,
   });
 
   final GeneratedReport report;
@@ -219,6 +326,10 @@ class _ModalHeader extends StatelessWidget {
   final VoidCallback? onExportPdf;
   final bool exportingPdf;
   final VoidCallback? onPrint;
+  final double zoomScale;
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+  final VoidCallback onResetZoom;
 
   Widget _buildIcon() => Container(
         width: 36,
@@ -238,23 +349,21 @@ class _ModalHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 4,
             children: [
-              Flexible(
-                child: Text(
-                  report.reportType,
-                  style: const TextStyle(
-                    color: AppColors.textWhite,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+              Text(
+                report.reportType,
+                style: const TextStyle(
+                  color: AppColors.textWhite,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(width: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
                   color: AppColors.primaryCyan.withOpacity(0.10),
                   borderRadius: BorderRadius.circular(5),
@@ -285,6 +394,38 @@ class _ModalHeader extends StatelessWidget {
         ],
       );
 
+  Widget _buildZoomControls() => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        decoration: BoxDecoration(
+          color: AppColors.backgroundDark,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.cardBorder),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _ZoomBtn(icon: Icons.remove_rounded, onTap: onZoomOut),
+            GestureDetector(
+              onTap: onResetZoom,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                constraints: const BoxConstraints(minWidth: 48),
+                child: Text(
+                  '${(zoomScale * 100).toInt()}%',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.textWhite,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            _ZoomBtn(icon: Icons.add_rounded, onTap: onZoomIn),
+          ],
+        ),
+      );
+
   Widget _buildCloseBtn() => GestureDetector(
         onTap: onClose,
         child: Container(
@@ -305,7 +446,7 @@ class _ModalHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isMobile = MediaQuery.of(context).size.width < 600;
+    final isMobile = MediaQuery.of(context).size.width < 900;
 
     if (isMobile) {
       return Padding(
@@ -324,32 +465,43 @@ class _ModalHeader extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            Row(
               children: [
-                _ExportButton(
-                  icon: Icons.picture_as_pdf_rounded,
-                  label: 'PDF',
-                  color: const Color(0xFFD32F2F),
-                  borderColor: const Color(0xFFD32F2F),
-                  isLoading: exportingPdf,
-                  onTap: onExportPdf,
-                ),
-                _ExportButton(
-                  icon: Icons.table_rows_rounded,
-                  label: 'Excel',
-                  color: const Color(0xFF1D6F42),
-                  borderColor: const Color(0xFF1D6F42),
-                  isLoading: exportingExcel,
-                  onTap: onExportExcel,
-                ),
-                _ExportButton(
-                  icon: Icons.print_rounded,
-                  label: 'Print',
-                  color: AppColors.primaryCyan,
-                  borderColor: AppColors.primaryCyan,
-                  onTap: onPrint,
+                _buildZoomControls(),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _ExportButton(
+                          icon: Icons.picture_as_pdf_rounded,
+                          label: 'PDF',
+                          color: const Color(0xFFD32F2F),
+                          borderColor: const Color(0xFFD32F2F),
+                          isLoading: exportingPdf,
+                          onTap: onExportPdf,
+                        ),
+                        const SizedBox(width: 8),
+                        _ExportButton(
+                          icon: Icons.table_rows_rounded,
+                          label: 'Excel',
+                          color: const Color(0xFF1D6F42),
+                          borderColor: const Color(0xFF1D6F42),
+                          isLoading: exportingExcel,
+                          onTap: onExportExcel,
+                        ),
+                        const SizedBox(width: 8),
+                        _ExportButton(
+                          icon: Icons.print_rounded,
+                          label: 'Print',
+                          color: AppColors.primaryCyan,
+                          borderColor: AppColors.primaryCyan,
+                          onTap: onPrint,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -365,39 +517,72 @@ class _ModalHeader extends StatelessWidget {
           _buildIcon(),
           const SizedBox(width: 12),
           Expanded(child: _buildInfo()),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _ExportButton(
-                icon: Icons.picture_as_pdf_rounded,
-                label: 'Export PDF',
-                color: const Color(0xFFD32F2F),
-                borderColor: const Color(0xFFD32F2F),
-                isLoading: exportingPdf,
-                onTap: onExportPdf,
+          const SizedBox(width: 12),
+          // Group zoom and export buttons to handle tight spaces
+          Flexible(
+            flex: 0,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildZoomControls(),
+                  const SizedBox(width: 12),
+                  _ExportButton(
+                    icon: Icons.picture_as_pdf_rounded,
+                    label: 'PDF',
+                    color: const Color(0xFFD32F2F),
+                    borderColor: const Color(0xFFD32F2F),
+                    isLoading: exportingPdf,
+                    onTap: onExportPdf,
+                  ),
+                  const SizedBox(width: 8),
+                  _ExportButton(
+                    icon: Icons.table_rows_rounded,
+                    label: 'Excel',
+                    color: const Color(0xFF1D6F42),
+                    borderColor: const Color(0xFF1D6F42),
+                    isLoading: exportingExcel,
+                    onTap: onExportExcel,
+                  ),
+                  const SizedBox(width: 8),
+                  _ExportButton(
+                    icon: Icons.print_rounded,
+                    label: 'Print',
+                    color: AppColors.primaryCyan,
+                    borderColor: AppColors.primaryCyan,
+                    onTap: onPrint,
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              _ExportButton(
-                icon: Icons.table_rows_rounded,
-                label: 'Export Excel',
-                color: const Color(0xFF1D6F42),
-                borderColor: const Color(0xFF1D6F42),
-                isLoading: exportingExcel,
-                onTap: onExportExcel,
-              ),
-              const SizedBox(width: 8),
-              _ExportButton(
-                icon: Icons.print_rounded,
-                label: 'Print',
-                color: AppColors.primaryCyan,
-                borderColor: AppColors.primaryCyan,
-                onTap: onPrint,
-              ),
-              const SizedBox(width: 10),
-              _buildCloseBtn(),
-            ],
+            ),
           ),
+          const SizedBox(width: 12),
+          _buildCloseBtn(),
         ],
+      ),
+    );
+  }
+}
+
+class _ZoomBtn extends StatelessWidget {
+  const _ZoomBtn({required this.icon, required this.onTap});
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 26,
+        height: 26,
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(color: AppColors.cardBorder),
+        ),
+        child: Icon(icon, color: AppColors.textWhite, size: 14),
       ),
     );
   }
