@@ -721,19 +721,22 @@ class _ScopeBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = scope == 'annual' ? 'Annual' : 'Monthly';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: AppColors.primaryCyan.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: AppColors.primaryCyan.withOpacity(0.2)),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: AppColors.primaryCyan,
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.primaryCyan.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: AppColors.primaryCyan.withOpacity(0.2)),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.primaryCyan,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );
@@ -791,15 +794,16 @@ class _GenerateReportDialogState extends State<_GenerateReportDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       backgroundColor: AppColors.cardBackground,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: const BorderSide(color: AppColors.cardBorder),
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
+        constraints: const BoxConstraints(maxWidth: 520),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -820,25 +824,46 @@ class _GenerateReportDialogState extends State<_GenerateReportDialog> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Generate Report',
-                        style: TextStyle(
-                          color: AppColors.textWhite,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Generate Report',
+                          style: TextStyle(
+                            color: AppColors.textWhite,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
-                      Text(
-                        'One record per establishment · export as .xlsx and .pdf',
-                        style: TextStyle(
-                          color: AppColors.textGray,
-                          fontSize: 11.5,
+                        Text(
+                          'One record per establishment · export as .xlsx and .pdf',
+                          style: TextStyle(
+                            color: AppColors.textGray,
+                            fontSize: 11.5,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: AppColors.backgroundDark,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.cardBorder),
                       ),
-                    ],
+                      child: const Icon(
+                        Icons.close_rounded,
+                        color: AppColors.textGray,
+                        size: 18,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -896,7 +921,7 @@ class _GenerateReportDialogState extends State<_GenerateReportDialog> {
               ),
               const SizedBox(height: 20),
               Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
@@ -905,7 +930,6 @@ class _GenerateReportDialogState extends State<_GenerateReportDialog> {
                       style: TextStyle(color: AppColors.textGray, fontSize: 13),
                     ),
                   ),
-                  const SizedBox(width: 10),
                   GestureDetector(
                     onTap: _canGenerate
                         ? () => widget.onGenerate(
@@ -919,7 +943,7 @@ class _GenerateReportDialogState extends State<_GenerateReportDialog> {
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
+                        horizontal: 16,
                         vertical: 10,
                       ),
                       decoration: BoxDecoration(
@@ -936,7 +960,7 @@ class _GenerateReportDialogState extends State<_GenerateReportDialog> {
                             size: 15,
                             color: _canGenerate ? Colors.black : Colors.black45,
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 5),
                           Text(
                             'Generate & Save',
                             style: TextStyle(

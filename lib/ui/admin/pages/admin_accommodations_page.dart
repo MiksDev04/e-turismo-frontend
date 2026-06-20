@@ -1642,7 +1642,7 @@ class _TableHeader extends StatelessWidget {
             ),
           ),
           Expanded(
-            flex: 2,
+            flex: 3,
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
               child: _HeaderCell('Owner'),
@@ -1773,7 +1773,7 @@ class _TableRow extends StatelessWidget {
             ),
           ),
           Expanded(
-            flex: 2,
+            flex: 3,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
