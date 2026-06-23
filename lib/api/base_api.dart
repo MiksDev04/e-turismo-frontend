@@ -6,14 +6,24 @@ import '../core/services/session_service.dart';
 
 class BaseApi {
   String get baseUrl {
-    if (kIsWeb) return dotenv.env['BACKEND_URL'] ?? 'http://localhost:3000';
+    if (kIsWeb) {
+      return const String.fromEnvironment(
+        'BACKEND_URL',
+        defaultValue: 'http://localhost:3000',
+      );
+    }
     if (defaultTargetPlatform == TargetPlatform.android) {
       return dotenv.env['ANDROID_BACKEND_URL'] ?? 'http://10.0.2.2:3000';
     }
     return dotenv.env['BACKEND_URL'] ?? 'http://localhost:3000';
   }
 
-  String? get apiKey => dotenv.env['API_KEY'];
+  String? get apiKey {
+    if (kIsWeb) {
+      return const String.fromEnvironment('API_KEY', defaultValue: '');
+    }
+    return dotenv.env['API_KEY'];
+  }
 
   Map<String, String> get headers {
     final Map<String, String> h = {
