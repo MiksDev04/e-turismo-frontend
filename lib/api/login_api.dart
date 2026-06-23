@@ -68,8 +68,9 @@ class LoginApi extends BaseApi {
       await SessionService.instance.save(updated);
       await SessionService.instance.loadAndCache();
 
-      // Refresh cache for future offline logins too
-      await OfflineAuthService.instance.cacheProfile(
+      // Refresh cache for future offline logins too (not available on web)
+      if (!kIsWeb) {
+        await OfflineAuthService.instance.cacheProfile(
         id: user['id'].toString(),
         username: user['username'],
         password: password,
@@ -78,7 +79,8 @@ class LoginApi extends BaseApi {
         phone: user['phone'],
         role: user['role'],
         business: biz,
-      );
+        );
+      }
 
       return true;
     } catch (e) {
@@ -98,7 +100,8 @@ class LoginApi extends BaseApi {
     await SessionService.instance.clear();
 
     // ── OFFLINE ATTEMPT ──────────────────────────────────────────────────────
-    if (!await ConnectivityService.instance.isOnlineAsync) {
+    // Web doesn't support local SQLite — skip offline login entirely
+    if (!kIsWeb && !await ConnectivityService.instance.isOnlineAsync) {
       try {
         final db = await LocalDatabase.instance.database;
 
@@ -239,8 +242,9 @@ class LoginApi extends BaseApi {
         ownerMiddleName: biz?['owner_middle_name'],
       );
 
-      // Cache for future offline login
-      await OfflineAuthService.instance.cacheProfile(
+      // Cache for future offline login (not available on web)
+      if (!kIsWeb) {
+        await OfflineAuthService.instance.cacheProfile(
         id: user['id'].toString(),
         username: user['username'],
         password: password,
@@ -249,7 +253,8 @@ class LoginApi extends BaseApi {
         phone: user['phone'],
         role: user['role'],
         business: biz,
-      );
+        );
+      }
 
       await SessionService.instance.save(session);
       await SessionService.instance.loadAndCache();
