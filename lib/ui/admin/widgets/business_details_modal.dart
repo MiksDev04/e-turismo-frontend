@@ -575,11 +575,29 @@ class DocumentPreviewModal extends StatefulWidget {
   State<DocumentPreviewModal> createState() => _DocumentPreviewModalState();
 }
 
+enum _DocType { pdf, png, jpeg, unknown }
+
+_DocType _detectDocType(Uint8List bytes) {
+  if (bytes.length >= 4) {
+    if (bytes[0] == 0x25 && bytes[1] == 0x50 && bytes[2] == 0x44 && bytes[3] == 0x46) {
+      return _DocType.pdf;
+    }
+    if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) {
+      return _DocType.png;
+    }
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
+      return _DocType.jpeg;
+    }
+  }
+  return _DocType.unknown;
+}
+
 class _DocumentPreviewModalState extends State<DocumentPreviewModal> {
   Uint8List? _bytes;
   bool _loading = true;
   String? _error;
   bool _saving = false;
+  _DocType _docType = _DocType.unknown;
   
   @override
   void initState() {
@@ -609,8 +627,10 @@ class _DocumentPreviewModalState extends State<DocumentPreviewModal> {
       final response = await http.get(Uri.parse(resolved), headers: headers);
       if (response.statusCode == 200) {
         if (mounted) {
+          final bytes = response.bodyBytes;
           setState(() {
-            _bytes = response.bodyBytes;
+            _bytes = bytes;
+            _docType = _detectDocType(bytes);
             _loading = false;
           });
         }
@@ -627,20 +647,41 @@ class _DocumentPreviewModalState extends State<DocumentPreviewModal> {
     }
   }
   
+  String get _fileExtension {
+    switch (_docType) {
+      case _DocType.pdf:
+        return 'pdf';
+      case _DocType.png:
+        return 'png';
+      case _DocType.jpeg:
+        return 'jpg';
+      case _DocType.unknown:
+        final uri = Uri.parse(widget.url);
+        final seg = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : '';
+        final ext = seg.split('.').last.toLowerCase();
+        return (ext == 'pdf' || ext == 'png' || ext == 'jpg' || ext == 'jpeg') ? ext : 'png';
+    }
+  }
+  
+  String get _docTypeLabel {
+    switch (_docType) {
+      case _DocType.pdf:
+        return 'PDF Document';
+      case _DocType.png:
+        return 'PNG Image';
+      case _DocType.jpeg:
+        return 'JPEG Image';
+      case _DocType.unknown:
+        return 'Document';
+    }
+  }
+  
   Future<void> _download() async {
     if (_bytes == null || _saving) return;
     setState(() => _saving = true);
     try {
-      final uri = Uri.parse(widget.url);
-      final extension = uri.pathSegments.isNotEmpty 
-          ? uri.pathSegments.last.split('.').last.toLowerCase() 
-          : 'png';
-      final cleanExt = (extension == 'pdf' || extension == 'png' || extension == 'jpg' || extension == 'jpeg')
-          ? extension
-          : 'png';
-          
       final fileName = '${widget.title.replaceAll(' ', '_')}_'
-          '${DateTime.now().millisecondsSinceEpoch}.$cleanExt';
+          '${DateTime.now().millisecondsSinceEpoch}.$_fileExtension';
           
       await saveFileToDownloads(fileName, _bytes!);
       
@@ -672,7 +713,7 @@ class _DocumentPreviewModalState extends State<DocumentPreviewModal> {
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final isMobile = size.width < 600;
-    final isPdf = widget.url.toLowerCase().endsWith('.pdf');
+    final isPdf = _docType == _DocType.pdf;
     
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -717,7 +758,7 @@ class _DocumentPreviewModalState extends State<DocumentPreviewModal> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          isPdf ? 'PDF Document' : 'Image Document',
+                          _docTypeLabel,
                           style: const TextStyle(
                             color: AppColors.textGray,
                             fontSize: 12,
@@ -866,22 +907,44 @@ class _DocumentPreviewModalState extends State<DocumentPreviewModal> {
                                       ),
                                     ),
                                   )
-                                : ClipRRect(
-                                    borderRadius: const BorderRadius.only(
-                                      bottomLeft: Radius.circular(16),
-                                      bottomRight: Radius.circular(16),
-                                    ),
-                                    child: InteractiveViewer(
-                                      maxScale: 4.0,
-                                      minScale: 0.5,
-                                      child: Center(
-                                        child: Image.memory(
-                                          _bytes!,
-                                          fit: BoxFit.contain,
+                                : _docType == _DocType.unknown
+                                    ? const Center(
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.insert_drive_file_outlined,
+                                              color: AppColors.textSubtle,
+                                              size: 64,
+                                            ),
+                                            SizedBox(height: 12),
+                                            Text(
+                                              'Unable to preview this document format.',
+                                              style: TextStyle(
+                                                color: AppColors.textGray,
+                                                fontSize: 14,
+                                              ),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    : ClipRRect(
+                                        borderRadius: const BorderRadius.only(
+                                          bottomLeft: Radius.circular(16),
+                                          bottomRight: Radius.circular(16),
+                                        ),
+                                        child: InteractiveViewer(
+                                          maxScale: 4.0,
+                                          minScale: 0.5,
+                                          child: Center(
+                                            child: Image.memory(
+                                              _bytes!,
+                                              fit: BoxFit.contain,
+                                            ),
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ),
               ),
             ),
           ],

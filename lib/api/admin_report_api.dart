@@ -20,6 +20,7 @@ class GeneratedReport {
     this.businessId,
     this.businessName,
     this.fileUrl,
+    this.pdfUrl,
     this.generatedBy,
   });
 
@@ -31,6 +32,7 @@ class GeneratedReport {
   final String? businessId;
   final String? businessName;
   final String? fileUrl;
+  final String? pdfUrl;
   final DateTime generatedAt;
   final String? generatedBy;
 
@@ -70,6 +72,7 @@ class GeneratedReport {
     businessId: row['business_id'] as String?,
     businessName: row['business_name'] as String?,
     fileUrl: row['file_url'] as String?,
+    pdfUrl: row['pdf_url'] as String?,
     generatedAt: DateTime.parse(row['generated_at'] as String),
     generatedBy: row['generated_by_name'] as String?,
   );

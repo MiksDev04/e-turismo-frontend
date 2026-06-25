@@ -58,7 +58,8 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
 
   Future<void> _loadPdf() async {
     try {
-      final pdfUrl = widget.report.fileUrl!.replaceAll('.xlsx', '.pdf');
+      final pdfUrl = widget.report.pdfUrl ??
+          widget.report.fileUrl!.replaceAll('.xlsx', '.pdf');
       final bytes = await _reportService.downloadReportFile(pdfUrl);
       if (!mounted) return;
       setState(() {
