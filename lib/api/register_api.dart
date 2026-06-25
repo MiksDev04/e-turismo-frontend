@@ -18,9 +18,14 @@ class RegisterResult {
 class RegisterApi {
   // Compute URL from environment variables
   String get _baseUrl {
-    final baseUrl = kIsWeb || !Platform.isAndroid 
-      ? dotenv.get('BACKEND_URL', fallback: 'http://localhost:3000') 
-      : dotenv.get('ANDROID_BACKEND_URL', fallback: 'http://10.0.2.2:3000');
+    final baseUrl = kIsWeb
+        ? const String.fromEnvironment(
+            'BACKEND_URL',
+            defaultValue: 'http://localhost:3000',
+          )
+        : Platform.isAndroid
+            ? dotenv.get('ANDROID_BACKEND_URL', fallback: 'http://10.0.2.2:3000')
+            : dotenv.get('BACKEND_URL', fallback: 'http://localhost:3000');
     return '$baseUrl/api/auth/register';
   }
 
@@ -76,7 +81,9 @@ class RegisterApi {
       final request = http.MultipartRequest('POST', uri);
 
       // Add API Key from environment
-      final apiKey = dotenv.get('API_KEY', fallback: '');
+      final apiKey = kIsWeb
+          ? const String.fromEnvironment('API_KEY', defaultValue: '')
+          : dotenv.get('API_KEY', fallback: '');
       request.headers['X-API-Key'] = apiKey;
 
       // Add fields

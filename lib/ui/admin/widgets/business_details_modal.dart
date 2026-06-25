@@ -515,7 +515,10 @@ String _resolveUrl(String relativeOrAbsoluteUrl) {
   
   final String backendUrl;
   if (kIsWeb) {
-    backendUrl = dotenv.env['BACKEND_URL'] ?? 'http://localhost:3000';
+    backendUrl = const String.fromEnvironment(
+      'BACKEND_URL',
+      defaultValue: 'http://localhost:3000',
+    );
   } else if (defaultTargetPlatform == TargetPlatform.android) {
     backendUrl = dotenv.env['ANDROID_BACKEND_URL'] ?? 'http://10.0.2.2:3000';
   } else {
@@ -617,7 +620,9 @@ class _DocumentPreviewModalState extends State<DocumentPreviewModal> {
     try {
       final resolved = _resolveUrl(widget.url);
       final token = SessionService.instance.current?.token;
-      final apiKey = dotenv.env['API_KEY'] ?? '';
+      final apiKey = kIsWeb
+          ? const String.fromEnvironment('API_KEY', defaultValue: '')
+          : (dotenv.env['API_KEY'] ?? '');
       
       final headers = {
         'x-api-key': apiKey,

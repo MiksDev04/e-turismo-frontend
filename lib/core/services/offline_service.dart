@@ -151,7 +151,10 @@ class SyncService {
 
   String get _baseUrl {
     if (kIsWeb) {
-      return dotenv.env['BACKEND_URL'] ?? 'http://localhost:3000';
+      return const String.fromEnvironment(
+        'BACKEND_URL',
+        defaultValue: 'http://localhost:3000',
+      );
     } else if (Platform.isAndroid) {
       return dotenv.env['ANDROID_BACKEND_URL'] ?? 'http://10.0.2.2:3000';
     } else {
@@ -162,7 +165,9 @@ class SyncService {
   Map<String, String> get _headers {
     final Map<String, String> h = {
       'Content-Type': 'application/json',
-      'x-api-key': dotenv.env['API_KEY'] ?? 'tourism_app_v2_secret_key_2026',
+      'x-api-key': kIsWeb
+          ? const String.fromEnvironment('API_KEY', defaultValue: '')
+          : (dotenv.env['API_KEY'] ?? 'tourism_app_v2_secret_key_2026'),
     };
 
     final token = SessionService.instance.current?.token;
