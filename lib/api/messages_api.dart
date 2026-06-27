@@ -69,9 +69,6 @@ String buildOfficialMessageLetter({
     MessageType.announcement => 'ANNOUNCEMENT',
     MessageType.general => 'GENERAL NOTICE',
   };
-  final ref =
-      'MSG-${DateTime.now().millisecondsSinceEpoch.toString().substring(4)}';
-
   return '''REPUBLIC OF THE PHILIPPINES
 CITY OF SAN PABLO
 OFFICE OF TOURISM
@@ -98,8 +95,7 @@ Tourism Officer
 San Pablo City Tourism Office
 
 ---
-This is an official communication from the San Pablo City Tourism Office.
-Reference No.: $ref''';
+This is an official communication from the San Pablo City Tourism Office.''';
 }
 
 /// Shared unread-count cache for business navigation badges.

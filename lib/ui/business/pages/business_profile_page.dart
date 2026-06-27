@@ -349,7 +349,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
 
   Future<void> _saveAccountInfo() async {
     _validatePhone();
-    final phone = _phoneCtrl.text.trim().replaceAll(RegExp(r'[-\s]'), '');
+    final phone = _phoneCtrl.text.trim();
     if (_phoneError != null || phone.isEmpty) {
       if (phone.isEmpty) setState(() => _phoneError = 'Phone number is required');
       return;
@@ -711,43 +711,59 @@ class _StatusBadge extends StatelessWidget {
   const _StatusBadge({required this.status});
   final BusinessStatus status;
 
+  static _BadgeStyle _styleFor(BusinessStatus s) {
+    switch (s) {
+      case BusinessStatus.approved:
+        return _BadgeStyle(label: 'Approved', color: AppColors.accentGreen);
+      case BusinessStatus.pending:
+        return _BadgeStyle(label: 'Pending', color: AppColors.accentPurple);
+      case BusinessStatus.rejected:
+        return _BadgeStyle(label: 'Rejected', color: AppColors.accentRed);
+      case BusinessStatus.warning:
+        return _BadgeStyle(label: 'Warning', color: AppColors.accentOrange);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final (bg, border, dot, text, label) = switch (status) {
-      BusinessStatus.approved  => (
-        const Color(0xFF0D3B26), const Color(0xFF1A5C3A),
-        const Color(0xFF34D399), const Color(0xFF34D399), 'Approved'),
-      BusinessStatus.rejected  => (
-        const Color(0xFF3B0D0D), const Color(0xFF5C1A1A),
-        const Color(0xFFF87171), const Color(0xFFF87171), 'Rejected'),
-      BusinessStatus.warning => (
-        const Color(0xFF3B2A0D), const Color(0xFF5C3F1A),
-        const Color(0xFFFBBF24), const Color(0xFFFBBF24), 'Suspended'),
-      BusinessStatus.pending   => (
-        const Color(0xFF1A1F3B), const Color(0xFF2A3260),
-        const Color(0xFF818CF8), const Color(0xFF818CF8), 'Pending'),
-    };
-
+    final style = _styleFor(status);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: bg,
+        color: style.color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: border),
+        border: Border.all(color: style.color.withOpacity(0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(width: 7, height: 7,
-              decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
-          const SizedBox(width: 6),
-          Text(label,
-              style: TextStyle(
-                  color: text, fontSize: 12, fontWeight: FontWeight.w600)),
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: style.color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            style.label,
+            style: TextStyle(
+              color: style.color,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ],
       ),
     );
   }
+}
+
+class _BadgeStyle {
+  const _BadgeStyle({required this.label, required this.color});
+  final String label;
+  final Color color;
 }
 
 // ─── Account Info Card ────────────────────────────────────────────────────────

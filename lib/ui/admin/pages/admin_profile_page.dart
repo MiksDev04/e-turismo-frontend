@@ -125,7 +125,7 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
     if (_savingInfo) return;
 
     _validatePhone();
-    final phone = _phoneCtrl.text.trim().replaceAll(RegExp(r'[-\s]'), '');
+    final phone = _phoneCtrl.text.trim();
     if (_phoneError != null || phone.isEmpty) {
       if (phone.isEmpty) setState(() => _phoneError = 'Phone number is required');
       return;

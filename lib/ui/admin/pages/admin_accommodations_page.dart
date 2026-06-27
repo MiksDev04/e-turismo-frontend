@@ -1980,7 +1980,7 @@ class _StatusBadge extends StatelessWidget {
       case AccommodationStatus.approved:
         return _BadgeStyle(label: 'Approved', color: AppColors.accentGreen);
       case AccommodationStatus.pending:
-        return _BadgeStyle(label: 'Pending', color: AppColors.accentOrange);
+        return _BadgeStyle(label: 'Pending', color: AppColors.accentPurple);
       case AccommodationStatus.rejected:
         return _BadgeStyle(label: 'Rejected', color: AppColors.accentRed);
       case AccommodationStatus.warning:

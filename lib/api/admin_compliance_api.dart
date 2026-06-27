@@ -158,10 +158,13 @@ class AdminComplianceApi extends BaseApi {
   }
 
   /// Updates the [status] column of a business row in [businesses].
+  /// Sends a [reason] for the status change, used for notification messages.
   Future<void> updateBusinessStatus(
     String businessId,
-    BusinessStatusLevel newStatus,
-  ) async {
+    BusinessStatusLevel newStatus, {
+    required String reason,
+    required String messageContent,
+  }) async {
     final raw = switch (newStatus) {
       BusinessStatusLevel.approved => 'approved',
       BusinessStatusLevel.warning => 'warning',
@@ -170,6 +173,8 @@ class AdminComplianceApi extends BaseApi {
 
     final response = await put('/api/admin/compliance/business-status/$businessId', {
       'status': raw,
+      'reason': reason,
+      'messageContent': messageContent,
     });
     handleResponse(response);
   }
