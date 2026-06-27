@@ -364,6 +364,9 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
     } else if (guests != null && guests > 0 && rooms > guests) {
       errors['roomsOccupied'] = 'Rooms cannot exceed total guests.';
       hasError = true;
+    } else if (_nightsCount > 0 && rooms == 0) {
+      errors['roomsOccupied'] = 'At least 1 room is required when staying overnight.';
+      hasError = true;
     }
 
     if (_purpose == null) {

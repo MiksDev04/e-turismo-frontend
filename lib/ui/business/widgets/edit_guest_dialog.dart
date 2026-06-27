@@ -461,6 +461,10 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
     } else if (guests != null && guests > 0 && rooms > guests) {
       errors['roomsOccupied'] = 'Rooms cannot exceed total guests.';
       hasError = true;
+    } else if (checkIn != null && checkOut != null &&
+               checkOut.difference(checkIn).inDays > 0 && rooms == 0) {
+      errors['roomsOccupied'] = 'At least 1 room is required when staying overnight.';
+      hasError = true;
     }
 
     // ── Purpose ─────────────────────────────────────────────────────────────
