@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/country_constants.dart';
 import '../../../core/services/offline_service.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../../api/business_guest_entry_api.dart';
@@ -480,7 +481,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
         breakdowns: _rows
             .map(
               (r) => GuestBreakdownData(
-                country: r.isOverseas ? null : r.country,
+                country: r.isOverseas ? null : mapToReportFormat(r.country!),
                 nationality: (r.isOverseas || r.country != 'Philippines')
                     ? null
                     : r.nationality,

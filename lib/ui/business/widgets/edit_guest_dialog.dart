@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/country_constants.dart';
 import '../pages/business_guest_records_page.dart';
 import 'dart:async';
 import '../../../core/services/offline_service.dart';
@@ -309,7 +310,8 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
   ) {
     return breakdowns.map((b) {
       // ── Country ──────────────────────────────────────────────────────
-      String nat = b.country ?? 'N/A';
+      final rawCountry = b.country ?? '';
+      String nat = rawCountry.isEmpty ? 'N/A' : mapFromReportFormat(rawCountry);
       if (!_countries.contains(nat)) nat = 'N/A';
 
       // ── Region — only meaningful for philippine_resident ─────────────
@@ -577,7 +579,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
         .where((e) => (e.isOverseas || e.country.isNotEmpty) && e.count > 0)
         .map(
           (e) => GuestBreakdownEntry(
-            country: e.isOverseas ? null : e.country,
+            country: e.isOverseas ? null : mapToReportFormat(e.country),
             nationality: (e.isOverseas || e.country != 'Philippines')
                 ? null
                 : e.nationality,
