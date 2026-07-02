@@ -425,7 +425,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _V.file(_validIdFile) == null;
 
   Future<void> _pickPermitFile() async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
       withData: kIsWeb,
@@ -436,7 +436,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _pickValidId() async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
       withData: kIsWeb,

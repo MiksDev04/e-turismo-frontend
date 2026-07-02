@@ -412,7 +412,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
   // ── Document upload ───────────────────────────────────────────────────────
 
   Future<void> _pickPermitFile() async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
     );
@@ -422,7 +422,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
   }
 
   Future<void> _pickValidIdFile() async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
     );
