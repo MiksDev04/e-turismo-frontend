@@ -142,6 +142,19 @@ class SyncState {
 }
 
 // =============================================================================
+// PUSH RESULT
+// Lightweight outcome report from a push batch so sync() can tell the
+// difference between "everything synced", "some records were rejected", and
+// "the connection dropped mid-batch" — instead of always reporting success.
+// =============================================================================
+
+class _PushResult {
+  final int failed;
+  final bool networkLost;
+  const _PushResult({this.failed = 0, this.networkLost = false});
+}
+
+// =============================================================================
 // SYNC SERVICE
 // =============================================================================
 
@@ -297,18 +310,47 @@ class SyncService {
       return;
     }
 
+    // Claim the "syncing" lock synchronously, BEFORE the first `await` below.
+    // This closes a race window: two near-simultaneous callers (connectivity
+    // listener, the 5s polling timer, a manual "Sync Now" tap, or the
+    // post-save trigger in the guest entry page) could previously both pass
+    // the guard above while the first call was still awaiting _countPending(),
+    // letting both push the same pending record at the same time — which is
+    // what caused the "Lock wait timeout exceeded" MySQL errors.
+    _emit(SyncState(status: SyncStatus.syncing, pendingCount: _state.pendingCount));
+
     final initialPending = await _countPending();
     debugPrint('🔄 sync: starting sync process. Initial pending count: $initialPending');
     _emit(SyncState(status: SyncStatus.syncing, pendingCount: initialPending));
 
     try {
       await _pullProfileAndBusiness();
-      await _pushPendingCreates(); // POST  → /api/business/guest-entries
-      await _pushPendingUpdates(); // PUT   → /api/business/guest-records/:id
-      await _pullFromBackend();    // GET   → /api/business/guest-records
+      final createResult = await _pushPendingCreates(); // POST → /api/business/guest-entries
+      final updateResult = await _pushPendingUpdates(); // PUT  → /api/business/guest-records/:id
+      await _pullFromBackend();                         // GET  → /api/business/guest-records
 
       final remaining = await _countPending();
-      _emit(SyncState(status: SyncStatus.synced, pendingCount: remaining));
+      final networkLost = createResult.networkLost || updateResult.networkLost;
+      final anyFailed = createResult.failed > 0 || updateResult.failed > 0;
+
+      if (networkLost) {
+        // Connection dropped mid-push. Not a real error — it's expected and
+        // self-healing, but the UI must NOT claim "synced" while records are
+        // still pending.
+        _emit(SyncState(
+          status: SyncStatus.error,
+          errorMessage: 'Connection lost during sync — will retry automatically',
+          pendingCount: remaining,
+        ));
+      } else if (anyFailed) {
+        _emit(SyncState(
+          status: SyncStatus.error,
+          errorMessage: '$remaining record(s) failed to sync',
+          pendingCount: remaining,
+        ));
+      } else {
+        _emit(SyncState(status: SyncStatus.synced, pendingCount: remaining));
+      }
     } catch (e) {
       _emit(
         SyncState(
@@ -328,10 +370,10 @@ class SyncService {
   // records. The saved UUID is forwarded as `id` so the cloud uses the same
   // primary key that SQLite already has — avoiding duplicates on re-sync.
   // ---------------------------------------------------------------------------
-  Future<void> _pushPendingCreates() async {
+  Future<_PushResult> _pushPendingCreates() async {
     if (!await _canReachBackend()) {
       debugPrint('⏭ _pushPendingCreates: skipped — Backend unreachable');
-      return;
+      return const _PushResult();
     }
 
     final db = await LocalDatabase.instance.database;
@@ -345,6 +387,8 @@ class SyncService {
     if (records.isNotEmpty) {
       debugPrint('📤 _pushPendingCreates: ${records.length} record(s) to push');
     }
+
+    int failed = 0;
 
     for (final record in records) {
       final recordId = record['id'] as String;
@@ -361,11 +405,18 @@ class SyncService {
         final payload = _toApiPayload(record, breakdowns);
         payload['id'] = recordId;
 
-        final response = await http.post(
-          Uri.parse('$_baseUrl/api/business/guest-entries'),
-          headers: _headers,
-          body: jsonEncode(payload),
-        );
+        final response = await http
+            .post(
+              Uri.parse('$_baseUrl/api/business/guest-entries'),
+              headers: _headers,
+              body: jsonEncode(payload),
+            )
+            .timeout(
+              const Duration(seconds: 15),
+              onTimeout: () => throw TimeoutException(
+                'POST guest-entries/$recordId timed out',
+              ),
+            );
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
           await db.update(
@@ -383,30 +434,37 @@ class SyncService {
             '🔐 _pushPendingCreates: 401 — token expired, refreshing and aborting for retry',
           );
           await _tryRefreshToken();
-          return; // Stop batch — next sync will use the fresh token.
+          return _PushResult(failed: failed); // Stop batch — next sync will use the fresh token.
         } else {
+          failed++;
           debugPrint(
             '❌ _pushPendingCreates: failed for $recordId — '
             '${response.statusCode} ${response.body}',
           );
         }
-      } on SocketException catch (e) {
-        debugPrint('🌐 _pushPendingCreates: network lost — aborting ($e)');
-        return;
       } catch (e) {
+        if (isNetworkError(e)) {
+          debugPrint(
+            '🌐 _pushPendingCreates: connection lost mid-push for $recordId — aborting batch ($e)',
+          );
+          return _PushResult(failed: failed, networkLost: true);
+        }
+        failed++;
         debugPrint('❌ _pushPendingCreates: exception for $recordId — $e');
       }
     }
+
+    return _PushResult(failed: failed);
   }
 
   // ---------------------------------------------------------------------------
   // PUSH PENDING UPDATES
   // Uses PUT /api/business/guest-records/:id (upsert semantics on the backend).
   // ---------------------------------------------------------------------------
-  Future<void> _pushPendingUpdates() async {
+  Future<_PushResult> _pushPendingUpdates() async {
     if (!await _canReachBackend()) {
       debugPrint('⏭ _pushPendingUpdates: skipped — Backend unreachable');
-      return;
+      return const _PushResult();
     }
 
     final db = await LocalDatabase.instance.database;
@@ -421,6 +479,8 @@ class SyncService {
       debugPrint('📤 _pushPendingUpdates: ${records.length} record(s) to push');
     }
 
+    int failed = 0;
+
     for (final record in records) {
       final recordId = record['id'] as String;
 
@@ -433,11 +493,18 @@ class SyncService {
 
         final payload = _toApiPayload(record, breakdowns);
 
-        final response = await http.put(
-          Uri.parse('$_baseUrl/api/business/guest-records/$recordId'),
-          headers: _headers,
-          body: jsonEncode(payload),
-        );
+        final response = await http
+            .put(
+              Uri.parse('$_baseUrl/api/business/guest-records/$recordId'),
+              headers: _headers,
+              body: jsonEncode(payload),
+            )
+            .timeout(
+              const Duration(seconds: 15),
+              onTimeout: () => throw TimeoutException(
+                'PUT guest-records/$recordId timed out',
+              ),
+            );
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
           await db.update(
@@ -455,20 +522,27 @@ class SyncService {
             '🔐 _pushPendingUpdates: 401 — token expired, refreshing and aborting for retry',
           );
           await _tryRefreshToken();
-          return;
+          return _PushResult(failed: failed);
         } else {
+          failed++;
           debugPrint(
             '❌ _pushPendingUpdates: failed for $recordId — '
             '${response.statusCode} ${response.body}',
           );
         }
-      } on SocketException catch (e) {
-        debugPrint('🌐 _pushPendingUpdates: network lost — aborting ($e)');
-        return;
       } catch (e) {
+        if (isNetworkError(e)) {
+          debugPrint(
+            '🌐 _pushPendingUpdates: connection lost mid-push for $recordId — aborting batch ($e)',
+          );
+          return _PushResult(failed: failed, networkLost: true);
+        }
+        failed++;
         debugPrint('❌ _pushPendingUpdates: exception for $recordId — $e');
       }
     }
+
+    return _PushResult(failed: failed);
   }
 
   // ---------------------------------------------------------------------------

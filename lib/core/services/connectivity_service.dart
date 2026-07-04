@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ConnectivityService (Unified)
@@ -89,12 +90,18 @@ class ConnectivityService {
 
 bool isNetworkError(dynamic error) {
   if (error is SocketException) return true;
+  if (error is TimeoutException) return true;
+  if (error is http.ClientException) return true;
   final s = error.toString().toLowerCase();
   return s.contains('socketexception') ||
+      s.contains('clientexception') ||
       s.contains('failed host lookup') ||
       s.contains('network is unreachable') ||
       s.contains('connection refused') ||
+      s.contains('connection reset') ||
+      s.contains('connection closed') ||
       s.contains('no address associated') ||
       s.contains('network error') ||
-      s.contains('connection failed');
+      s.contains('connection failed') ||
+      s.contains('timed out');
 }
