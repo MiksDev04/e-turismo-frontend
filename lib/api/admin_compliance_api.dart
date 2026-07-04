@@ -147,14 +147,42 @@ class DailyGuestStat {
 // ─── API ──────────────────────────────────────────────────────────────────────
 
 class AdminComplianceApi extends BaseApi {
-  /// Fetches all rows from the [business_activity_summary] view.
-  Future<List<BusinessActivityRecord>> fetchActivitySummary() async {
-    final response = await get('/api/admin/compliance/activity-summary');
-    final data = handleResponse(response) as List<dynamic>;
+  /// Fetches paginated rows from the business activity summary.
+  Future<({List<BusinessActivityRecord> data, int totalCount, int pageCount, ({int active, int lowActivity, int inactive}) summaryCounts})> fetchActivitySummary({
+    int page = 1,
+    int pageSize = 10,
+    String? searchQuery,
+    String? activityStatus,
+    String? businessStatus,
+    String? businessLine,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'pageSize': pageSize.toString(),
+    };
+    if (searchQuery != null && searchQuery.isNotEmpty) queryParams['searchQuery'] = searchQuery;
+    if (activityStatus != null && activityStatus != 'All Statuses') queryParams['activityStatus'] = activityStatus;
+    if (businessStatus != null && businessStatus != 'All Business Statuses') queryParams['businessStatus'] = businessStatus;
+    if (businessLine != null && businessLine != 'All Business Lines') queryParams['businessLine'] = businessLine;
 
-    return data
+    final uri = Uri.parse('/api/admin/compliance/activity-summary').replace(queryParameters: queryParams);
+    final response = await get(uri.toString());
+    final body = handleResponse(response) as Map<String, dynamic>;
+    final list = body['data'] as List<dynamic>;
+    final totalCount = (body['totalCount'] as num?)?.toInt() ?? 0;
+    final pageCount = (body['pageCount'] as num?)?.toInt() ?? 0;
+    final sc = body['summaryCounts'] as Map<String, dynamic>? ?? {};
+    final summaryCounts = (
+      active: (sc['active'] as num?)?.toInt() ?? 0,
+      lowActivity: (sc['lowActivity'] as num?)?.toInt() ?? 0,
+      inactive: (sc['inactive'] as num?)?.toInt() ?? 0,
+    );
+
+    final data = list
         .map((e) => BusinessActivityRecord.fromJson(e as Map<String, dynamic>))
         .toList();
+
+    return (data: data, totalCount: totalCount, pageCount: pageCount, summaryCounts: summaryCounts);
   }
 
   /// Updates the [status] column of a business row in [businesses].

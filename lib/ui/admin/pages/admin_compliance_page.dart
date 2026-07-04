@@ -46,7 +46,7 @@ class AdminCompliancePage extends StatefulWidget {
 
 class _AdminCompliancePageState extends State<AdminCompliancePage> {
   // ── State ──────────────────────────────────────────────────────────────────
-  List<BusinessActivityRecord> _allRecords = [];
+  List<BusinessActivityRecord> _records = [];
   bool _isLoading = true;
   String? _fetchError;
   int? _errorCode;
@@ -58,6 +58,14 @@ class _AdminCompliancePageState extends State<AdminCompliancePage> {
 
   int _currentPage = 0;
   int _pageSize = 10;
+  int _totalPages = 0;
+  int _totalItems = 0;
+
+  int _activeCount = 0;
+  int _atRiskCount = 0;
+  int _inactiveCount = 0;
+
+  bool _isOpeningStats = false;
 
   static const List<int> _pageSizeOptions = [10, 20, 30];
 
@@ -83,10 +91,22 @@ class _AdminCompliancePageState extends State<AdminCompliancePage> {
       _errorCode = null;
     });
     try {
-      final records = await AdminComplianceApi().fetchActivitySummary();
+      final result = await AdminComplianceApi().fetchActivitySummary(
+        page: _currentPage + 1,
+        pageSize: _pageSize,
+        searchQuery: _searchQuery.isNotEmpty ? _searchQuery : null,
+        activityStatus: _selectedActivityStatus != 'All Statuses' ? _selectedActivityStatus : null,
+        businessStatus: _selectedBusinessStatus != 'All Business Statuses' ? _selectedBusinessStatus : null,
+        businessLine: _selectedBusinessLine != 'All Business Lines' ? _selectedBusinessLine : null,
+      );
       if (mounted) {
         setState(() {
-          _allRecords = records;
+          _records = result.data;
+          _totalPages = result.pageCount;
+          _totalItems = result.totalCount;
+          _activeCount = result.summaryCounts.active;
+          _atRiskCount = result.summaryCounts.lowActivity;
+          _inactiveCount = result.summaryCounts.inactive;
           _isLoading = false;
         });
       }
@@ -131,13 +151,17 @@ class _AdminCompliancePageState extends State<AdminCompliancePage> {
   }
 
   void _openStatsModal(BusinessActivityRecord record) {
+    if (_isOpeningStats) return;
+    _isOpeningStats = true;
     showDialog(
       context: context,
       builder: (_) => BusinessTouristStatsModal(
         businessId: record.id,
         businessName: record.businessName,
       ),
-    );
+    ).whenComplete(() {
+      _isOpeningStats = false;
+    });
   }
 
   Future<void> _handleStatusChange(
@@ -163,14 +187,7 @@ class _AdminCompliancePageState extends State<AdminCompliancePage> {
         messageContent: messageContent,
       );
       if (mounted) {
-        setState(() {
-          final idx = _allRecords.indexWhere((r) => r.id == record.id);
-          if (idx != -1) {
-            _allRecords[idx] = _allRecords[idx].copyWith(
-              businessStatus: newStatus,
-            );
-          }
-        });
+        _load();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Business status updated successfully'),
@@ -191,23 +208,6 @@ class _AdminCompliancePageState extends State<AdminCompliancePage> {
       }
     }
   }
-
-  // ── Summary counts ─────────────────────────────────────────────────────────
-  int get _activeCount => _allRecords
-      .where((r) => r.activityStatus == ActivityStatus.active)
-      .length;
-
-  int get _atRiskCount => _allRecords
-      .where((r) => r.activityStatus == ActivityStatus.lowActivity)
-      .length;
-
-  int get _inactiveCount => _allRecords
-      .where(
-        (r) =>
-            r.activityStatus == ActivityStatus.inactive ||
-            r.activityStatus == ActivityStatus.noActivity,
-      )
-      .length;
 
   // ── Business line label → raw DB value ────────────────────────────────────
   String _rawBusinessLine(String label) {
@@ -230,49 +230,6 @@ class _AdminCompliancePageState extends State<AdminCompliancePage> {
         return label.toLowerCase();
     }
   }
-
-  // ── Filtered list ──────────────────────────────────────────────────────────
-  List<BusinessActivityRecord> get _filtered {
-    return _allRecords.where((r) {
-      final q = _searchQuery.toLowerCase();
-      if (q.isNotEmpty && !r.businessName.toLowerCase().contains(q)) {
-        return false;
-      }
-
-      if (_selectedBusinessLine != 'All Business Lines' &&
-          !r.businessLine.contains(_rawBusinessLine(_selectedBusinessLine))) {
-        return false;
-      }
-
-      if (_selectedBusinessStatus != 'All Business Statuses') {
-        final want = switch (_selectedBusinessStatus) {
-          'Approved' => BusinessStatusLevel.approved,
-          'Warning' => BusinessStatusLevel.warning,
-          'Suspended' => BusinessStatusLevel.suspended,
-          _ => BusinessStatusLevel.approved,
-        };
-        if (r.businessStatus != want) return false;
-      }
-
-      if (_selectedActivityStatus != 'All Statuses') {
-        final target = _activityStatusFromLabel(_selectedActivityStatus);
-        if (r.activityStatus != target) return false;
-      }
-
-      return true;
-    }).toList();
-  }
-
-  // ── Pagination ─────────────────────────────────────────────────────────────
-  int get _totalPages => (_filtered.length / _pageSize).ceil().clamp(1, 999);
-
-  List<BusinessActivityRecord> get _pagedRows {
-    final start = _currentPage * _pageSize;
-    final end = (start + _pageSize).clamp(0, _filtered.length);
-    return _filtered.sublist(start, end);
-  }
-
-  void _resetPage() => _currentPage = 0;
 
   ActivityStatus _activityStatusFromLabel(String label) {
     switch (label) {
@@ -312,7 +269,7 @@ class _AdminCompliancePageState extends State<AdminCompliancePage> {
             children: [
               _PageHeader(
                 onRefresh: _load,
-                totalAccommodations: _pagedRows.length,
+                totalAccommodations: _records.length,
               ),
               const SizedBox(height: 20),
               _SummaryCards(
@@ -323,25 +280,37 @@ class _AdminCompliancePageState extends State<AdminCompliancePage> {
               const SizedBox(height: 16),
               _FilterRow(
                 searchCtrl: _searchCtrl,
-                onSearchChanged: (v) => setState(() {
-                  _searchQuery = v;
-                  _resetPage();
-                }),
+                onSearchChanged: (v) {
+                  setState(() {
+                    _searchQuery = v;
+                    _currentPage = 0;
+                  });
+                  _load();
+                },
                 selectedActivityStatus: _selectedActivityStatus,
-                onActivityStatusChanged: (v) => setState(() {
-                  _selectedActivityStatus = v!;
-                  _resetPage();
-                }),
+                onActivityStatusChanged: (v) {
+                  setState(() {
+                    _selectedActivityStatus = v!;
+                    _currentPage = 0;
+                  });
+                  _load();
+                },
                 selectedBusinessStatus: _selectedBusinessStatus,
-                onBusinessStatusChanged: (v) => setState(() {
-                  _selectedBusinessStatus = v!;
-                  _resetPage();
-                }),
+                onBusinessStatusChanged: (v) {
+                  setState(() {
+                    _selectedBusinessStatus = v!;
+                    _currentPage = 0;
+                  });
+                  _load();
+                },
                 selectedBusinessLine: _selectedBusinessLine,
-                onBusinessLineChanged: (v) => setState(() {
-                  _selectedBusinessLine = v!;
-                  _resetPage();
-                }),
+                onBusinessLineChanged: (v) {
+                  setState(() {
+                    _selectedBusinessLine = v!;
+                    _currentPage = 0;
+                  });
+                  _load();
+                },
               ),
               const SizedBox(height: 14),
               if (_isLoading)
@@ -356,7 +325,7 @@ class _AdminCompliancePageState extends State<AdminCompliancePage> {
                 )
               else
                 _ComplianceTable(
-                  rows: _pagedRows,
+                  rows: _records,
                   onAction: _openActionDialog,
                   onViewStats: _openStatsModal,
                 ),
@@ -365,14 +334,20 @@ class _AdminCompliancePageState extends State<AdminCompliancePage> {
                 Paginator(
                   currentPage: _currentPage,
                   totalPages: _totalPages,
-                  totalItems: _filtered.length,
+                  totalItems: _totalItems,
                   pageSize: _pageSize,
                   pageSizeOptions: _pageSizeOptions,
-                  onPageSizeChanged: (size) => setState(() {
-                    _pageSize = size;
-                    _currentPage = 0;
-                  }),
-                  onPageChanged: (p) => setState(() => _currentPage = p),
+                  onPageSizeChanged: (size) {
+                    setState(() {
+                      _pageSize = size;
+                      _currentPage = 0;
+                    });
+                    _load();
+                  },
+                  onPageChanged: (p) {
+                    setState(() => _currentPage = p);
+                    _load();
+                  },
                 ),
               ],
             ],

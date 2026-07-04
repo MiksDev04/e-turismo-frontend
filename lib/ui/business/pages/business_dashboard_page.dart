@@ -91,6 +91,7 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
 
   bool _isOffline = false;
   StreamSubscription<bool>? _connectivitySub;
+  Timer? _connectivityDebounce;
   bool _isReconnectReloading = false;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -108,6 +109,7 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
   @override
   void dispose() {
     _connectivitySub?.cancel();
+    _connectivityDebounce?.cancel();
     super.dispose();
   }
 
@@ -119,13 +121,20 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
       if (!mounted) return;
 
       if (isOnline && _isOffline) {
-        // Just came back online — auto-refresh
+        // Just came back online — debounce to avoid cascading reloads
+        // from rapid connectivity flapping.
         setState(() {
           _isOffline = false;
         });
-        _reloadAll(preferOnline: true, refreshBusinessContext: true);
+        _connectivityDebounce?.cancel();
+        _connectivityDebounce = Timer(const Duration(seconds: 2), () {
+          if (mounted) {
+            _reloadAll(preferOnline: true, refreshBusinessContext: true);
+          }
+        });
       } else if (!isOnline && !_isOffline) {
         // Just went offline — show the strip.
+        _connectivityDebounce?.cancel();
         setState(() {
           _isOffline = true;
         });
@@ -173,11 +182,16 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
   // ── Init & data loading ───────────────────────────────────────────────────
 
   Future<void> _initBusinessFromSession() async {
-    await _refreshBusinessContext();
+    await _refreshBusinessContext(preferOnline: ConnectivityService.instance.isOnline);
 
     if (!mounted) return;
     // Run both fetches concurrently — they are independent.
-    await Future.wait([_loadDashboard(), _loadTrend()]);
+    // When online, prefer API data over potentially stale SQLite.
+    final preferOnline = ConnectivityService.instance.isOnline;
+    await Future.wait([
+      _loadDashboard(preferOnline: preferOnline),
+      _loadTrend(preferOnline: preferOnline),
+    ]);
   }
 
   Future<void> _refreshBusinessContext({bool preferOnline = false}) async {

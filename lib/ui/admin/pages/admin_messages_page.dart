@@ -42,6 +42,8 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
   bool _loading = true;
   String? _fetchError;
   int? _errorCode;
+  int _totalPages = 0;
+  int _totalItems = 0;
 
   static const _typeOptions = [
     'All Types',
@@ -86,8 +88,21 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
       _errorCode = null;
     });
     try {
-      final msgs = await _api.fetchSentByAdmin(_senderId!);
-      if (mounted) setState(() => _messages = msgs);
+      final result = await _api.fetchSentByAdmin(
+        _senderId!,
+        page: _currentPage + 1,
+        pageSize: _pageSize,
+        searchQuery: _searchQuery.isNotEmpty ? _searchQuery : null,
+        type: _selectedType != 'All Types' ? _selectedType : null,
+        scope: _selectedScope != 'All' ? _selectedScope : null,
+      );
+      if (mounted) {
+        setState(() {
+          _messages = result.data;
+          _totalPages = result.pageCount;
+          _totalItems = result.totalCount;
+        });
+      }
     } on SocketException {
       if (mounted)
         setState(() {
@@ -110,41 +125,6 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
       if (mounted) setState(() => _loading = false);
     }
   }
-
-  // ── Filter ─────────────────────────────────────────────────────────────────
-
-  List<Message> get _filtered {
-    return _messages.where((m) {
-      final q = _searchQuery.toLowerCase();
-      final matchesSearch =
-          q.isEmpty ||
-          m.subject.toLowerCase().contains(q) ||
-          (m.senderName?.toLowerCase().contains(q) ?? false);
-
-      final matchesType =
-          _selectedType == 'All Types' || m.messageType.label == _selectedType;
-
-      final matchesScope = switch (_selectedScope) {
-        'Broadcast' => m.isBroadcast,
-        'Targeted' => !m.isBroadcast,
-        _ => true,
-      };
-
-      return matchesSearch && matchesType && matchesScope;
-    }).toList();
-  }
-
-  int get _totalPages => (_filtered.length / _pageSize).ceil().clamp(1, 999);
-
-  int get _clampedPage => _currentPage.clamp(0, _totalPages - 1);
-
-  List<Message> get _pagedRows {
-    final start = _clampedPage * _pageSize;
-    final end = (start + _pageSize).clamp(0, _filtered.length);
-    return _filtered.sublist(start, end);
-  }
-
-  void _resetPage() => _currentPage = 0;
 
   // ── Compose ────────────────────────────────────────────────────────────────
 
@@ -190,20 +170,29 @@ Widget build(BuildContext context) {
                     const SizedBox(height: 16),
                     _FilterRow(
                       searchCtrl: _searchCtrl,
-                      onSearchChanged: (v) => setState(() {
-                        _searchQuery = v;
-                        _resetPage();
-                      }),
+                      onSearchChanged: (v) {
+                        setState(() {
+                          _searchQuery = v;
+                          _currentPage = 0;
+                        });
+                        _loadMessages();
+                      },
                       selectedType: _selectedType,
-                      onTypeChanged: (v) => setState(() {
-                        _selectedType = v!;
-                        _resetPage();
-                      }),
+                      onTypeChanged: (v) {
+                        setState(() {
+                          _selectedType = v!;
+                          _currentPage = 0;
+                        });
+                        _loadMessages();
+                      },
                       selectedScope: _selectedScope,
-                      onScopeChanged: (v) => setState(() {
-                        _selectedScope = v!;
-                        _resetPage();
-                      }),
+                      onScopeChanged: (v) {
+                        setState(() {
+                          _selectedScope = v!;
+                          _currentPage = 0;
+                        });
+                        _loadMessages();
+                      },
                       typeOptions: _typeOptions,
                       scopeOptions: _scopeOptions,
                     ),
@@ -220,24 +209,28 @@ Widget build(BuildContext context) {
                       )
                     else ...[
                       _MessagesTable(
-                        rows: _pagedRows,
+                        rows: _messages,
                         api: _api,
                         onRefresh: _loadMessages,
                       ),
                       const SizedBox(height: 12),
                       Paginator(
-                        currentPage: _clampedPage,
+                        currentPage: _currentPage,
                         totalPages: _totalPages,
-                        totalItems: _filtered.length,
+                        totalItems: _totalItems,
                         pageSize: _pageSize,
                         pageSizeOptions: _pageSizeOptions,
-                        onPageSizeChanged: (size) => setState(() {
-                          _pageSize = size;
-                          _currentPage = 0;
-                        }),
-                        onPageChanged: (page) => setState(() {
-                          _currentPage = page;
-                        }),
+                        onPageSizeChanged: (size) {
+                          setState(() {
+                            _pageSize = size;
+                            _currentPage = 0;
+                          });
+                          _loadMessages();
+                        },
+                        onPageChanged: (page) {
+                          setState(() => _currentPage = page);
+                          _loadMessages();
+                        },
                       ),
                     ],
                   ],

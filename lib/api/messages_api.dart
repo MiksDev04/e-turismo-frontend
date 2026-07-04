@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import '../core/services/connectivity_service.dart';
 import 'base_api.dart';
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -348,12 +347,32 @@ class MessagesApi extends BaseApi {
 
   // ── Admin: Outbox ──────────────────────────────────────────────────────────
 
-  Future<List<Message>> fetchSentByAdmin(String adminId) async {
-    final response = await get('/api/messages/admin/outbox');
-    final data = handleResponse(response) as List<dynamic>;
-    return data
+  Future<({List<Message> data, int totalCount, int pageCount})> fetchSentByAdmin(
+    String adminId, {
+    int page = 1,
+    int pageSize = 10,
+    String? searchQuery,
+    String? type,
+    String? scope,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'pageSize': pageSize.toString(),
+    };
+    if (searchQuery != null && searchQuery.isNotEmpty) queryParams['searchQuery'] = searchQuery;
+    if (type != null && type != 'All Types') queryParams['type'] = type;
+    if (scope != null && scope != 'All') queryParams['scope'] = scope;
+
+    final uri = Uri.parse('/api/messages/admin/outbox').replace(queryParameters: queryParams);
+    final response = await get(uri.toString());
+    final body = handleResponse(response) as Map<String, dynamic>;
+    final list = body['data'] as List<dynamic>;
+    final totalCount = (body['totalCount'] as num?)?.toInt() ?? 0;
+    final pageCount = (body['pageCount'] as num?)?.toInt() ?? 0;
+    final data = list
         .map((m) => Message.fromJson(m as Map<String, dynamic>))
         .toList();
+    return (data: data, totalCount: totalCount, pageCount: pageCount);
   }
 
   Future<List<DeliveryReceipt>> fetchDeliveryReport(String messageId) async {
@@ -366,17 +385,32 @@ class MessagesApi extends BaseApi {
 
   // ── Business: Inbox ────────────────────────────────────────────────────────
 
-  Future<List<InboxMessage>> fetchInbox(
+  Future<({List<InboxMessage> data, int totalCount, int pageCount})> fetchInbox(
     String businessId, {
     bool includeArchived = false,
+    int page = 1,
+    int pageSize = 10,
+    String? searchQuery,
+    String? type,
   }) async {
-    final response = await get(
-      '/api/messages/business/inbox?includeArchived=$includeArchived&businessId=$businessId',
-    );
-    final data = handleResponse(response) as List<dynamic>;
-    return data
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'pageSize': pageSize.toString(),
+      'includeArchived': includeArchived.toString(),
+    };
+    if (searchQuery != null && searchQuery.isNotEmpty) queryParams['searchQuery'] = searchQuery;
+    if (type != null && type != 'All') queryParams['type'] = type;
+
+    final uri = Uri.parse('/api/messages/business/inbox').replace(queryParameters: queryParams);
+    final response = await get(uri.toString());
+    final body = handleResponse(response) as Map<String, dynamic>;
+    final list = body['data'] as List<dynamic>;
+    final totalCount = (body['totalCount'] as num?)?.toInt() ?? 0;
+    final pageCount = (body['pageCount'] as num?)?.toInt() ?? 0;
+    final data = list
         .map((r) => InboxMessage.fromJson(r as Map<String, dynamic>))
         .toList();
+    return (data: data, totalCount: totalCount, pageCount: pageCount);
   }
 
   Future<int> fetchUnreadCount(String businessId) async {

@@ -92,6 +92,21 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
     });
   }
 
+  void _handleRefresh() {
+    if (_viewMode == _ViewMode.info) {
+      _loadAccommodations();
+    } else {
+      setState(() => _rankingsRefreshKey++);
+    }
+  }
+
+  // ── Server-side pagination state ──────────────────────────────────────────
+
+  int _totalPages = 0;
+  int _totalItems = 0;
+
+  String get _activeStatus => _filterTabs[_selectedTab].status?.name ?? 'all';
+
   Future<void> _loadAccommodations() async {
     setState(() {
       _isLoading = true;
@@ -99,10 +114,17 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
       _errorCode = null;
     });
     try {
-      final data = await _api.fetchAll();
+      final result = await _api.fetchAll(
+        page: _currentPage + 1,
+        pageSize: _pageSize,
+        status: _activeStatus,
+        searchQuery: _searchQuery.isNotEmpty ? _searchQuery : null,
+      );
       if (!mounted) return;
       setState(() {
-        _accommodations = data;
+        _accommodations = result.data;
+        _totalPages = result.pageCount;
+        _totalItems = result.totalCount;
         _isLoading = false;
       });
     } catch (e) {
@@ -118,42 +140,6 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
       });
     }
   }
-
-  void _handleRefresh() {
-    if (_viewMode == _ViewMode.info) {
-      _loadAccommodations();
-    } else {
-      setState(() => _rankingsRefreshKey++);
-    }
-  }
-
-  // ── Filtering / paging ────────────────────────────────────────────────────
-
-  List<Accommodation> get _filtered {
-    final tabStatus = _filterTabs[_selectedTab].status;
-    return _accommodations.where((a) {
-      final matchesTab = tabStatus == null || a.status == tabStatus;
-      final q = _searchQuery.toLowerCase();
-      final matchesSearch =
-          q.isEmpty ||
-          a.name.toLowerCase().contains(q) ||
-          a.owner.toLowerCase().contains(q);
-      return matchesTab && matchesSearch;
-    }).toList();
-  }
-
-  int get _totalPages => (_filtered.length / _pageSize).ceil().clamp(1, 999);
-  int get _clampedPage => _currentPage.clamp(0, _totalPages - 1);
-
-  List<Accommodation> get _pagedRows {
-    final start = _clampedPage * _pageSize;
-    final end = (start + _pageSize).clamp(0, _filtered.length);
-    return _filtered.sublist(start, end);
-  }
-
-  int _countForStatus(AccommodationStatus? status) => status == null
-      ? _accommodations.length
-      : _accommodations.where((a) => a.status == status).length;
 
   // ── Export ────────────────────────────────────────────────────────────────
 
@@ -224,13 +210,8 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
     if (!mounted) return;
 
     if (result.success) {
-      setState(() {
-        final index = _accommodations.indexWhere((a) => a.id == item.id);
-        if (index != -1) {
-          _accommodations[index] = item.copyWith(status: newStatus);
-        }
-      });
       await _sendDecisionLetter(item, newStatus, remarks: remarks);
+      _loadAccommodations();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${item.name} has been ${newStatus.name}.'),
@@ -385,19 +366,25 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
                         _FilterTabBar(
                           selectedTab: _selectedTab,
                           tabs: _filterTabs,
-                          countForStatus: _countForStatus,
-                          onTabSelected: (i) => setState(() {
-                            _selectedTab = i;
-                            _currentPage = 0;
-                          }),
+                          totalCount: _totalItems,
+                          onTabSelected: (i) {
+                            setState(() {
+                              _selectedTab = i;
+                              _currentPage = 0;
+                            });
+                            _loadAccommodations();
+                          },
                         ),
                         const SizedBox(height: 14),
                         _SearchBar(
                           controller: _searchCtrl,
-                          onChanged: (v) => setState(() {
-                            _searchQuery = v;
-                            _currentPage = 0;
-                          }),
+                          onChanged: (v) {
+                            setState(() {
+                              _searchQuery = v;
+                              _currentPage = 0;
+                            });
+                            _loadAccommodations();
+                          },
                         ),
                         const SizedBox(height: 14),
                         if (_isLoading)
@@ -412,29 +399,33 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
                           )
                         else if (isNarrow)
                           _AccommodationCardList(
-                            rows: _pagedRows,
+                            rows: _accommodations,
                             onStatusUpdate: _updateStatus,
                           )
                         else
                           _AccommodationTable(
-                            rows: _pagedRows,
+                            rows: _accommodations,
                             onStatusUpdate: _updateStatus,
                           ),
                         if (!_isLoading) ...[
                           const SizedBox(height: 12),
                           Paginator(
-                            currentPage: _clampedPage,
+                            currentPage: _currentPage,
                             totalPages: _totalPages,
-                            totalItems: _filtered.length,
+                            totalItems: _totalItems,
                             pageSize: _pageSize,
                             pageSizeOptions: _pageSizeOptions,
-                            onPageSizeChanged: (size) => setState(() {
-                              _pageSize = size;
-                              _currentPage = 0;
-                            }),
-                            onPageChanged: (page) => setState(() {
-                              _currentPage = page;
-                            }),
+                            onPageSizeChanged: (size) {
+                              setState(() {
+                                _pageSize = size;
+                                _currentPage = 0;
+                              });
+                              _loadAccommodations();
+                            },
+                            onPageChanged: (page) {
+                              setState(() => _currentPage = page);
+                              _loadAccommodations();
+                            },
                           ),
                         ],
                       ],
@@ -1409,13 +1400,13 @@ class _FilterTabBar extends StatelessWidget {
   const _FilterTabBar({
     required this.selectedTab,
     required this.tabs,
-    required this.countForStatus,
+    required this.totalCount,
     required this.onTabSelected,
   });
 
   final int selectedTab;
   final List<_FilterTab> tabs;
-  final int Function(AccommodationStatus?) countForStatus;
+  final int totalCount;
   final ValueChanged<int> onTabSelected;
 
   @override
@@ -1428,14 +1419,12 @@ class _FilterTabBar extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: List.generate(tabs.length, (i) {
-                final tab = tabs[i];
-                final count = countForStatus(tab.status);
                 final isActive = selectedTab == i;
                 return Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: _FilterChip(
-                    label: tab.label,
-                    count: count,
+                    label: tabs[i].label,
+                    count: isActive ? totalCount : 0,
                     isActive: isActive,
                     onTap: () => onTabSelected(i),
                   ),
@@ -1448,12 +1437,10 @@ class _FilterTabBar extends StatelessWidget {
           spacing: 6,
           runSpacing: 6,
           children: List.generate(tabs.length, (i) {
-            final tab = tabs[i];
-            final count = countForStatus(tab.status);
             final isActive = selectedTab == i;
             return _FilterChip(
-              label: tab.label,
-              count: count,
+              label: tabs[i].label,
+              count: isActive ? totalCount : 0,
               isActive: isActive,
               onTap: () => onTabSelected(i),
             );

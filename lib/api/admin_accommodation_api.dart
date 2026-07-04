@@ -1,6 +1,5 @@
 // lib/api/admin_accommodation_api.dart
 
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:app/api/base_api.dart';
 import 'package:app/ui/admin/models/accommodation_models.dart';
@@ -71,15 +70,31 @@ class AccommodationRankingRow {
 // ─── API ──────────────────────────────────────────────────────────────────────
 
 class AdminAccommodationApi extends BaseApi {
-  // ── Fetch all businesses with joined profile ──────────────────────────────
-  Future<List<Accommodation>> fetchAll() async {
+  // ── Fetch paginated businesses with joined profile ──────────────────────
+  Future<({List<Accommodation> data, int totalCount, int pageCount})> fetchAll({
+    int page = 1,
+    int pageSize = 10,
+    String? status,
+    String? searchQuery,
+  }) async {
     try {
-      final response = await get('/api/admin/accommodations');
+      final queryParams = <String, String>{
+        'page': page.toString(),
+        'pageSize': pageSize.toString(),
+      };
+      if (status != null && status != 'all') queryParams['status'] = status;
+      if (searchQuery != null && searchQuery.isNotEmpty) queryParams['search'] = searchQuery;
+
+      final uri = Uri.parse('/api/admin/accommodations').replace(queryParameters: queryParams);
+      final response = await get(uri.toString());
       final body = handleResponse(response);
       final list = body['data'] as List;
-      return list
+      final totalCount = (body['totalCount'] as num?)?.toInt() ?? 0;
+      final pageCount = (body['pageCount'] as num?)?.toInt() ?? 0;
+      final data = list
           .map((e) => Accommodation.fromMap(e as Map<String, dynamic>))
           .toList();
+      return (data: data, totalCount: totalCount, pageCount: pageCount);
     } catch (e) {
       debugPrint('❌ fetchAll error: $e');
       rethrow;
@@ -223,13 +238,6 @@ class AdminAccommodationApi extends BaseApi {
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
-
-/// Lightweight accumulator used during rankings aggregation.
-class _RankAgg {
-  _RankAgg({required this.name, required this.total});
-  final String name;
-  int total;
-}
 
 /// Returns trimmed string or '—' if null/empty.
 String _val(dynamic v) {

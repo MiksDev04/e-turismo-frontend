@@ -1,6 +1,5 @@
 // ignore_for_file: deprecated_member_use
 
-import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'base_api.dart';
@@ -92,11 +91,30 @@ class ReportParams {
 // ─── Report Service ───────────────────────────────────────────────────────────
 
 class ReportService extends BaseApi {
-  /// Fetches all generated reports from the backend.
-  Future<List<GeneratedReport>> fetchReports() async {
-    final response = await get('/api/admin/reports');
-    final List data = handleResponse(response);
-    return data.map((r) => GeneratedReport.fromRow(r)).toList();
+  /// Fetches paginated generated reports from the backend.
+  Future<({List<GeneratedReport> data, int totalCount, int pageCount})> fetchReports({
+    int page = 1,
+    int pageSize = 10,
+    String? month,
+    String? year,
+    String? filterBusinessName,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'pageSize': pageSize.toString(),
+    };
+    if (month != null && month != 'All Months') queryParams['month'] = month;
+    if (year != null && year != 'All Years') queryParams['year'] = year;
+    if (filterBusinessName != null && filterBusinessName != 'All') queryParams['filterBusinessName'] = filterBusinessName;
+
+    final uri = Uri.parse('/api/admin/reports').replace(queryParameters: queryParams);
+    final response = await get(uri.toString());
+    final body = handleResponse(response) as Map<String, dynamic>;
+    final list = body['data'] as List;
+    final totalCount = (body['totalCount'] as num?)?.toInt() ?? 0;
+    final pageCount = (body['pageCount'] as num?)?.toInt() ?? 0;
+    final data = list.map((r) => GeneratedReport.fromRow(r)).toList();
+    return (data: data, totalCount: totalCount, pageCount: pageCount);
   }
 
   /// Downloads a report file from the backend.

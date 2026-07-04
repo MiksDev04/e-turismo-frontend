@@ -343,19 +343,26 @@ class BusinessDashboardApi extends BaseApi {
     final (start, end) = _dateRange(month, year);
     final (yearStart, yearEnd) = _dateRange(0, year);
 
-    final periodRecords = await _fetchGuestRecordsOnline(
+    // Fetch once with the full year range (superset of month range).
+    final allRecords = await _fetchGuestRecordsOnline(
       businessId: businessId,
-      startDate: start,
-      endDate: end,
+      startDate: yearStart,
+      endDate: yearEnd,
     );
 
-    final yearRecords = (month == 0)
-        ? periodRecords
-        : await _fetchGuestRecordsOnline(
-            businessId: businessId,
-            startDate: yearStart,
-            endDate: yearEnd,
-          );
+    // Filter month records client-side to avoid a second API call.
+    final periodStart = DateTime.parse(start);
+    final periodEnd = DateTime.parse(end);
+    final periodRecords = (month == 0)
+        ? allRecords
+        : allRecords.where((r) {
+            final d = _stringValue(r, 'check_in');
+            if (d == null) return false;
+            final dt = DateTime.tryParse(d);
+            return dt != null && !dt.isBefore(periodStart) && !dt.isAfter(periodEnd);
+          }).toList();
+
+    final yearRecords = allRecords;
 
     final stats = _computeStats(
       periodRecords: periodRecords,
@@ -408,19 +415,26 @@ class BusinessDashboardApi extends BaseApi {
     final (start, end) = _dateRange(month, year);
     final (yearStart, yearEnd) = _dateRange(0, year);
 
-    final periodRecords = await _fetchGuestRecordsOffline(
+    // Fetch once with the full year range (superset of month range).
+    final allRecords = await _fetchGuestRecordsOffline(
       businessId: businessId,
-      startDate: start,
-      endDate: end,
+      startDate: yearStart,
+      endDate: yearEnd,
     );
 
-    final yearRecords = (month == 0)
-        ? periodRecords
-        : await _fetchGuestRecordsOffline(
-            businessId: businessId,
-            startDate: yearStart,
-            endDate: yearEnd,
-          );
+    // Filter month records client-side to avoid a second DB query.
+    final periodStart = DateTime.parse(start);
+    final periodEnd = DateTime.parse(end);
+    final periodRecords = (month == 0)
+        ? allRecords
+        : allRecords.where((r) {
+            final d = _stringValue(r, 'check_in');
+            if (d == null) return false;
+            final dt = DateTime.tryParse(d);
+            return dt != null && !dt.isBefore(periodStart) && !dt.isAfter(periodEnd);
+          }).toList();
+
+    final yearRecords = allRecords;
 
     final stats = _computeStats(
       periodRecords: periodRecords,

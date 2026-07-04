@@ -87,25 +87,59 @@ class BusinessGuestRecordApi extends BaseApi {
     return null;
   }
 
-  // ── Fetch All Guest Records for a Business ────────────────────────────────
+  // ── Fetch Paginated Guest Records for a Business ──────────────────────────
 
-  Future<ApiResult<List<GuestRecord>>> fetchGuestRecords(
-    String businessId,
-  ) async {
+  Future<ApiResult<({List<GuestRecord> data, int totalCount, int pageCount})>> fetchGuestRecords(
+    String businessId, {
+    int page = 1,
+    int pageSize = 10,
+    String? status,
+    String? checkInFrom,
+    String? checkOutTo,
+    String? purpose,
+    String? transport,
+  }) async {
     if (ConnectivityService.instance.isOnline && hasToken) {
       try {
-        return await _fetchOnline(businessId);
+        return await _fetchOnline(
+          businessId,
+          page: page,
+          pageSize: pageSize,
+          status: status,
+          checkInFrom: checkInFrom,
+          checkOutTo: checkOutTo,
+          purpose: purpose,
+          transport: transport,
+        );
       } on ApiException catch (e) {
         if (e.statusCode == 401) {
           debugPrint('⚠️ fetchGuestRecords: Unauthorized (401). Falling back to local.');
-          return _fetchOffline(businessId);
+          return _fetchOffline(
+            businessId,
+            page: page,
+            pageSize: pageSize,
+            status: status,
+            checkInFrom: checkInFrom,
+            checkOutTo: checkOutTo,
+            purpose: purpose,
+            transport: transport,
+          );
         }
         return ApiResult.failure('Cloud error: ${e.message}');
       } catch (e) {
         debugPrint('⚠️ fetchGuestRecords: Online fetch failed ($e). Falling back to local.');
       }
     }
-    return _fetchOffline(businessId);
+    return _fetchOffline(
+      businessId,
+      page: page,
+      pageSize: pageSize,
+      status: status,
+      checkInFrom: checkInFrom,
+      checkOutTo: checkOutTo,
+      purpose: purpose,
+      transport: transport,
+    );
   }
 
   // ── Update a Record (stay info + breakdowns) ──────────────────────────────
@@ -165,32 +199,56 @@ class BusinessGuestRecordApi extends BaseApi {
   // ONLINE — fetch from Node API, then refresh local SQLite cache.
   // ===========================================================================
 
-  Future<ApiResult<List<GuestRecord>>> _fetchOnline(String businessId) async {
+  Future<ApiResult<({List<GuestRecord> data, int totalCount, int pageCount})>> _fetchOnline(
+    String businessId, {
+    required int page,
+    required int pageSize,
+    String? status,
+    String? checkInFrom,
+    String? checkOutTo,
+    String? purpose,
+    String? transport,
+  }) async {
     try {
-      debugPrint('🔍 _fetchOnline: businessId = $businessId');
-      final response = await get('/api/business/guest-records?businessId=$businessId');
-      final rows = handleResponse(response) as List? ?? [];
-      debugPrint('☁️ _fetchOnline: found ${rows.length} cloud records');
+      debugPrint('🔍 _fetchOnline: businessId=$businessId page=$page pageSize=$pageSize');
+
+      final queryParams = <String, String>{
+        'businessId': businessId,
+        'page': page.toString(),
+        'pageSize': pageSize.toString(),
+      };
+      if (status != null) queryParams['status'] = status;
+      if (checkInFrom != null) queryParams['checkInFrom'] = checkInFrom;
+      if (checkOutTo != null) queryParams['checkOutTo'] = checkOutTo;
+      if (purpose != null && purpose != 'All') queryParams['purpose'] = purpose;
+      if (transport != null && transport != 'All') queryParams['transport'] = transport;
+
+      final uri = Uri.parse('/api/business/guest-records').replace(queryParameters: queryParams);
+      final response = await get(uri.toString());
+      final body = handleResponse(response) as Map<String, dynamic>;
+      final rows = body['data'] as List? ?? [];
+      final totalCount = (body['totalCount'] as num?)?.toInt() ?? 0;
+      final pageCount = (body['pageCount'] as num?)?.toInt() ?? 0;
+
+      debugPrint('☁️ _fetchOnline: found ${rows.length} cloud records (total=$totalCount, pages=$pageCount)');
 
       final cloudRecords = _parseNodeRows(rows);
       final allRecords   = List<GuestRecord>.from(cloudRecords);
 
       if (!kIsWeb) {
-        // MERGE: Add local records that are pending sync OR were synced very recently
         final merged = await _getMergedLocalRecords(businessId, cloudRecords.map((r) => r.id).toSet());
         debugPrint('🧩 _fetchOnline: merged ${merged.length} local records');
         allRecords.addAll(merged);
-
-        // Re-sort so newest stays on top
         allRecords.sort((a, b) => b.checkIn.compareTo(a.checkIn));
       }
 
+      if (page == 1) {
+        _refreshLocalCache(businessId, rows).catchError(
+          (e) => debugPrint('⚠️ Local cache refresh error: $e'),
+        );
+      }
 
-      _refreshLocalCache(businessId, rows).catchError(
-        (e) => debugPrint('⚠️ Local cache refresh error: $e'),
-      );
-
-      return ApiResult.success(allRecords);
+      return ApiResult.success((data: allRecords, totalCount: totalCount, pageCount: pageCount));
     } catch (e) {
       return ApiResult.failure('Failed to load records: $e');
     }
@@ -219,15 +277,28 @@ class BusinessGuestRecordApi extends BaseApi {
       }
 
       final records = <GuestRecord>[];
+      final localIds = rows.map((r) => r['id'] as String).where((id) => !cloudIds.contains(id)).toList();
+
+      Map<String, List<Map<String, dynamic>>> breakdownsByRecord = {};
+      if (localIds.isNotEmpty) {
+        final placeholders = localIds.map((_) => '?').join(', ');
+        final allBreakdowns = await db.rawQuery(
+          'SELECT * FROM ${LocalDatabase.tableGuestBreakdowns} '
+          'WHERE guest_record_id IN ($placeholders)',
+          localIds,
+        );
+        for (final b in allBreakdowns) {
+          final gid = b['guest_record_id'] as String;
+          breakdownsByRecord.putIfAbsent(gid, () => []).add(
+            Map<String, dynamic>.from(b),
+          );
+        }
+      }
+
       for (final row in rows) {
         final recordId = row['id'] as String;
-        if (cloudIds.contains(recordId)) continue; // Already in cloud results
-
-        final breakdownRows = await db.query(
-          LocalDatabase.tableGuestBreakdowns,
-          where:     'guest_record_id = ?',
-          whereArgs: [recordId],
-        );
+        if (cloudIds.contains(recordId)) continue;
+        final breakdownRows = breakdownsByRecord[recordId] ?? [];
 
         final checkIn  = row['check_in']  as String;
         final checkOut = row['check_out'] as String;
@@ -258,27 +329,94 @@ class BusinessGuestRecordApi extends BaseApi {
   // OFFLINE — read entirely from SQLite.
   // ===========================================================================
 
-  Future<ApiResult<List<GuestRecord>>> _fetchOffline(String businessId) async {
+  Future<ApiResult<({List<GuestRecord> data, int totalCount, int pageCount})>> _fetchOffline(
+    String businessId, {
+    required int page,
+    required int pageSize,
+    String? status,
+    String? checkInFrom,
+    String? checkOutTo,
+    String? purpose,
+    String? transport,
+  }) async {
     try {
       final db = await LocalDatabase.instance.database;
 
+      // ── Build WHERE clause ──────────────────────────────────────────────
+      final conditions = ['business_id = ?', 'is_deleted = 0'];
+      final args = <dynamic>[businessId];
+
+      if (status == 'archived') {
+        conditions.add("status = 'archived'");
+      } else {
+        conditions.add("status = 'active'");
+      }
+
+      if (checkInFrom != null) {
+        conditions.add('check_in >= ?');
+        args.add(checkInFrom);
+      }
+      if (checkOutTo != null) {
+        conditions.add('check_out <= ?');
+        args.add(checkOutTo);
+      }
+      if (purpose != null && purpose != 'All') {
+        conditions.add('purpose_of_visit = ?');
+        args.add(purpose);
+      }
+      if (transport != null && transport != 'All') {
+        conditions.add('transportation_mode = ?');
+        args.add(transport);
+      }
+
+      final whereClause = conditions.join(' AND ');
+
+      // ── Count total ─────────────────────────────────────────────────────
+      final countResult = await db.rawQuery(
+        'SELECT COUNT(*) as cnt FROM ${LocalDatabase.tableGuestRecords} WHERE $whereClause',
+        args,
+      );
+      final totalCount = (countResult.first['cnt'] as int?) ?? 0;
+
+      if (totalCount == 0) {
+        return ApiResult.success((data: [], totalCount: 0, pageCount: 0));
+      }
+
+      final pageCount = (totalCount / pageSize).ceil();
+
+      // ── Fetch paginated rows ────────────────────────────────────────────
+      final offset = (page - 1) * pageSize;
       final rows = await db.query(
         LocalDatabase.tableGuestRecords,
-        where:   'business_id = ? AND is_deleted = 0',
-        whereArgs: [businessId],
+        where:   whereClause,
+        whereArgs: args,
         orderBy: 'check_in DESC',
+        limit:   pageSize,
+        offset:  offset,
       );
 
       final records = <GuestRecord>[];
+      final recordIds = rows.map((r) => r['id'] as String).toList();
+
+      Map<String, List<Map<String, dynamic>>> breakdownsByRecord = {};
+      if (recordIds.isNotEmpty) {
+        final placeholders = recordIds.map((_) => '?').join(', ');
+        final allBreakdowns = await db.rawQuery(
+          'SELECT * FROM ${LocalDatabase.tableGuestBreakdowns} '
+          'WHERE guest_record_id IN ($placeholders)',
+          recordIds,
+        );
+        for (final b in allBreakdowns) {
+          final gid = b['guest_record_id'] as String;
+          breakdownsByRecord.putIfAbsent(gid, () => []).add(
+            Map<String, dynamic>.from(b),
+          );
+        }
+      }
 
       for (final row in rows) {
         final recordId = row['id'] as String;
-
-        final breakdownRows = await db.query(
-          LocalDatabase.tableGuestBreakdowns,
-          where:     'guest_record_id = ?',
-          whereArgs: [recordId],
-        );
+        final breakdownRows = breakdownsByRecord[recordId] ?? [];
 
         final checkIn  = row['check_in']  as String;
         final checkOut = row['check_out'] as String;
@@ -299,7 +437,7 @@ class BusinessGuestRecordApi extends BaseApi {
         ));
       }
 
-      return ApiResult.success(records);
+      return ApiResult.success((data: records, totalCount: totalCount, pageCount: pageCount));
     } catch (e) {
       debugPrint('❌ fetchGuestRecords (offline) error: $e');
       return ApiResult.failure('Failed to load local records.');
@@ -417,49 +555,8 @@ class BusinessGuestRecordApi extends BaseApi {
     }
 
     final db = await LocalDatabase.instance.database;
-    final remoteIds = rows.map((r) => r['id'] as String).toSet();
 
-    // 1. Prune local records that were deleted on the Cloud
-    // We only delete local records that are marked as 'synced'. 
-    // If they are 'pending_create' or 'pending_update', we keep them.
-    final localSynced = await db.query(
-      LocalDatabase.tableGuestRecords,
-      columns:   ['id', 'local_updated_at'],
-      where:     'business_id = ? AND sync_status = ?',
-      whereArgs: [businessId, LocalDatabase.syncSynced],
-    );
-
-    final now = DateTime.now().toUtc();
-    for (final local in localSynced) {
-      final id = local['id'] as String;
-      if (!remoteIds.contains(id)) {
-        // SAFETY: Don't prune if the record was updated/synced in the last 60 seconds.
-        // This prevents a race condition where a record is pushed but doesn't 
-        // immediately appear in the subsequent GET request due to indexing lag.
-        final localUpdatedAtStr = local['local_updated_at'] as String?;
-        if (localUpdatedAtStr != null) {
-          final updatedAt = DateTime.tryParse(localUpdatedAtStr);
-          if (updatedAt != null && now.difference(updatedAt).inSeconds < 60) {
-            debugPrint('⏳ Skipping pruning for just-synced record $id (grace period)');
-            continue;
-          }
-        }
-
-        debugPrint('🧹 Pruning local synced record $id (not found on cloud)');
-        await db.delete(
-          LocalDatabase.tableGuestRecords,
-          where:     'id = ?',
-          whereArgs: [id],
-        );
-        await db.delete(
-          LocalDatabase.tableGuestBreakdowns,
-          where:     'guest_record_id = ?',
-          whereArgs: [id],
-        );
-      }
-    }
-
-    // 2. Insert / Update from Cloud
+    // Insert / Update from Cloud
     for (final row in rows) {
       final recordId = row['id'] as String;
 
@@ -556,19 +653,6 @@ class BusinessGuestRecordApi extends BaseApi {
   // ===========================================================================
   // Payload Mappers
   // ===========================================================================
-
-  Map<String, dynamic> _localBreakdownRowToPayload(Map<String, dynamic> b) {
-    final isOverseas = (b['is_overseas'] as int?) == 1;
-    return {
-      'isOverseas':        isOverseas,
-      'country':            isOverseas ? null : b['country'],
-      'nationality':        b['nationality'],
-      'philippinesRegion': b['philippines_region'],
-      'sex':                b['sex'],
-      'ageGroup':          b['age_group'],
-      'count':              b['count'],
-    };
-  }
 
   Map<String, dynamic> _breakdownEntryToPayload(GuestBreakdownEntry b) {
     final isOverseas    = b.isOverseas;

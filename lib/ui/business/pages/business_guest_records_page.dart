@@ -140,18 +140,16 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
   String? _loadError;
 
   // ── Connectivity state ────────────────────────────────────────────────────
-  // _isOffline: mirrors the current network status, used for the offline strip.
   bool _isOffline       = false;
   StreamSubscription<bool>? _connectivitySub;
 
   _Filter _activeFilter = _Filter.active;
-  String _searchQuery = '';
-  final _searchCtrl = TextEditingController();
   bool _showFilters = false;
   int _currentPage = 0;
   int _pageSize = 10;
+  int _totalPages = 0;
+  int _totalItems = 0;
 
-  // Advanced filter values
   DateTime? _checkInFrom;
   DateTime? _checkOutTo;
   String? _selectedPurpose;
@@ -179,7 +177,6 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
   @override
   void dispose() {
     _connectivitySub?.cancel();
-    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -230,11 +227,23 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       _isLoading = true;
       _loadError = null;
     });
-    final result = await _api.fetchGuestRecords(_businessId!);
+    final result = await _api.fetchGuestRecords(
+      _businessId!,
+      page: _currentPage + 1,
+      pageSize: _pageSize,
+      status: _activeFilter == _Filter.active ? 'active' : 'archived',
+      checkInFrom: _checkInFrom?.toIso8601String().split('T').first,
+      checkOutTo: _checkOutTo?.toIso8601String().split('T').first,
+      purpose: _selectedPurpose,
+      transport: _selectedTransport,
+    );
     if (!mounted) return;
     if (result.isSuccess) {
+      final data = result.data!;
       setState(() {
-        _records   = result.data ?? [];
+        _records   = data.data;
+        _totalPages = data.pageCount;
+        _totalItems = data.totalCount;
         _isLoading = false;
       });
     } else {
@@ -289,7 +298,9 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       } else {
         _checkOutTo = picked;
       }
+      _currentPage = 0;
     });
+    _loadRecords();
   }
 
   // ── Actions ───────────────────────────────────────────────────────────────
@@ -311,10 +322,7 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
     if (!mounted) return;
 
     if (result.isSuccess) {
-      setState(() {
-        final idx = _records.indexWhere((r) => r.id == record.id);
-        if (idx != -1) _records[idx] = updated;
-      });
+      _loadRecords();
     } else {
       _showSnack(result.error ?? 'Failed to update.', isError: true);
     }
@@ -338,60 +346,15 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       _checkOutTo       = null;
       _selectedPurpose  = null;
       _selectedTransport = null;
-      _searchQuery      = '';
-      _searchCtrl.clear();
       _currentPage      = 0;
     });
+    _loadRecords();
   }
 
-  // ── Filtering ─────────────────────────────────────────────────────────────
-
-  bool _matchesAdvancedFilters(GuestRecord r) {
-    if (_checkInFrom != null) {
-      try {
-        if (DateTime.parse(r.checkIn).isBefore(_checkInFrom!)) return false;
-      } catch (_) {}
-    }
-    if (_checkOutTo != null) {
-      try {
-        if (DateTime.parse(r.checkOut).isAfter(_checkOutTo!)) return false;
-      } catch (_) {}
-    }
-    if (_selectedPurpose != null && _selectedPurpose != 'All') {
-      if (r.purpose != _selectedPurpose) return false;
-    }
-    if (_selectedTransport != null && _selectedTransport != 'All') {
-      if (r.transport != _selectedTransport) return false;
-    }
-    return true;
+  void _reload() {
+    _currentPage = 0;
+    _loadRecords();
   }
-
-  List<GuestRecord> get _filtered {
-    final q = _searchQuery.toLowerCase();
-    return _records.where((r) {
-      final matchesStatus = switch (_activeFilter) {
-        _Filter.active   => r.status == GuestRecordStatus.active,
-        _Filter.archived => r.status == GuestRecordStatus.archived,
-      };
-      final matchesSearch =
-          q.isEmpty ||
-          r.checkIn.contains(q) ||
-          r.purpose.toLowerCase().contains(q) ||
-          r.transport.toLowerCase().contains(q);
-      return matchesStatus && matchesSearch && _matchesAdvancedFilters(r);
-    }).toList();
-  }
-
-  int get _totalPages => (_filtered.length / _pageSize).ceil().clamp(1, 999);
-  int get _clampedPage => _currentPage.clamp(0, _totalPages - 1);
-
-  List<GuestRecord> get _pagedRows {
-    final start = _clampedPage * _pageSize;
-    final end   = (start + _pageSize).clamp(0, _filtered.length);
-    return _filtered.sublist(start, end);
-  }
-
-  void _resetPage() => _currentPage = 0;
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
@@ -419,24 +382,17 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
                     children: [
                       _PageHeader(
                         activeFilter: _activeFilter,
-                        onFilterChanged: (f) => setState(() {
-                          _activeFilter = f;
-                          _resetPage();
-                        }),
+                        onFilterChanged: (f) {
+                          setState(() => _activeFilter = f);
+                          _reload();
+                        },
                         showFilters: _showFilters,
                         onFilterToggle: () =>
                             setState(() => _showFilters = !_showFilters),
                         isNarrow: isNarrow,
-                        totalRecords: _filtered.length,
+                        totalRecords: _totalItems,
                       ),
                       const SizedBox(height: 16),
-                      _SearchBar(
-                        controller: _searchCtrl,
-                        onChanged: (v) => setState(() {
-                          _searchQuery = v;
-                          _resetPage();
-                        }),
-                      ),
                       const SizedBox(height: 14),
                       if (_showFilters) ...[
                         _FiltersSection(
@@ -448,14 +404,14 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
                           transportOptions:  _transportOptions,
                           onCheckInFromTap:  () => _pickDate(context, true),
                           onCheckOutToTap:   () => _pickDate(context, false),
-                          onPurposeChanged:  (v) => setState(() {
-                            _selectedPurpose = v;
-                            _resetPage();
-                          }),
-                          onTransportChanged: (v) => setState(() {
-                            _selectedTransport = v;
-                            _resetPage();
-                          }),
+                          onPurposeChanged:  (v) {
+                            setState(() => _selectedPurpose = v);
+                            _reload();
+                          },
+                          onTransportChanged: (v) {
+                            setState(() => _selectedTransport = v);
+                            _reload();
+                          },
                           onClearAll: _clearAllFilters,
                           isNarrow:   isNarrow,
                         ),
@@ -480,23 +436,28 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _GuestTable(
-                              records:  _pagedRows,
+                              records:  _records,
                               isNarrow: isNarrow,
                               onEdit:   _onEdit,
                             ),
                             const SizedBox(height: 12),
                             Paginator(
-                              currentPage:     _clampedPage,
+                              currentPage:     _currentPage,
                               totalPages:      _totalPages,
-                              totalItems:      _filtered.length,
+                              totalItems:      _totalItems,
                               pageSize:        _pageSize,
                               pageSizeOptions: _pageSizeOptions,
-                              onPageSizeChanged: (size) => setState(() {
-                                _pageSize    = size;
-                                _currentPage = 0;
-                              }),
-                              onPageChanged: (page) =>
-                                  setState(() => _currentPage = page),
+                              onPageSizeChanged: (size) {
+                                setState(() {
+                                  _pageSize    = size;
+                                  _currentPage = 0;
+                                });
+                                _loadRecords();
+                              },
+                              onPageChanged: (page) {
+                                setState(() => _currentPage = page);
+                                _loadRecords();
+                              },
                             ),
                           ],
                         ),
@@ -1171,42 +1132,6 @@ class _FilterTab extends StatelessWidget {
             fontSize: 13,
             fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
           ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Search Bar ───────────────────────────────────────────────────────────────
-
-class _SearchBar extends StatelessWidget {
-  const _SearchBar({required this.controller, required this.onChanged});
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 38,
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.cardBorder),
-      ),
-      child: TextField(
-        controller: controller,
-        onChanged: onChanged,
-        style: const TextStyle(color: AppColors.textWhite, fontSize: 13.5),
-        decoration: const InputDecoration(
-          hintText: 'Search by date, purpose, or transport...',
-          hintStyle: TextStyle(color: AppColors.textSubtle, fontSize: 13.5),
-          prefixIcon: Icon(
-            Icons.search_rounded,
-            color: AppColors.textSubtle,
-            size: 20,
-          ),
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 5),
         ),
       ),
     );

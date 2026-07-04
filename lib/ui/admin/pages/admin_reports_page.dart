@@ -38,6 +38,8 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
   String _filterBusinessName = '';
   int _currentPage = 0;
   int _pageSize = 10;
+  int _totalPages = 0;
+  int _totalItems = 0;
 
   static const List<int> _pageSizeOptions = [10, 20, 30];
 
@@ -96,11 +98,19 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       _errorCode = null;
     });
     try {
-      final reports = await _reportService.fetchReports();
+      final result = await _reportService.fetchReports(
+        page: _currentPage + 1,
+        pageSize: _pageSize,
+        month: _filterMonth.isNotEmpty ? _filterMonth : null,
+        year: _filterYear.isNotEmpty ? _filterYear : null,
+        filterBusinessName: _filterBusinessName.isNotEmpty ? _filterBusinessName : null,
+      );
 
       if (!mounted) return;
       setState(() {
-        _reports = reports;
+        _reports = result.data;
+        _totalPages = result.pageCount;
+        _totalItems = result.totalCount;
       });
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -245,32 +255,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       _filterBusinessName = '';
       _currentPage = 0;
     });
-  }
-
-  List<GeneratedReport> get _filteredReports {
-    var list = _reports;
-    if (_filterMonth.isNotEmpty && _filterMonth != 'All Months') {
-      list = list.where((r) => r.periodLabel.contains(_filterMonth)).toList();
-    }
-    if (_filterYear.isNotEmpty && _filterYear != 'All Years') {
-      final y = int.tryParse(_filterYear);
-      if (y != null) list = list.where((r) => r.periodYear == y).toList();
-    }
-    if (_filterBusinessName.isNotEmpty && _filterBusinessName != 'All') {
-      list = list.where((r) => r.businessName == _filterBusinessName).toList();
-    }
-    return list;
-  }
-
-  int get _totalPages =>
-      (_filteredReports.length / _pageSize).ceil().clamp(1, 999);
-
-  int get _clampedPage => _currentPage.clamp(0, _totalPages - 1);
-
-  List<GeneratedReport> get _pagedReports {
-    final start = _clampedPage * _pageSize;
-    final end = (start + _pageSize).clamp(0, _filteredReports.length);
-    return _filteredReports.sublist(start, end);
+    _fetchReports();
   }
 
   void _resetPage() => _currentPage = 0;
@@ -351,18 +336,27 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
                           selectedMonth: _filterMonth,
                           selectedYear: _filterYear,
                           selectedBusinessName: _filterBusinessName,
-                          onMonthChanged: (v) => setState(() {
-                            _filterMonth = v ?? '';
-                            _resetPage();
-                          }),
-                          onYearChanged: (v) => setState(() {
-                            _filterYear = v ?? '';
-                            _resetPage();
-                          }),
-                          onBusinessNameChanged: (v) => setState(() {
-                            _filterBusinessName = v ?? '';
-                            _resetPage();
-                          }),
+                          onMonthChanged: (v) {
+                            setState(() {
+                              _filterMonth = v ?? '';
+                              _currentPage = 0;
+                            });
+                            _fetchReports();
+                          },
+                          onYearChanged: (v) {
+                            setState(() {
+                              _filterYear = v ?? '';
+                              _currentPage = 0;
+                            });
+                            _fetchReports();
+                          },
+                          onBusinessNameChanged: (v) {
+                            setState(() {
+                              _filterBusinessName = v ?? '';
+                              _currentPage = 0;
+                            });
+                            _fetchReports();
+                          },
                           onClear: _clearFilters,
                         ),
                         const SizedBox(height: 20),
@@ -384,24 +378,29 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
                           )
                         else
                           _GeneratedReportsTable(
-                            rows: _pagedReports,
+                            rows: _reports,
                             isLoading: false,
                             onView: _viewReport,
                           ),
                         if (!_loadingReports) ...[
                           const SizedBox(height: 12),
                           Paginator(
-                            currentPage: _clampedPage,
+                            currentPage: _currentPage,
                             totalPages: _totalPages,
-                            totalItems: _filteredReports.length,
+                            totalItems: _totalItems,
                             pageSize: _pageSize,
                             pageSizeOptions: _pageSizeOptions,
-                            onPageSizeChanged: (size) => setState(() {
-                              _pageSize = size;
-                              _currentPage = 0;
-                            }),
-                            onPageChanged: (page) =>
-                                setState(() => _currentPage = page),
+                            onPageSizeChanged: (size) {
+                              setState(() {
+                                _pageSize = size;
+                                _currentPage = 0;
+                              });
+                              _fetchReports();
+                            },
+                            onPageChanged: (page) {
+                              setState(() => _currentPage = page);
+                              _fetchReports();
+                            },
                           ),
                         ],
                         const SizedBox(height: 24),

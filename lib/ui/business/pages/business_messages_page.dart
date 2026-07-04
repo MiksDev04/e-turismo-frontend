@@ -76,6 +76,8 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
   _Filter _activeFilter = _Filter.all;
   int _currentPage = 0;
   int _pageSize = 10;
+  int _totalPages = 0;
+  int _totalItems = 0;
 
   List<InboxMessage> _messages = [];
 
@@ -168,11 +170,24 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
 
     // ── Fetch ─────── ───────────────────────────────────────────────────────
     try {
-      final messages = await _api.fetchInbox(_businessId!);
+      final type = switch (_activeFilter) {
+        _Filter.all          => null,
+        _Filter.compliance   => 'compliance',
+        _Filter.announcement => 'announcement',
+        _Filter.general      => 'general',
+      };
+      final result = await _api.fetchInbox(
+        _businessId!,
+        page: _currentPage + 1,
+        pageSize: _pageSize,
+        type: type,
+      );
       if (mounted) {
         setState(() {
-          _messages  = messages;
-          _isLoading = false;
+          _messages   = result.data;
+          _totalPages = result.pageCount;
+          _totalItems = result.totalCount;
+          _isLoading  = false;
         });
       }
     } catch (e) {
@@ -193,28 +208,7 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
   bool _isRead(InboxMessage msg) =>
       msg.isRead || _locallyRead.contains(msg.recipientId);
 
-  int get _unreadCount => _messages.where((m) => !_isRead(m)).length;
-
-  List<InboxMessage> get _filtered => _messages.where((m) {
-        return switch (_activeFilter) {
-          _Filter.all          => true,
-          _Filter.compliance   => m.messageType == MessageType.compliance,
-          _Filter.announcement => m.messageType == MessageType.announcement,
-          _Filter.general      => m.messageType == MessageType.general,
-        };
-      }).toList();
-
-  int get _totalPages => (_filtered.length / _pageSize).ceil().clamp(1, 999);
-
-  int get _clampedPage => _currentPage.clamp(0, _totalPages - 1);
-
-  List<InboxMessage> get _pagedRows {
-    final start = _clampedPage * _pageSize;
-    final end = (start + _pageSize).clamp(0, _filtered.length);
-    return _filtered.sublist(start, end);
-  }
-
-  void _resetPage() => _currentPage = 0;
+  int get _unreadCount => _totalItems;
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -253,10 +247,13 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
                   const SizedBox(height: 16),
                   _FilterTabBar(
                     activeFilter: _activeFilter,
-                    onChanged: (f) => setState(() {
-                      _activeFilter = f;
-                      _resetPage();
-                    }),
+                    onChanged: (f) {
+                      setState(() {
+                        _activeFilter = f;
+                        _currentPage = 0;
+                      });
+                      _loadData();
+                    },
                   ),
                   const SizedBox(height: 16),
                   _buildBody(isNarrow),
@@ -273,13 +270,13 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
     if (_isLoading)          return const _LoadingState();
     if (_isOffline)          return OfflineState(onRetry: _loadData);
     if (_error != null)      return _ErrorState(message: _error!, onRetry: _loadData);
-    if (_filtered.isEmpty)   return const _EmptyState();
+    if (_messages.isEmpty)   return const _EmptyState();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Column(
-          children: _pagedRows.map((msg) {
+          children: _messages.map((msg) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: _MessageCard(
@@ -294,18 +291,22 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
         ),
         const SizedBox(height: 12),
         Paginator(
-          currentPage: _clampedPage,
+          currentPage: _currentPage,
           totalPages: _totalPages,
-          totalItems: _filtered.length,
+          totalItems: _totalItems,
           pageSize: _pageSize,
           pageSizeOptions: _pageSizeOptions,
-          onPageSizeChanged: (size) => setState(() {
-            _pageSize = size;
-            _currentPage = 0;
-          }),
-          onPageChanged: (page) => setState(() {
-            _currentPage = page;
-          }),
+          onPageSizeChanged: (size) {
+            setState(() {
+              _pageSize = size;
+              _currentPage = 0;
+            });
+            _loadData();
+          },
+          onPageChanged: (page) {
+            setState(() => _currentPage = page);
+            _loadData();
+          },
         ),
       ],
     );

@@ -255,7 +255,7 @@ class SyncService {
       }
 
       if (businessId != null) {
-        await _pullForBusiness(businessId);
+        await _pullFromBackend(businessId: businessId);
       }
     } catch (e) {
       debugPrint('⚠️ _handleOnlineTransition: initial pulls failed: $e');
@@ -474,7 +474,7 @@ class SyncService {
   // ---------------------------------------------------------------------------
   // PULL FROM BACKEND
   // ---------------------------------------------------------------------------
-  Future<void> _pullFromBackend() async {
+  Future<void> _pullFromBackend({String? businessId}) async {
     if (!await _canReachBackend()) {
       debugPrint('⏭ _pullFromBackend: skipped — Backend unreachable');
       return;
@@ -482,105 +482,135 @@ class SyncService {
 
     final db = await LocalDatabase.instance.database;
 
-    final businesses = await db.query(
-      LocalDatabase.tableLocalBusinesses,
-      columns: ['id'],
-    );
+    final businesses = businessId != null
+        ? [{'id': businessId}]
+        : await db.query(
+            LocalDatabase.tableLocalBusinesses,
+            columns: ['id'],
+          );
 
     for (final business in businesses) {
       final businessId = business['id'] as String;
 
       try {
-        final response = await http.get(
-          Uri.parse(
-            '$_baseUrl/api/business/guest-records?businessId=$businessId',
-          ),
-          headers: _headers,
-        );
+        // ── Fetch both active and archived records ─────────────────────────
+        // The online dashboard API returns ALL statuses; the offline sync must
+        // mirror that so dashboard stats are complete in offline mode.
+        final baseUrl =
+            '$_baseUrl/api/business/guest-records'
+            '?businessId=$businessId'
+            '&fetchAll=true'
+            '&checkInFrom=2020-01-01'
+            '&checkOutTo=2030-12-31';
+        final urls = [
+          baseUrl,                              // active (default)
+          '$baseUrl&status=archived',           // archived
+        ];
 
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          final remoteRecords = jsonDecode(response.body) as List<dynamic>;
-          final remoteIds =
-              remoteRecords.map((r) => r['id'] as String).toSet();
+        final allRemoteRecords = <Map<String, dynamic>>[];
+        final seenIds = <String>{};
 
-          // 1. Prune local synced records that no longer exist on the cloud.
-          final localSynced = await db.query(
-            LocalDatabase.tableGuestRecords,
-            columns: ['id', 'local_updated_at'],
-            where: 'business_id = ? AND sync_status = ?',
-            whereArgs: [businessId, LocalDatabase.syncSynced],
+        for (final url in urls) {
+          final response = await http.get(
+            Uri.parse(url),
+            headers: _headers,
           );
-
-          final now = DateTime.now().toUtc();
-          for (final local in localSynced) {
-            final id = local['id'] as String;
-            if (!remoteIds.contains(id)) {
-              // Grace period: skip recently-synced records to avoid a race
-              // where the POST just succeeded but the GET hasn't caught up yet.
-              final localUpdatedAtStr = local['local_updated_at'] as String?;
-              if (localUpdatedAtStr != null) {
-                final updatedAt = DateTime.tryParse(localUpdatedAtStr);
-                if (updatedAt != null &&
-                    now.difference(updatedAt).inSeconds < 60) {
-                  debugPrint(
-                    '⏳ Skipping pruning for just-synced record $id (grace period)',
-                  );
-                  continue;
-                }
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            final decoded = jsonDecode(response.body);
+            final records = decoded is List<dynamic>
+                ? decoded
+                : (decoded is Map ? (decoded['data'] as List? ?? []) : []);
+            for (final r in records) {
+              final id = r['id'] as String;
+              if (seenIds.add(id)) {
+                allRemoteRecords.add(Map<String, dynamic>.from(r));
               }
-
-              debugPrint(
-                '🧹 Pruning local synced record $id (not found on cloud)',
-              );
-              await db.delete(
-                LocalDatabase.tableGuestRecords,
-                where: 'id = ?',
-                whereArgs: [id],
-              );
-              await db.delete(
-                LocalDatabase.tableGuestBreakdowns,
-                where: 'guest_record_id = ?',
-                whereArgs: [id],
-              );
             }
           }
+        }
 
-          // 2. Insert / Update records from cloud (skip any with pending changes).
-          for (final remote in remoteRecords) {
-            final recordId = remote['id'] as String;
+        if (allRemoteRecords.isEmpty) continue;
 
-            final pending = await db.query(
-              LocalDatabase.tableGuestRecords,
-              where: 'id = ? AND sync_status != ?',
-              whereArgs: [recordId, LocalDatabase.syncSynced],
-              limit: 1,
-            );
-            if (pending.isNotEmpty) {
-              debugPrint('⏳ _pullFromBackend: skipping cloud record $recordId (has local pending changes)');
-              continue;
+        final remoteRecords = allRemoteRecords;
+        final remoteIds = seenIds;
+
+        // 1. Prune local synced records that no longer exist on the cloud.
+        final localSynced = await db.query(
+          LocalDatabase.tableGuestRecords,
+          columns: ['id', 'local_updated_at'],
+          where: 'business_id = ? AND sync_status = ?',
+          whereArgs: [businessId, LocalDatabase.syncSynced],
+        );
+
+        final now = DateTime.now().toUtc();
+        for (final local in localSynced) {
+          final id = local['id'] as String;
+          if (!remoteIds.contains(id)) {
+            // Grace period: skip recently-synced records to avoid a race
+            // where the POST just succeeded but the GET hasn't caught up yet.
+            final localUpdatedAtStr = local['local_updated_at'] as String?;
+            if (localUpdatedAtStr != null) {
+              final updatedAt = DateTime.tryParse(localUpdatedAtStr);
+              if (updatedAt != null &&
+                  now.difference(updatedAt).inSeconds < 60) {
+                debugPrint(
+                  '⏳ Skipping pruning for just-synced record $id (grace period)',
+                );
+                continue;
+              }
             }
 
-            await db.insert(
-              LocalDatabase.tableGuestRecords,
-              _fromApiRecord(remote as Map<String, dynamic>),
-              conflictAlgorithm: ConflictAlgorithm.replace,
+            debugPrint(
+              '🧹 Pruning local synced record $id (not found on cloud)',
             );
-
+            await db.delete(
+              LocalDatabase.tableGuestRecords,
+              where: 'id = ?',
+              whereArgs: [id],
+            );
             await db.delete(
               LocalDatabase.tableGuestBreakdowns,
               where: 'guest_record_id = ?',
-              whereArgs: [recordId],
+              whereArgs: [id],
             );
+          }
+        }
 
-            final breakdowns =
-                remote['guest_breakdowns'] as List<dynamic>? ?? [];
-            for (final b in breakdowns) {
-              await db.insert(
-                LocalDatabase.tableGuestBreakdowns,
-                _fromApiBreakdown(b as Map<String, dynamic>, recordId),
-                conflictAlgorithm: ConflictAlgorithm.replace,
-              );
-            }
+        // 2. Insert / Update records from cloud (skip any with pending changes).
+        for (final remote in remoteRecords) {
+          final recordId = remote['id'] as String;
+
+          final pending = await db.query(
+            LocalDatabase.tableGuestRecords,
+            where: 'id = ? AND sync_status != ?',
+            whereArgs: [recordId, LocalDatabase.syncSynced],
+            limit: 1,
+          );
+          if (pending.isNotEmpty) {
+            debugPrint('⏳ _pullFromBackend: skipping cloud record $recordId (has local pending changes)');
+            continue;
+          }
+
+          await db.insert(
+            LocalDatabase.tableGuestRecords,
+            _fromApiRecord(remote),
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+
+          await db.delete(
+            LocalDatabase.tableGuestBreakdowns,
+            where: 'guest_record_id = ?',
+            whereArgs: [recordId],
+          );
+
+          final breakdowns =
+              remote['guest_breakdowns'] as List<dynamic>? ?? [];
+          for (final b in breakdowns) {
+            await db.insert(
+              LocalDatabase.tableGuestBreakdowns,
+              _fromApiBreakdown(b as Map<String, dynamic>, recordId),
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
           }
         }
       } on SocketException catch (e) {
@@ -618,7 +648,6 @@ class SyncService {
             'email': user['email'],
             'phone': user['phone'],
             'role': user['role'],
-            'password_hash': 'sync_dummy_hash',
           };
           final count = await db.update(
             LocalDatabase.tableLocalProfiles,
@@ -627,6 +656,7 @@ class SyncService {
             whereArgs: [user['id']],
           );
           if (count == 0) {
+            data['password_hash'] = 'sync_dummy_hash';
             await db.insert(LocalDatabase.tableLocalProfiles, data);
           }
         }
@@ -667,69 +697,6 @@ class SyncService {
       }
     } catch (e) {
       debugPrint('⚠️ _pullProfileAndBusiness failed: $e');
-    }
-  }
-
-  Future<void> _pullForBusiness(String businessId) async {
-    if (!await _canReachBackend()) {
-      debugPrint('⏭ _pullForBusiness: skipped — Backend unreachable');
-      return;
-    }
-
-    final db = await LocalDatabase.instance.database;
-
-    try {
-      final response = await http.get(
-        Uri.parse(
-          '$_baseUrl/api/business/guest-records?businessId=$businessId',
-        ),
-        headers: _headers,
-      );
-
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final remoteRecords = jsonDecode(response.body) as List<dynamic>;
-
-        for (final remote in remoteRecords) {
-          final recordId = remote['id'] as String;
-
-          final pending = await db.query(
-            LocalDatabase.tableGuestRecords,
-            where: 'id = ? AND sync_status != ?',
-            whereArgs: [recordId, LocalDatabase.syncSynced],
-            limit: 1,
-          );
-          if (pending.isNotEmpty) {
-            debugPrint('⏳ _pullForBusiness: skipping cloud record $recordId (has local pending changes)');
-            continue;
-          }
-
-          await db.insert(
-            LocalDatabase.tableGuestRecords,
-            _fromApiRecord(remote as Map<String, dynamic>),
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
-
-          await db.delete(
-            LocalDatabase.tableGuestBreakdowns,
-            where: 'guest_record_id = ?',
-            whereArgs: [recordId],
-          );
-
-          final breakdowns =
-              remote['guest_breakdowns'] as List<dynamic>? ?? [];
-          for (final b in breakdowns) {
-            await db.insert(
-              LocalDatabase.tableGuestBreakdowns,
-              _fromApiBreakdown(b as Map<String, dynamic>, recordId),
-              conflictAlgorithm: ConflictAlgorithm.replace,
-            );
-          }
-        }
-      }
-    } on SocketException catch (e) {
-      debugPrint('🌐 _pullForBusiness: network lost — aborting ($e)');
-    } catch (e) {
-      debugPrint('❌ _pullForBusiness: failed for business $businessId — $e');
     }
   }
 
