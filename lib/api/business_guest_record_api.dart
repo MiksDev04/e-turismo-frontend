@@ -209,49 +209,54 @@ class BusinessGuestRecordApi extends BaseApi {
     String? purpose,
     String? transport,
   }) async {
+    debugPrint('🔍 _fetchOnline: businessId=$businessId page=$page pageSize=$pageSize');
+
+    final queryParams = <String, String>{
+      'businessId': businessId,
+      'page': page.toString(),
+      'pageSize': pageSize.toString(),
+    };
+    if (status != null) queryParams['status'] = status;
+    if (checkInFrom != null) queryParams['checkInFrom'] = checkInFrom;
+    if (checkOutTo != null) queryParams['checkOutTo'] = checkOutTo;
+    if (purpose != null && purpose != 'All') queryParams['purpose'] = purpose;
+    if (transport != null && transport != 'All') queryParams['transport'] = transport;
+
+    final uri = Uri.parse('/api/business/guest-records').replace(queryParameters: queryParams);
+    final response = await get(uri.toString());
+
+    Map<String, dynamic> body;
+    List rows;
+    int totalCount;
+    int pageCount;
     try {
-      debugPrint('🔍 _fetchOnline: businessId=$businessId page=$page pageSize=$pageSize');
-
-      final queryParams = <String, String>{
-        'businessId': businessId,
-        'page': page.toString(),
-        'pageSize': pageSize.toString(),
-      };
-      if (status != null) queryParams['status'] = status;
-      if (checkInFrom != null) queryParams['checkInFrom'] = checkInFrom;
-      if (checkOutTo != null) queryParams['checkOutTo'] = checkOutTo;
-      if (purpose != null && purpose != 'All') queryParams['purpose'] = purpose;
-      if (transport != null && transport != 'All') queryParams['transport'] = transport;
-
-      final uri = Uri.parse('/api/business/guest-records').replace(queryParameters: queryParams);
-      final response = await get(uri.toString());
-      final body = handleResponse(response) as Map<String, dynamic>;
-      final rows = body['data'] as List? ?? [];
-      final totalCount = (body['totalCount'] as num?)?.toInt() ?? 0;
-      final pageCount = (body['pageCount'] as num?)?.toInt() ?? 0;
-
-      debugPrint('☁️ _fetchOnline: found ${rows.length} cloud records (total=$totalCount, pages=$pageCount)');
-
-      final cloudRecords = _parseNodeRows(rows);
-      final allRecords   = List<GuestRecord>.from(cloudRecords);
-
-      if (!kIsWeb) {
-        final merged = await _getMergedLocalRecords(businessId, cloudRecords.map((r) => r.id).toSet());
-        debugPrint('🧩 _fetchOnline: merged ${merged.length} local records');
-        allRecords.addAll(merged);
-        allRecords.sort((a, b) => b.checkIn.compareTo(a.checkIn));
-      }
-
-      if (page == 1) {
-        _refreshLocalCache(businessId, rows).catchError(
-          (e) => debugPrint('⚠️ Local cache refresh error: $e'),
-        );
-      }
-
-      return ApiResult.success((data: allRecords, totalCount: totalCount, pageCount: pageCount));
+      body = handleResponse(response) as Map<String, dynamic>;
+      rows = body['data'] as List? ?? [];
+      totalCount = (body['totalCount'] as num?)?.toInt() ?? 0;
+      pageCount = (body['pageCount'] as num?)?.toInt() ?? 0;
     } catch (e) {
       return ApiResult.failure('Failed to load records: $e');
     }
+
+    debugPrint('☁️ _fetchOnline: found ${rows.length} cloud records (total=$totalCount, pages=$pageCount)');
+
+    final cloudRecords = _parseNodeRows(rows);
+    final allRecords   = List<GuestRecord>.from(cloudRecords);
+
+    if (!kIsWeb) {
+      final merged = await _getMergedLocalRecords(businessId, cloudRecords.map((r) => r.id).toSet());
+      debugPrint('🧩 _fetchOnline: merged ${merged.length} local records');
+      allRecords.addAll(merged);
+      allRecords.sort((a, b) => b.checkIn.compareTo(a.checkIn));
+    }
+
+    if (page == 1) {
+      _refreshLocalCache(businessId, rows).catchError(
+        (e) => debugPrint('⚠️ Local cache refresh error: $e'),
+      );
+    }
+
+    return ApiResult.success((data: allRecords, totalCount: totalCount, pageCount: pageCount));
   }
 
   Future<List<GuestRecord>> _getMergedLocalRecords(String businessId, Set<String> cloudIds) async {

@@ -3,6 +3,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:app/ui/shared/pages/error_page.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../api/messages_api.dart';
 import '../../../api/login_api.dart';
@@ -86,6 +87,7 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
 
   bool    _isLoading  = true;
   String? _error;
+  int? _errorCode;
   String? _businessId;
 
   static const List<int> _pageSizeOptions = [10, 20, 30];
@@ -140,6 +142,7 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
     setState(() {
       _isLoading = true;
       _error     = null;
+      _errorCode = null;
     });
 
     // ── Pre-check connectivity ─────────────────────────────────────────────
@@ -192,8 +195,11 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
       }
     } catch (e) {
       if (!mounted) return;
-      if (isNetworkError(e)) {
+      final code = await classifyError(e);
+      if (code == 503) {
         setState(() { _isOffline = true; _isLoading = false; });
+      } else if (code == 500 || code == 408) {
+        setState(() { _errorCode = code; _isLoading = false; });
       } else {
         setState(() {
           _error     = 'Failed to load messages. Please try again.';
@@ -268,6 +274,7 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
 
   Widget _buildBody(bool isNarrow) {
     if (_isLoading)          return const _LoadingState();
+    if (_errorCode != null)  return ErrorPage(statusCode: _errorCode!, onRetry: _loadData);
     if (_isOffline)          return OfflineState(onRetry: _loadData);
     if (_error != null)      return _ErrorState(message: _error!, onRetry: _loadData);
     if (_messages.isEmpty)   return const _EmptyState();

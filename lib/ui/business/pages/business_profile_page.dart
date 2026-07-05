@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:app/ui/shared/pages/error_page.dart';
 import '../widgets/business_document_preview_modal.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/session_service.dart';
@@ -121,6 +122,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
 
   // ── Load state ────────────────────────────────────────────────────────────
   bool _isLoading = true;
+  int? _errorCode;
   ProfileModel? _profile;
   BusinessModel? _business;
 
@@ -249,6 +251,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
     setState(() {
       _isLoading = true;
       _isOffline = false;
+      _errorCode = null;
     });
 
     // ── Pre-check connectivity ─────────────────────────────────────────────
@@ -286,15 +289,24 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
       _populate();
     } on ProfileApiException catch (e) {
       if (!mounted) return;
-      if (isNetworkError(e)) {
+      final code = await classifyError(e);
+      if (code == 503) {
         setState(() { _isOffline = true; });
         return;
       }
-      // Non-network API error — loading stops, page shows whatever was loaded.
+      if (code == 500 || code == 408) {
+        setState(() { _errorCode = code; });
+        return;
+      }
     } catch (e) {
       if (!mounted) return;
-      if (isNetworkError(e)) {
+      final code = await classifyError(e);
+      if (code == 503) {
         setState(() { _isOffline = true; });
+        return;
+      }
+      if (code == 500 || code == 408) {
+        setState(() { _errorCode = code; });
         return;
       }
     } finally {
@@ -534,11 +546,13 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
       title: 'Profile',
       selectedIndex: 5,
       onNavSelected: (_) {},
-      child: _isOffline
-          ? OfflineState(onRetry: _loadData)
-          : _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : LayoutBuilder(
+      child: _errorCode != null
+          ? ErrorPage(statusCode: _errorCode!, onRetry: _loadData)
+          : _isOffline
+              ? OfflineState(onRetry: _loadData)
+              : _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : LayoutBuilder(
                   builder: (context, constraints) {
                     final isNarrow = constraints.maxWidth < 600;
                     return SingleChildScrollView(
