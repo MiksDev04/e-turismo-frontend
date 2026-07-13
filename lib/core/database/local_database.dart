@@ -1,4 +1,5 @@
 import 'package:path/path.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 /// ---------------------------------------------------------------------------
@@ -49,9 +50,17 @@ class LocalDatabase {
   }
 
   // ── init ───────────────────────────────────────────────────────────────────
+  // NOTE: We deliberately do NOT use sqflite's getDatabasesPath() here.
+  // On desktop (sqflite_common_ffi), that defaults to a path *relative to
+  // the current working directory* (.dart_tool/sqflite_common_ffi/databases).
+  // That works fine when running via `flutter run` from the project folder,
+  // but breaks once installed to C:\Program Files\... , which is a
+  // UAC-protected folder standard Windows accounts can't write into.
+  // getApplicationSupportDirectory() resolves to a proper per-user,
+  // always-writable folder (under %APPDATA% on Windows) instead.
   Future<Database> _initDatabase() async {
-    final dbPath = await getDatabasesPath();
-    final fullPath = join(dbPath, _kDbName);
+    final supportDir = await getApplicationSupportDirectory();
+    final fullPath = join(supportDir.path, _kDbName);
 
     return openDatabase(
       fullPath,
@@ -67,8 +76,8 @@ class LocalDatabase {
   /// Returns the full filesystem path to the SQLite database file.
   /// Useful for logging or diagnostics on desktop platforms.
   Future<String> getDatabaseFilePath() async {
-    final dbPath = await getDatabasesPath();
-    return join(dbPath, _kDbName);
+    final supportDir = await getApplicationSupportDirectory();
+    return join(supportDir.path, _kDbName);
   }
 
   // ── onCreate — full schema at current version ──────────────────────────────
@@ -101,8 +110,8 @@ class LocalDatabase {
 
   // ── helper: delete database (dev/debug only) ───────────────────────────────
   Future<void> deleteDatabaseFile() async {
-    final dbPath = await getDatabasesPath();
-    final fullPath = join(dbPath, _kDbName);
+    final supportDir = await getApplicationSupportDirectory();
+    final fullPath = join(supportDir.path, _kDbName);
     await deleteDatabase(fullPath);
     _db = null;
   }
