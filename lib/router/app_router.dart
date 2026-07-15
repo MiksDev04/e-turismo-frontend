@@ -4,6 +4,7 @@ import 'package:app/router/app_routes.dart';
 
 import 'package:app/ui/shared/pages/login_page.dart';
 import 'package:app/ui/shared/pages/register_page.dart';
+import 'package:app/ui/shared/pages/admin_setup_page.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import 'package:app/ui/admin/pages/admin_dashboard_page.dart';
 import 'package:app/ui/admin/pages/admin_accommodations_page.dart';
@@ -62,6 +63,7 @@ abstract final class _RoutePermissions {
   static const Map<String, Set<String>> _map = {
     AppRoutes.login: {},
     AppRoutes.register: {},
+    AppRoutes.adminSetup: {},
     AppRoutes.adminDashboard: {'admin'},
     AppRoutes.adminAccommodations: {'admin'},
     AppRoutes.adminMessages: {'admin'},
@@ -111,7 +113,9 @@ abstract final class AppRouter {
     final routeName = settings.name ?? '';
 
     // ── Auth redirect (already logged in → away from login/register) ──────
-    if (routeName == AppRoutes.login || routeName == AppRoutes.register) {
+    if (routeName == AppRoutes.login ||
+        routeName == AppRoutes.register ||
+        routeName == AppRoutes.adminSetup) {
       final session = SessionService.instance.current;
       if (session != null) {
         final route = session.role == 'admin'
@@ -137,10 +141,7 @@ abstract final class AppRouter {
     }
     if (guardResult == '__denied__') {
       return _fade(
-        _wrapError(
-          routeName,
-          const ErrorPage(statusCode: 403),
-        ),
+        _wrapError(routeName, const ErrorPage(statusCode: 403)),
         settings,
       );
     }
@@ -166,7 +167,10 @@ abstract final class AppRouter {
     if (routeName.isEmpty || routeName == '/') {
       final session = SessionService.instance.current;
       if (session == null) {
-        return _fade(const LoginPage(), const RouteSettings(name: AppRoutes.login));
+        return _fade(
+          const LoginPage(),
+          const RouteSettings(name: AppRoutes.login),
+        );
       }
       return _fade(
         session.role == 'admin'
@@ -184,6 +188,7 @@ abstract final class AppRouter {
     return switch (routeName) {
       AppRoutes.login => _fade(const LoginPage(), settings),
       AppRoutes.register => _fade(const RegisterPage(), settings),
+      AppRoutes.adminSetup => _fade(const AdminSetupPage(), settings),
       AppRoutes.adminDashboard => _fade(const AdminDashboardPage(), settings),
       AppRoutes.adminAccommodations => _fade(
         const AdminAccommodationsPage(),
@@ -270,10 +275,9 @@ class _AuthRedirectWidgetState extends State<_AuthRedirectWidget> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          AppRoutes.login,
-          (route) => false,
-        );
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil(AppRoutes.login, (route) => false);
       }
     });
   }
@@ -290,7 +294,8 @@ class _AuthRedirectWidgetState extends State<_AuthRedirectWidget> {
 class _RedirectToInitialWidget extends StatefulWidget {
   const _RedirectToInitialWidget();
   @override
-  State<_RedirectToInitialWidget> createState() => _RedirectToInitialWidgetState();
+  State<_RedirectToInitialWidget> createState() =>
+      _RedirectToInitialWidgetState();
 }
 
 class _RedirectToInitialWidgetState extends State<_RedirectToInitialWidget> {
@@ -303,8 +308,8 @@ class _RedirectToInitialWidgetState extends State<_RedirectToInitialWidget> {
       final route = session == null
           ? AppRoutes.login
           : session.role == 'admin'
-              ? AppRoutes.adminDashboard
-              : AppRoutes.businessDashboard;
+          ? AppRoutes.adminDashboard
+          : AppRoutes.businessDashboard;
       Navigator.of(context).pushNamedAndRemoveUntil(route, (route) => false);
     });
   }

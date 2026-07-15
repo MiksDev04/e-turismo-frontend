@@ -3,6 +3,7 @@
 abstract final class AppRoutes {
   static const login = '/login';
   static const register = '/register';
+  static const adminSetup = '/admin/setup';
   static const adminDashboard = '/admin/dashboard';
   static const adminAccommodations = '/admin/accommodations';
   static const adminMessages = '/admin/messages';
