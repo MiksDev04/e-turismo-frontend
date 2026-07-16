@@ -195,3 +195,25 @@ class Accommodation {
   String get businessLineLabel =>
       businessLines.isEmpty ? '—' : businessLines.map((line) => line.label).join(', ');
 }
+
+// ─── Room Info ────────────────────────────────────────────────────────────────
+
+class RoomInfo {
+  const RoomInfo({
+    required this.roomNumber,
+    required this.occupancy,
+    required this.roomStatus,
+  });
+
+  final String roomNumber;
+  final int occupancy;
+  final String roomStatus;
+
+  factory RoomInfo.fromMap(Map<String, dynamic> map) {
+    return RoomInfo(
+      roomNumber: map['room_number'] as String? ?? '—',
+      occupancy: (map['occupancy'] as num?)?.toInt() ?? 1,
+      roomStatus: (map['room_status'] as String?) ?? 'vacant',
+    );
+  }
+}

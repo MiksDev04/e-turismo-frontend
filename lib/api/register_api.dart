@@ -137,6 +137,7 @@ class RegisterApi {
     required String ownerMiddleName,
     required String ownerLastName,
     required int totalRooms,
+    required List<Map<String, String>> rooms,
     required String permitNumber,
     required String registrationNumber,
     required String street,
@@ -159,6 +160,7 @@ class RegisterApi {
         ownerLastName: ownerLastName,
         businessLine: businessLine,
         totalRooms: totalRooms,
+        rooms: rooms,
         permitNumber: permitNumber,
         registrationNumber: registrationNumber,
         street: street,
@@ -187,6 +189,7 @@ class RegisterApi {
       request.fields['ownerMiddleName'] = ownerMiddleName;
       request.fields['ownerLastName'] = ownerLastName;
       request.fields['totalRooms'] = totalRooms.toString();
+      request.fields['rooms'] = jsonEncode(rooms);
       request.fields['permitNumber'] = permitNumber;
       request.fields['registrationNumber'] = registrationNumber;
       request.fields['street'] = street;
@@ -282,6 +285,7 @@ class RegisterApi {
     required String ownerLastName,
     required List<String> businessLine,
     required int totalRooms,
+    required List<Map<String, String>> rooms,
     required String permitNumber,
     required String registrationNumber,
     required String street,

@@ -269,6 +269,26 @@ class AdminAccommodationApi extends BaseApi {
       return AccommodationResult.err('Failed to delete. Please try again.');
     }
   }
+
+  // ── Fetch individual rooms for a business ────────────────────────────────
+  Future<List<RoomInfo>> fetchRooms(String businessId) async {
+    try {
+      final response = await get(
+        '/api/admin/accommodations/$businessId/rooms',
+      );
+      final body = handleResponse(response);
+      final list = body['data'] as List;
+      return list
+          .map((e) => RoomInfo.fromMap(e as Map<String, dynamic>))
+          .toList();
+    } on ApiException catch (e) {
+      debugPrint('❌ fetchRooms error: ${e.statusCode} ${e.message}');
+      return [];
+    } catch (e) {
+      debugPrint('❌ fetchRooms unexpected error: $e');
+      return [];
+    }
+  }
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────────

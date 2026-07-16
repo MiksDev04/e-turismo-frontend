@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
+import '../../../api/admin_accommodation_api.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/document_service.dart';
 import '../../business/widgets/business_document_preview_modal.dart';
@@ -10,6 +11,7 @@ import '../models/accommodation_models.dart';
 
 class BusinessDetails {
   const BusinessDetails({
+    required this.businessId,
     required this.name,
     required this.tradeName,
     required this.type,
@@ -32,6 +34,7 @@ class BusinessDetails {
     required this.validIdUrl,
   });
 
+  final String businessId;
   final String name;
   final String tradeName;
   final String type;
@@ -84,7 +87,12 @@ class _BusinessDetailsModalState extends State<BusinessDetailsModal>
   late final Animation<double> _fadeAnim;
   late final Animation<Offset> _slideAnim;
 
-  static const _modalMaxWidth = 480.0;
+  static const _modalMaxWidthCompact = 480.0;
+  static const _modalMaxWidthWide = 780.0;
+
+  final _api = AdminAccommodationApi();
+  List<RoomInfo> _rooms = [];
+  bool _loadingRooms = true;
 
   @override
   void initState() {
@@ -99,6 +107,16 @@ class _BusinessDetailsModalState extends State<BusinessDetailsModal>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut));
     _animCtrl.forward();
+    _loadRooms();
+  }
+
+  Future<void> _loadRooms() async {
+    final rooms = await _api.fetchRooms(widget.details.businessId);
+    if (!mounted) return;
+    setState(() {
+      _rooms = rooms;
+      _loadingRooms = false;
+    });
   }
 
   @override
@@ -109,6 +127,11 @@ class _BusinessDetailsModalState extends State<BusinessDetailsModal>
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWide = screenWidth >= 700;
+    final modalMaxWidth =
+        isWide ? _modalMaxWidthWide : _modalMaxWidthCompact;
+
     return Center(
       child: GestureDetector(
         onTap: () => Navigator.of(context).pop(),
@@ -123,7 +146,7 @@ class _BusinessDetailsModalState extends State<BusinessDetailsModal>
                 position: _slideAnim,
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: _modalMaxWidth),
+                    constraints: BoxConstraints(maxWidth: modalMaxWidth),
                     child: Container(
                       margin: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
@@ -144,41 +167,24 @@ class _BusinessDetailsModalState extends State<BusinessDetailsModal>
                           _ModalHeader(
                             onClose: () => Navigator.of(context).pop(),
                           ),
-                          const Divider(color: AppColors.cardBorder, height: 1),
+                          const Divider(
+                            color: AppColors.cardBorder,
+                            height: 1,
+                          ),
                           Flexible(
                             child: SingleChildScrollView(
                               padding: const EdgeInsets.all(20),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _BusinessIdentity(details: widget.details),
-                                  const SizedBox(height: 20),
-                                  const Divider(
-                                    color: AppColors.cardBorder,
-                                    height: 1,
-                                  ),
-                                  const SizedBox(height: 20),
-                                  _DetailsGrid(details: widget.details),
-                                  const SizedBox(height: 20),
-                                  const Divider(
-                                    color: AppColors.cardBorder,
-                                    height: 1,
-                                  ),
-                                  const SizedBox(height: 20),
-                                  _ContactInfo(details: widget.details),
-                                  const SizedBox(height: 20),
-                                  const Divider(
-                                    color: AppColors.cardBorder,
-                                    height: 1,
-                                  ),
-                                  const SizedBox(height: 20),
-                                  _DocumentsSection(
-                                    permitFileUrl: widget.details.permitFileUrl,
-                                    validIdUrl: widget.details.validIdUrl,
-                                  ),
-                                  const SizedBox(height: 4),
-                                ],
-                              ),
+                              child: isWide
+                                  ? _WideLayout(
+                                      details: widget.details,
+                                      rooms: _rooms,
+                                      loadingRooms: _loadingRooms,
+                                    )
+                                  : _CompactLayout(
+                                      details: widget.details,
+                                      rooms: _rooms,
+                                      loadingRooms: _loadingRooms,
+                                    ),
                             ),
                           ),
                         ],
@@ -191,6 +197,121 @@ class _BusinessDetailsModalState extends State<BusinessDetailsModal>
           ),
         ),
       ),
+    );
+  }
+}
+
+// ─── Modal Header ─────────────────────────────────────────────────────────────
+
+// ─── Responsive Layouts ──────────────────────────────────────────────────────
+
+class _WideLayout extends StatelessWidget {
+  const _WideLayout({
+    required this.details,
+    required this.rooms,
+    required this.loadingRooms,
+  });
+
+  final BusinessDetails details;
+  final List<RoomInfo> rooms;
+  final bool loadingRooms;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _BusinessIdentity(details: details),
+        const SizedBox(height: 20),
+        const Divider(color: AppColors.cardBorder, height: 1),
+        const SizedBox(height: 20),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Left column: business info ──────────────────────
+              Expanded(
+                flex: 3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _DetailsGrid(details: details),
+                    const SizedBox(height: 20),
+                    const Divider(color: AppColors.cardBorder, height: 1),
+                    const SizedBox(height: 20),
+                    _ContactInfo(details: details),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 24),
+              // ── Vertical divider ────────────────────────────────
+              const VerticalDivider(
+                color: AppColors.cardBorder,
+                width: 1,
+              ),
+              const SizedBox(width: 24),
+              // ── Right column: room info ─────────────────────────
+              Expanded(
+                flex: 2,
+                child: _RoomInfoSection(
+                  rooms: rooms,
+                  isLoading: loadingRooms,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        const Divider(color: AppColors.cardBorder, height: 1),
+        const SizedBox(height: 20),
+        _DocumentsSection(
+          permitFileUrl: details.permitFileUrl,
+          validIdUrl: details.validIdUrl,
+        ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+}
+
+class _CompactLayout extends StatelessWidget {
+  const _CompactLayout({
+    required this.details,
+    required this.rooms,
+    required this.loadingRooms,
+  });
+
+  final BusinessDetails details;
+  final List<RoomInfo> rooms;
+  final bool loadingRooms;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _BusinessIdentity(details: details),
+        const SizedBox(height: 20),
+        const Divider(color: AppColors.cardBorder, height: 1),
+        const SizedBox(height: 20),
+        _DetailsGrid(details: details),
+        const SizedBox(height: 20),
+        const Divider(color: AppColors.cardBorder, height: 1),
+        const SizedBox(height: 20),
+        _RoomInfoSection(rooms: rooms, isLoading: loadingRooms),
+        const SizedBox(height: 20),
+        const Divider(color: AppColors.cardBorder, height: 1),
+        const SizedBox(height: 20),
+        _ContactInfo(details: details),
+        const SizedBox(height: 20),
+        const Divider(color: AppColors.cardBorder, height: 1),
+        const SizedBox(height: 20),
+        _DocumentsSection(
+          permitFileUrl: details.permitFileUrl,
+          validIdUrl: details.validIdUrl,
+        ),
+        const SizedBox(height: 4),
+      ],
     );
   }
 }
@@ -392,6 +513,270 @@ class _DetailField extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─── Room Info Section ────────────────────────────────────────────────────────
+
+class _RoomInfoSection extends StatelessWidget {
+  const _RoomInfoSection({
+    required this.rooms,
+    required this.isLoading,
+  });
+
+  final List<RoomInfo> rooms;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Text(
+              'Room Information',
+              style: TextStyle(
+                color: AppColors.textSubtle,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (!isLoading) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryCyan.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${rooms.length} rooms',
+                  style: const TextStyle(
+                    color: AppColors.primaryCyan,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryCyan.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${rooms.fold(0, (sum, r) => sum + r.occupancy)} pax',
+                  style: const TextStyle(
+                    color: AppColors.primaryCyan,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (isLoading)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  color: AppColors.primaryCyan,
+                  strokeWidth: 2,
+                ),
+              ),
+            ),
+          )
+        else if (rooms.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            decoration: BoxDecoration(
+              color: AppColors.inputBackground,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.cardBorder),
+            ),
+            child: const Center(
+              child: Text(
+                'No room data available',
+                style: TextStyle(
+                  color: AppColors.textSubtle,
+                  fontSize: 12.5,
+                ),
+              ),
+            ),
+          )
+        else
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: AppColors.inputBackground,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.cardBorder),
+            ),
+            child: Column(
+              children: [
+                // Header row
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: AppColors.cardBorder),
+                    ),
+                  ),
+                  child: const Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          'Room #',
+                          style: TextStyle(
+                            color: AppColors.textSubtle,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          'Capacity',
+                          style: TextStyle(
+                            color: AppColors.textSubtle,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            'Status',
+                            style: TextStyle(
+                              color: AppColors.textSubtle,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Room rows
+                ...rooms.asMap().entries.map((entry) {
+                  final i = entry.key;
+                  final room = entry.value;
+                  final isLast = i == rooms.length - 1;
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      border: isLast
+                          ? null
+                          : const Border(
+                              bottom: BorderSide(
+                                color: AppColors.cardBorder,
+                                width: 0.5,
+                              ),
+                            ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            room.roomNumber,
+                            style: const TextStyle(
+                              color: AppColors.textWhite,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            '${room.occupancy}',
+                            style: const TextStyle(
+                              color: AppColors.textGray,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: _RoomStatusChip(roomStatus: room.roomStatus),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _RoomStatusChip extends StatelessWidget {
+  const _RoomStatusChip({required this.roomStatus});
+  final String roomStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final (color, label) = switch (roomStatus) {
+      'reserved'   => (const Color(0xFF3B82F6), 'Reserved'),
+      'occupied'   => (const Color(0xFFFFB020), 'Occupied'),
+      'unavailable'=> (const Color(0xFF888888), 'Unavailable'),
+      _            => (const Color(0xFF00C48C), 'Vacant'),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

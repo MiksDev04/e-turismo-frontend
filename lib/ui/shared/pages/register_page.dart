@@ -116,6 +116,16 @@ class _V {
     return null;
   }
 
+  static String? roomName(String v) =>
+      v.trim().isEmpty ? 'Room name is required' : null;
+
+  static String? roomCapacity(String v) {
+    final n = int.tryParse(v.trim());
+    if (n == null) return 'Enter a valid number';
+    if (n <= 0) return 'Must be at least 1';
+    return null;
+  }
+
   static String? permitNumber(String v) =>
       v.trim().isEmpty ? 'Permit number is required' : null;
 
@@ -309,6 +319,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   PlatformFile? _permitFile;
   PlatformFile? _validIdFile;
   bool _showErrors = false;
+  List<Map<String, String>> _rooms = [];
 
   final _api = RegisterApi();
 
@@ -475,9 +486,39 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _goBack() => setState(() {
-        _step = 1;
+        _step = _step == 3 ? 2 : 1;
         _showErrors = false;
         _errorMessage = null;
+      });
+
+  void _onStep2Next() {
+    setState(() {
+      _showErrors = true;
+      _errorMessage = null;
+    });
+    if (!_step2Valid) return;
+    _initRooms();
+    setState(() {
+      _step = 3;
+      _showErrors = false;
+    });
+  }
+
+  void _initRooms() {
+    final count = int.tryParse(_totalRoomsCtrl.text.trim()) ?? 0;
+    _rooms = List.generate(
+      count,
+      (i) => {
+        'name': i < _rooms.length ? _rooms[i]['name']! : '',
+        'capacity': i < _rooms.length ? _rooms[i]['capacity']! : '1',
+      },
+    );
+  }
+
+  bool get _step3Valid => _rooms.every((r) {
+        final nameOk = r['name']!.trim().isNotEmpty;
+        final cap = int.tryParse(r['capacity']!.trim());
+        return nameOk && cap != null && cap > 0;
       });
 
   // ── Step 2 ─────────────────────────────────────────────────────────────────
@@ -532,7 +573,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _showErrors = true;
       _errorMessage = null;
     });
-    if (!_step2Valid) return;
+    if (!_step3Valid) return;
     if (!_emailConfirmed) {
       setState(() => _errorMessage = 'Please confirm your email first.');
       return;
@@ -554,6 +595,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ownerMiddleName: _ownerMiddleNameCtrl.text.trim(),
       ownerLastName: _ownerLastNameCtrl.text.trim(),
       totalRooms: int.parse(_totalRoomsCtrl.text.trim()),
+      rooms: _rooms,
       permitNumber: _permitNumberCtrl.text.trim(),
       registrationNumber: _registrationCtrl.text.trim(),
       street: _streetCtrl.text.trim(),
@@ -681,8 +723,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           validIdFile: _validIdFile,
                           onPickPermitFile: _pickPermitFile,
                           onPickValidId: _pickValidId,
+                          onNextStep2: _onStep2Next,
                           onBack: _goBack,
                           onSubmit: _submit,
+                          rooms: _rooms,
+                          onRoomsChanged: (r) => setState(() => _rooms = r),
                         ),
                       ),
                     ],
@@ -883,8 +928,12 @@ class _FormCard extends StatelessWidget {
     required this.validIdFile,
     required this.onPickPermitFile,
     required this.onPickValidId,
+    required this.onNextStep2,
     required this.onBack,
     required this.onSubmit,
+    // Step 3
+    required this.rooms,
+    required this.onRoomsChanged,
   });
 
   final int step;
@@ -926,8 +975,12 @@ class _FormCard extends StatelessWidget {
   final PlatformFile? validIdFile;
   final VoidCallback onPickPermitFile;
   final VoidCallback onPickValidId;
+  final VoidCallback onNextStep2;
   final VoidCallback onBack;
   final VoidCallback onSubmit;
+  // Step 3
+  final List<Map<String, String>> rooms;
+  final ValueChanged<List<Map<String, String>>> onRoomsChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -964,11 +1017,9 @@ class _FormCard extends StatelessWidget {
               onSendConfirmation: onSendConfirmation,
               onCancelConfirmation: onCancelConfirmation,
             )
-          else
+          else if (step == 2)
             _Step2Form(
               showErrors: showErrors,
-              isLoading: isLoading,
-              errorMessage: errorMessage,
               businessNameCtrl: businessNameCtrl,
               tradeNameCtrl: tradeNameCtrl,
               businessType: businessType,
@@ -990,6 +1041,16 @@ class _FormCard extends StatelessWidget {
               validIdFile: validIdFile,
               onPickPermitFile: onPickPermitFile,
               onPickValidId: onPickValidId,
+              onNext: onNextStep2,
+              onBack: onBack,
+            )
+          else
+            _Step3Form(
+              rooms: rooms,
+              onRoomsChanged: onRoomsChanged,
+              showErrors: showErrors,
+              errorMessage: errorMessage,
+              isLoading: isLoading,
               onBack: onBack,
               onSubmit: onSubmit,
             ),
@@ -1050,6 +1111,21 @@ class _StepIndicator extends StatelessWidget {
           number: 2,
           label: 'Business Details',
           isActive: currentStep == 2,
+          isComplete: currentStep > 2,
+        ),
+        Expanded(
+          child: Container(
+            height: 1,
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+            color: currentStep > 2
+                ? AppColors.primaryCyan
+                : AppColors.cardBorder,
+          ),
+        ),
+        _StepBadge(
+          number: 3,
+          label: 'Room Details',
+          isActive: currentStep == 3,
           isComplete: false,
         ),
       ],
@@ -1382,8 +1458,6 @@ class _Step1FormState extends State<_Step1Form> {
 class _Step2Form extends StatefulWidget {
   const _Step2Form({
     required this.showErrors,
-    required this.isLoading,
-    this.errorMessage,
     required this.businessNameCtrl,
     required this.tradeNameCtrl,
     required this.businessType,
@@ -1405,13 +1479,11 @@ class _Step2Form extends StatefulWidget {
     required this.validIdFile,
     required this.onPickPermitFile,
     required this.onPickValidId,
+    required this.onNext,
     required this.onBack,
-    required this.onSubmit,
   });
 
   final bool showErrors;
-  final bool isLoading;
-  final String? errorMessage;
   final TextEditingController businessNameCtrl;
   final TextEditingController tradeNameCtrl;
   final String businessType;
@@ -1433,8 +1505,8 @@ class _Step2Form extends StatefulWidget {
   final PlatformFile? validIdFile;
   final VoidCallback onPickPermitFile;
   final VoidCallback onPickValidId;
+  final VoidCallback onNext;
   final VoidCallback onBack;
-  final VoidCallback onSubmit;
 
   @override
   State<_Step2Form> createState() => _Step2FormState();
@@ -1705,7 +1777,113 @@ class _Step2FormState extends State<_Step2Form> {
         ),
         const SizedBox(height: 16),
 
-        // ── Error Banner ──────────────────────────────────────────────────
+        // ── Back + Next ───────────────────────────────────────────────────
+        Row(
+          children: [
+            _BackButton(onPressed: widget.onBack),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _GradientButton(
+                label: 'Next: Room Details →',
+                onPressed: widget.onNext,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Step 3 Form ──────────────────────────────────────────────────────────────
+
+class _Step3Form extends StatefulWidget {
+  const _Step3Form({
+    required this.rooms,
+    required this.onRoomsChanged,
+    required this.showErrors,
+    required this.errorMessage,
+    required this.isLoading,
+    required this.onBack,
+    required this.onSubmit,
+  });
+
+  final List<Map<String, String>> rooms;
+  final ValueChanged<List<Map<String, String>>> onRoomsChanged;
+  final bool showErrors;
+  final String? errorMessage;
+  final bool isLoading;
+  final VoidCallback onBack;
+  final VoidCallback onSubmit;
+
+  @override
+  State<_Step3Form> createState() => _Step3FormState();
+}
+
+class _Step3FormState extends State<_Step3Form> {
+  late List<TextEditingController> _nameCtrls;
+  late List<TextEditingController> _capCtrls;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrls = [];
+    _capCtrls = [];
+    _syncControllers();
+  }
+
+  void _syncControllers() {
+    for (final c in _nameCtrls) c.dispose();
+    for (final c in _capCtrls) c.dispose();
+    _nameCtrls = List.generate(
+      widget.rooms.length,
+      (i) => TextEditingController(text: widget.rooms[i]['name']),
+    );
+    _capCtrls = List.generate(
+      widget.rooms.length,
+      (i) => TextEditingController(text: widget.rooms[i]['capacity']),
+    );
+  }
+
+  @override
+  void didUpdateWidget(_Step3Form oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.rooms.length != widget.rooms.length) {
+      _syncControllers();
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _nameCtrls) c.dispose();
+    for (final c in _capCtrls) c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Room Details',
+          style: TextStyle(
+            color: AppColors.textWhite,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Enter the name/number and capacity for each of your ${widget.rooms.length} room(s).',
+          style: const TextStyle(
+            color: AppColors.textGray,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 16),
+        ...List.generate(widget.rooms.length, (i) => _roomRow(i)),
+        const SizedBox(height: 16),
         if (widget.errorMessage != null) ...[
           Container(
             padding: const EdgeInsets.all(12),
@@ -1718,11 +1896,7 @@ class _Step2FormState extends State<_Step2Form> {
             ),
             child: Row(
               children: [
-                const Icon(
-                  Icons.error_outline,
-                  color: RegisterColors.textRed,
-                  size: 16,
-                ),
+                const Icon(Icons.error_outline, color: RegisterColors.textRed, size: 16),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -1738,11 +1912,9 @@ class _Step2FormState extends State<_Step2Form> {
           ),
           const SizedBox(height: 16),
         ],
-
-        // ── Back + Submit ─────────────────────────────────────────────────
         Row(
           children: [
-            _BackButton(onPressed: widget.isLoading ? () {} : widget.onBack),
+            _BackButton(onPressed: widget.onBack),
             const SizedBox(width: 12),
             Expanded(
               child: widget.isLoading
@@ -1755,6 +1927,71 @@ class _Step2FormState extends State<_Step2Form> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _roomRow(int index) {
+    final room = widget.rooms[index];
+    final show = widget.showErrors;
+    final nameErr = show && room['name']!.trim().isEmpty ? 'Required' : null;
+    final cap = int.tryParse(room['capacity']!.trim());
+    final capErr = show && (cap == null || cap <= 0) ? 'Must be ≥ 1' : null;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.inputBackground,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.cardBorder),
+            ),
+            child: Center(
+              child: Text(
+                '${index + 1}',
+                style: const TextStyle(
+                  color: AppColors.textSubtle,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            flex: 3,
+            child: _Input(
+              controller: _nameCtrls[index],
+              hint: 'e.g. 101, Suite A',
+              hasError: nameErr != null,
+              onChanged: (v) {
+                final updated = List<Map<String, String>>.from(widget.rooms);
+                updated[index] = {...updated[index], 'name': v};
+                widget.onRoomsChanged(updated);
+              },
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            flex: 2,
+            child: _Input(
+              controller: _capCtrls[index],
+              hint: 'Capacity',
+              keyboardType: TextInputType.number,
+              hasError: capErr != null,
+              onChanged: (v) {
+                final updated = List<Map<String, String>>.from(widget.rooms);
+                updated[index] = {...updated[index], 'capacity': v};
+                widget.onRoomsChanged(updated);
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2122,24 +2359,36 @@ class _DropdownField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppColors.inputBackground,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.inputBorder),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          isExpanded: true,
-          dropdownColor: AppColors.cardBackground,
-          iconEnabledColor: AppColors.textGray,
-          style: const TextStyle(color: AppColors.textWhite, fontSize: 13.5),
-          items: items
-              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-              .toList(),
-          onChanged: onChanged,
+    final borderColor = AppColors.inputBorder;
+    return DropdownButtonFormField<String>(
+      value: value,
+      isDense: true,
+      items: items
+          .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+          .toList(),
+      onChanged: onChanged,
+      dropdownColor: AppColors.cardBackground,
+      iconEnabledColor: AppColors.textGray,
+      style: const TextStyle(color: AppColors.textWhite, fontSize: 13.5),
+      decoration: InputDecoration(
+        filled: true,
+        fillColor: AppColors.inputBackground,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: borderColor),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: borderColor),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(
+            color: AppColors.primaryCyan,
+            width: 1.5,
+          ),
         ),
       ),
     );

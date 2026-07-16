@@ -2245,6 +2245,7 @@ class _ActionButtons extends StatelessWidget {
               showBusinessDetailsModal(
                 context,
                 BusinessDetails(
+                  businessId: item.id,
                   name: item.name,
                   tradeName: item.tradeName,
                   type: item.businessType.label,
