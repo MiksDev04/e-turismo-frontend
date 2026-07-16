@@ -280,6 +280,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _passwordCtrl = TextEditingController();
   final _confirmPassCtrl = TextEditingController();
 
+  // Email confirmation state
+  bool _confirmationSent = false;
+  bool _emailConfirmed = false;
+  Timer? _confirmationPollTimer;
+
   // Step 2
   final _businessNameCtrl = TextEditingController();
   final _tradeNameCtrl = TextEditingController();
@@ -322,6 +327,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void dispose() {
     _connectivityTimer?.cancel();
+    _confirmationPollTimer?.cancel();
     for (final c in [
       _fullNameCtrl,
       _usernameCtrl,
@@ -390,21 +396,89 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _V.password(_passwordCtrl.text) == null &&
       _V.confirmPassword(_confirmPassCtrl.text, _passwordCtrl.text) == null;
 
-  void _goNext() {
-    setState(() => _showErrors = true);
-    if (!_step1Valid) return;
+  Future<void> _sendConfirmation() async {
+    FocusScope.of(context).unfocus();
     setState(() {
-      _step = 2;
-      _showErrors = false;
+      _showErrors = true;
+      _errorMessage = null;
+    });
+    if (!_step1Valid) return;
+
+    setState(() => _isLoading = true);
+
+    final result = await _api.sendConfirmation(
+      fullName: _fullNameCtrl.text.trim(),
+      username: _usernameCtrl.text.trim().toLowerCase(),
+      email: _emailCtrl.text.trim(),
+      phoneNumber: _phoneCtrl.text.trim(),
+      password: _passwordCtrl.text,
+    );
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (result.success) {
+      setState(() {
+        _confirmationSent = true;
+        _startConfirmationPolling();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message ?? 'Confirmation email sent.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      setState(() => _errorMessage = result.error);
+    }
+  }
+
+  void _startConfirmationPolling() {
+    _confirmationPollTimer?.cancel();
+    _confirmationPollTimer = Timer.periodic(
+      const Duration(seconds: 4),
+      (_) => _checkConfirmation(),
+    );
+  }
+
+  Future<void> _checkConfirmation() async {
+    final email = _emailCtrl.text.trim();
+    if (email.isEmpty) return;
+
+    final confirmed = await _api.checkConfirmationStatus(email);
+    if (!mounted) return;
+
+    if (confirmed) {
+      _confirmationPollTimer?.cancel();
+      setState(() {
+        _emailConfirmed = true;
+        _step = 2;
+        _showErrors = false;
+        _errorMessage = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Email confirmed successfully.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
+  void _cancelConfirmation() {
+    _confirmationPollTimer?.cancel();
+    setState(() {
+      _confirmationSent = false;
+      _emailConfirmed = false;
       _errorMessage = null;
     });
   }
 
   void _goBack() => setState(() {
-    _step = 1;
-    _showErrors = false;
-    _errorMessage = null;
-  });
+        _step = 1;
+        _showErrors = false;
+        _errorMessage = null;
+      });
 
   // ── Step 2 ─────────────────────────────────────────────────────────────────
 
@@ -459,6 +533,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _errorMessage = null;
     });
     if (!_step2Valid) return;
+    if (!_emailConfirmed) {
+      setState(() => _errorMessage = 'Please confirm your email first.');
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -575,7 +653,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           phoneCtrl: _phoneCtrl,
                           passwordCtrl: _passwordCtrl,
                           confirmPassCtrl: _confirmPassCtrl,
-                          onNext: _goNext,
+                          confirmationSent: _confirmationSent,
+                          emailConfirmed: _emailConfirmed,
+                          onSendConfirmation: _sendConfirmation,
+                          onCancelConfirmation: _cancelConfirmation,
                           // Step 2
                           businessNameCtrl: _businessNameCtrl,
                           tradeNameCtrl: _tradeNameCtrl,
@@ -776,7 +857,10 @@ class _FormCard extends StatelessWidget {
     required this.phoneCtrl,
     required this.passwordCtrl,
     required this.confirmPassCtrl,
-    required this.onNext,
+    required this.confirmationSent,
+    required this.emailConfirmed,
+    required this.onSendConfirmation,
+    required this.onCancelConfirmation,
     // Step 2
     required this.businessNameCtrl,
     required this.tradeNameCtrl,
@@ -815,7 +899,10 @@ class _FormCard extends StatelessWidget {
   final TextEditingController phoneCtrl;
   final TextEditingController passwordCtrl;
   final TextEditingController confirmPassCtrl;
-  final VoidCallback onNext;
+  final bool confirmationSent;
+  final bool emailConfirmed;
+  final VoidCallback onSendConfirmation;
+  final VoidCallback onCancelConfirmation;
 
   // Step 2
   final TextEditingController businessNameCtrl;
@@ -871,8 +958,11 @@ class _FormCard extends StatelessWidget {
               phoneCtrl: phoneCtrl,
               passwordCtrl: passwordCtrl,
               confirmPassCtrl: confirmPassCtrl,
+              confirmationSent: confirmationSent,
+              emailConfirmed: emailConfirmed,
               showErrors: showErrors,
-              onNext: onNext,
+              onSendConfirmation: onSendConfirmation,
+              onCancelConfirmation: onCancelConfirmation,
             )
           else
             _Step2Form(
@@ -1039,8 +1129,11 @@ class _Step1Form extends StatefulWidget {
     required this.phoneCtrl,
     required this.passwordCtrl,
     required this.confirmPassCtrl,
+    required this.confirmationSent,
+    required this.emailConfirmed,
     required this.showErrors,
-    required this.onNext,
+    required this.onSendConfirmation,
+    required this.onCancelConfirmation,
   });
 
   final TextEditingController fullNameCtrl;
@@ -1049,8 +1142,11 @@ class _Step1Form extends StatefulWidget {
   final TextEditingController phoneCtrl;
   final TextEditingController passwordCtrl;
   final TextEditingController confirmPassCtrl;
+  final bool confirmationSent;
+  final bool emailConfirmed;
   final bool showErrors;
-  final VoidCallback onNext;
+  final VoidCallback onSendConfirmation;
+  final VoidCallback onCancelConfirmation;
 
   @override
   State<_Step1Form> createState() => _Step1FormState();
@@ -1190,10 +1286,92 @@ class _Step1FormState extends State<_Step1Form> {
           ),
         ),
         const SizedBox(height: 22),
-        _GradientButton(
-          label: 'Next: Business Details →',
-          onPressed: widget.onNext,
-        ),
+        if (!widget.confirmationSent) ...[
+          _GradientButton(
+            label: 'Send Confirmation Email',
+            onPressed: widget.onSendConfirmation,
+          ),
+        ] else if (!widget.emailConfirmed) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.primaryCyan.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.primaryCyan.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.primaryCyan,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Confirmation email sent!',
+                        style: TextStyle(
+                          color: AppColors.primaryCyan,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Check your inbox and click the confirmation link.',
+                        style: TextStyle(
+                          color: AppColors.textGray,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          _GradientButton(
+            label: 'Cancel',
+            onPressed: widget.onCancelConfirmation,
+            isSecondary: true,
+          ),
+        ] else ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.green.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Email confirmed! Tap "Next: Business Details" to continue.',
+                    style: TextStyle(
+                      color: Colors.green[300],
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _GradientButton(
+            label: 'Next: Business Details →',
+            onPressed: () {},
+          ),
+        ],
       ],
     );
   }
@@ -2061,10 +2239,11 @@ class _BusinessLineSelector extends StatelessWidget {
 }
 
 class _GradientButton extends StatefulWidget {
-  const _GradientButton({required this.label, required this.onPressed});
+  const _GradientButton({required this.label, required this.onPressed, this.isSecondary = false});
 
   final String label;
   final VoidCallback onPressed;
+  final bool isSecondary;
 
   @override
   State<_GradientButton> createState() => _GradientButtonState();
@@ -2098,25 +2277,30 @@ class _GradientButtonState extends State<_GradientButton> {
               height: 48,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppColors.gradientStart, AppColors.gradientEnd],
-                  ),
+                  gradient: widget.isSecondary
+                      ? null
+                      : const LinearGradient(
+                          colors: [AppColors.gradientStart, AppColors.gradientEnd],
+                        ),
+                  color: widget.isSecondary ? AppColors.inputBackground : null,
                   borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primaryBlue.withOpacity(
-                        _hovered ? 0.5 : 0.3,
-                      ),
-                      blurRadius: _hovered ? 20 : 14,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+                  boxShadow: widget.isSecondary
+                      ? null
+                      : [
+                          BoxShadow(
+                            color: AppColors.primaryBlue.withOpacity(
+                              _hovered ? 0.5 : 0.3,
+                            ),
+                            blurRadius: _hovered ? 20 : 14,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                 ),
                 child: Center(
                   child: Text(
                     widget.label,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: widget.isSecondary ? AppColors.primaryBlue : Colors.white,
                       fontSize: 14.5,
                       fontWeight: FontWeight.w600,
                     ),

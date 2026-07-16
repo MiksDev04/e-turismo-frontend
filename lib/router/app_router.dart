@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:app/core/services/session_service.dart';
+import 'package:app/core/constants/app_colors.dart';
+import 'package:app/api/admin_setup_api.dart';
+import 'package:app/api/base_api.dart';
 import 'package:app/router/app_routes.dart';
 
 import 'package:app/ui/shared/pages/login_page.dart';
@@ -101,21 +104,16 @@ abstract final class _RoutePermissions {
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 abstract final class AppRouter {
-  static String get initialRoute {
-    final session = SessionService.instance.current;
-    if (session == null) return AppRoutes.login;
-    return session.role == 'admin'
-        ? AppRoutes.adminDashboard
-        : AppRoutes.businessDashboard;
-  }
-
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     final routeName = settings.name ?? '';
 
+    // ── Root / empty route — resolve dynamically ────────────────────────────
+    if (routeName.isEmpty || routeName == '/') {
+      return _fade(const _InitialRouter(), const RouteSettings(name: '/'));
+    }
+
     // ── Auth redirect (already logged in → away from login/register) ──────
-    if (routeName == AppRoutes.login ||
-        routeName == AppRoutes.register ||
-        routeName == AppRoutes.adminSetup) {
+    if (routeName == AppRoutes.login || routeName == AppRoutes.register) {
       final session = SessionService.instance.current;
       if (session != null) {
         final route = session.role == 'admin'
@@ -154,33 +152,12 @@ abstract final class AppRouter {
               statusCode: 503,
               onRetry: () => Navigator.pushReplacementNamed(
                 context,
-                AppRouter.initialRoute,
+                '/',
               ),
             ),
           ),
         ),
         settings,
-      );
-    }
-
-    // ── Root / empty route (browser back button to initial /) ──────────────
-    if (routeName.isEmpty || routeName == '/') {
-      final session = SessionService.instance.current;
-      if (session == null) {
-        return _fade(
-          const LoginPage(),
-          const RouteSettings(name: AppRoutes.login),
-        );
-      }
-      return _fade(
-        session.role == 'admin'
-            ? const AdminDashboardPage()
-            : const BusinessDashboardPage(),
-        RouteSettings(
-          name: session.role == 'admin'
-              ? AppRoutes.adminDashboard
-              : AppRoutes.businessDashboard,
-        ),
       );
     }
 
@@ -215,7 +192,7 @@ abstract final class AppRouter {
         settings,
       ),
       AppRoutes.businessProfile => _fade(const BusinessProfilePage(), settings),
-      _ => _redirectToInitial(settings),
+      _ => _fade(const _RedirectToInitialWidget(), settings),
     };
   }
 
@@ -227,9 +204,6 @@ abstract final class AppRouter {
             FadeTransition(opacity: animation, child: child),
         transitionDuration: const Duration(milliseconds: 180),
       );
-
-  static Route<dynamic> _redirectToInitial(RouteSettings settings) =>
-      _fade(const _RedirectToInitialWidget(), settings);
 
   /// Wraps an ErrorPage in the appropriate layout if the user is logged in.
   static Widget _wrapError(String routeName, Widget errorPage) {
@@ -254,6 +228,76 @@ abstract final class AppRouter {
         child: errorPage,
       );
     }
+  }
+}
+
+// ─── Initial Router (splash) ─────────────────────────────────────────────────
+//
+// Shown at the root route '/'. Checks whether an admin exists in the backend
+// and routes accordingly:
+//   • admin setup available → /admin/setup
+//   • existing session      → role dashboard
+//   • no session            → /login
+
+class _InitialRouter extends StatefulWidget {
+  const _InitialRouter();
+  @override
+  State<_InitialRouter> createState() => _InitialRouterState();
+}
+
+class _InitialRouterState extends State<_InitialRouter> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _resolve());
+  }
+
+  Future<void> _resolve() async {
+    if (!mounted) return;
+
+    final session = SessionService.instance.current;
+
+    try {
+      final status = await AdminSetupApi().getStatus();
+      if (!mounted) return;
+
+      if (status.setupAvailable) {
+        if (session != null) {
+          await SessionService.instance.clear();
+        }
+        _go(AppRoutes.adminSetup);
+        return;
+      }
+    } on ApiException {
+      // Backend unreachable — fall through to session-based routing
+    } catch (_) {
+      // Fall through
+    }
+
+    if (!mounted) return;
+
+    if (session != null) {
+      final route = session.role == 'admin'
+          ? AppRoutes.adminDashboard
+          : AppRoutes.businessDashboard;
+      _go(route);
+    } else {
+      _go(AppRoutes.login);
+    }
+  }
+
+  void _go(String route) {
+    Navigator.of(context).pushReplacementNamed(route);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: AppColors.backgroundDark,
+      body: Center(
+        child: CircularProgressIndicator(color: AppColors.primaryBlue),
+      ),
+    );
   }
 }
 

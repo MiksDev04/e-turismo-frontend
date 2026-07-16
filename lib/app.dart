@@ -23,7 +23,7 @@ class App extends StatelessWidget {
           theme: _buildTheme(),
 
           // ── Routing ────────────────────────────────────────────────────────────
-          initialRoute: AppRouter.initialRoute,
+          initialRoute: '/',
           onGenerateRoute: AppRouter.onGenerateRoute,
           builder: (context, child) {
             return Column(

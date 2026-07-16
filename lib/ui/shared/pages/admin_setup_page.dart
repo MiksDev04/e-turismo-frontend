@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:app/api/admin_setup_api.dart';
 import 'package:app/api/base_api.dart';
 import 'package:app/core/constants/app_colors.dart';
@@ -23,6 +25,7 @@ class AdminSetupScreen extends StatefulWidget {
 class _AdminSetupScreenState extends State<AdminSetupScreen> {
   final _api = AdminSetupApi();
   final _formKey = GlobalKey<FormState>();
+
   final _fullNameCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
@@ -36,7 +39,9 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   String? _errorMessage;
-  String? _successMessage;
+
+  bool _waitingForConfirmation = false;
+  Timer? _pollTimer;
 
   @override
   void initState() {
@@ -46,6 +51,7 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
     _fullNameCtrl.dispose();
     _usernameCtrl.dispose();
     _emailCtrl.dispose();
@@ -68,6 +74,10 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
         _setupAvailable = status.setupAvailable;
         _loadingStatus = false;
       });
+      if (status.adminExists && _waitingForConfirmation) {
+        _pollTimer?.cancel();
+        Navigator.pushNamedAndRemoveUntil(context, AppRoutes.login, (route) => false);
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -83,18 +93,17 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
     }
   }
 
-  Future<void> _submit() async {
+  Future<void> _requestConfirmation() async {
     FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
       _submitting = true;
       _errorMessage = null;
-      _successMessage = null;
     });
 
     try {
-      final message = await _api.registerAdmin(
+      await _api.requestAdminSetup(
         fullName: _fullNameCtrl.text.trim(),
         username: _usernameCtrl.text.trim().toLowerCase(),
         email: _emailCtrl.text.trim().toLowerCase(),
@@ -103,23 +112,10 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
       );
       if (!mounted) return;
       setState(() {
-        _successMessage = message;
-        _setupAvailable = false;
         _submitting = false;
+        _waitingForConfirmation = true;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: AppColors.accentGreen,
-        ),
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 900));
-      if (!mounted) return;
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        AppRoutes.login,
-        (route) => false,
-      );
+      _startPolling();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -132,10 +128,32 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = 'Unable to create admin account. Please try again.';
+        _errorMessage = 'Unable to send confirmation email. Please try again.';
         _submitting = false;
       });
     }
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
+      try {
+        final status = await _api.getStatus();
+        if (!mounted) return;
+        if (status.adminExists) {
+          _pollTimer?.cancel();
+          Navigator.pushNamedAndRemoveUntil(context, AppRoutes.login, (route) => false);
+        }
+      } catch (_) {}
+    });
+  }
+
+  void _cancelWaiting() {
+    _pollTimer?.cancel();
+    setState(() {
+      _waitingForConfirmation = false;
+      _errorMessage = null;
+    });
   }
 
   String? _required(String? value, String label) {
@@ -160,9 +178,10 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
   }
 
   String? _validatePhone(String? value) {
-    final phone = (value ?? '').replaceAll(RegExp(r'[-\s]'), '');
-    if (!RegExp(r'^(09|\+639)\d{9}$').hasMatch(phone)) {
-      return 'Use a valid PH mobile number.';
+    final stripped = (value ?? '').trim().replaceAll(RegExp(r'[-\s]'), '');
+    if (stripped.isEmpty) return 'Phone number is required';
+    if (!RegExp(r'^09\d{9}$').hasMatch(stripped)) {
+      return 'Use format 09XX-XXX-XXXX';
     }
     return null;
   }
@@ -231,19 +250,21 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 180),
         child: _loadingStatus
-            ? const _SetupLoading()
-            : _setupAvailable
-            ? _buildForm()
-            : _buildLocked(),
+            ? const _SetupLoading(key: ValueKey('loading'))
+            : _waitingForConfirmation
+                ? _buildWaitingState(key: const ValueKey('waiting'))
+                : _setupAvailable
+                    ? _buildForm(key: const ValueKey('form'))
+                    : _buildLocked(key: const ValueKey('locked')),
       ),
     );
   }
 
-  Widget _buildForm() {
+  Widget _buildForm({Key? key}) {
     return Form(
       key: _formKey,
       child: Column(
-        key: const ValueKey('setup-form'),
+        key: key,
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -281,6 +302,10 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
             icon: Icons.phone_outlined,
             keyboardType: TextInputType.phone,
             validator: _validatePhone,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              _PhoneFormatter(),
+            ],
           ),
           const SizedBox(height: 14),
           _SetupTextField(
@@ -336,29 +361,78 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
               color: AppColors.accentRed,
             ),
           ],
-          if (_successMessage != null) ...[
-            const SizedBox(height: 16),
-            _SetupBanner(
-              icon: Icons.check_circle_outline_rounded,
-              message: _successMessage!,
-              color: AppColors.accentGreen,
-            ),
-          ],
           const SizedBox(height: 22),
           _SetupPrimaryButton(
-            icon: Icons.admin_panel_settings_rounded,
+            icon: Icons.email_outlined,
             label: 'Create Admin Account',
             loading: _submitting,
-            onPressed: _submit,
+            onPressed: _requestConfirmation,
+            enabled: !_submitting,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildLocked() {
+  Widget _buildWaitingState({Key? key}) {
     return Column(
-      key: const ValueKey('setup-locked'),
+      key: key,
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        const _SetupHeader(
+          icon: Icons.mark_email_read_outlined,
+          title: 'Check Your Email',
+          subtitle: 'We sent a confirmation link to your email address.\nClick the link to confirm and create your admin account.',
+        ),
+        const SizedBox(height: 32),
+        const SizedBox(
+          width: 48,
+          height: 48,
+          child: CircularProgressIndicator(color: AppColors.primaryBlue, strokeWidth: 3),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          _emailCtrl.text.trim().toLowerCase(),
+          style: const TextStyle(
+            color: AppColors.textWhite,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Waiting for confirmation...',
+          style: TextStyle(
+            color: AppColors.textGray,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 24),
+        SizedBox(
+          width: double.infinity,
+          height: 46,
+          child: OutlinedButton.icon(
+            onPressed: _cancelWaiting,
+            icon: const Icon(Icons.edit_rounded, size: 18),
+            label: const Text('Back to Edit'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primaryBlue,
+              side: const BorderSide(color: AppColors.inputBorder),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(9),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocked({Key? key}) {
+    return Column(
+      key: key,
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -399,7 +473,7 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
 }
 
 class _SetupLoading extends StatelessWidget {
-  const _SetupLoading();
+  const _SetupLoading({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -477,6 +551,8 @@ class _SetupTextField extends StatelessWidget {
     this.obscureText = false,
     this.validator,
     this.suffixIcon,
+    this.inputFormatters,
+    this.enabled = true,
   });
 
   final TextEditingController controller;
@@ -486,6 +562,8 @@ class _SetupTextField extends StatelessWidget {
   final bool obscureText;
   final String? Function(String?)? validator;
   final Widget? suffixIcon;
+  final List<TextInputFormatter>? inputFormatters;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -494,6 +572,8 @@ class _SetupTextField extends StatelessWidget {
       keyboardType: keyboardType,
       obscureText: obscureText,
       validator: validator,
+      inputFormatters: inputFormatters,
+      enabled: enabled,
       style: const TextStyle(color: AppColors.textWhite, fontSize: 14),
       decoration: InputDecoration(
         labelText: label,
@@ -567,40 +647,67 @@ class _SetupBanner extends StatelessWidget {
   }
 }
 
+class _PhoneFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    if (digits.length > 11) return oldValue;
+    final buf = StringBuffer();
+    for (int i = 0; i < digits.length; i++) {
+      if (i == 4 || i == 7) buf.write('-');
+      buf.write(digits[i]);
+    }
+    final formatted = buf.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
 class _SetupPrimaryButton extends StatelessWidget {
   const _SetupPrimaryButton({
     required this.icon,
     required this.label,
     required this.onPressed,
     this.loading = false,
+    this.enabled = true,
+    this.isSecondary = false,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onPressed;
   final bool loading;
+  final bool enabled;
+  final bool isSecondary;
 
   @override
   Widget build(BuildContext context) {
+    final bgColors = isSecondary
+        ? [AppColors.inputBackground, AppColors.inputBackground]
+        : [AppColors.gradientStart, AppColors.gradientEnd];
+
     return SizedBox(
       width: double.infinity,
       height: 48,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [AppColors.gradientStart, AppColors.gradientEnd],
-          ),
+          gradient: LinearGradient(colors: bgColors),
           borderRadius: BorderRadius.circular(9),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primaryBlue.withOpacity(0.22),
-              blurRadius: 14,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          boxShadow: isSecondary
+              ? null
+              : [
+                  BoxShadow(
+                    color: AppColors.primaryBlue.withOpacity(0.22),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
         ),
         child: ElevatedButton.icon(
-          onPressed: loading ? null : onPressed,
+          onPressed: (enabled && !loading) ? onPressed : null,
           icon: loading
               ? const SizedBox(
                   width: 18,
@@ -610,11 +717,11 @@ class _SetupPrimaryButton extends StatelessWidget {
                     color: Colors.white,
                   ),
                 )
-              : Icon(icon, color: Colors.white, size: 18),
+              : Icon(icon, color: isSecondary ? AppColors.primaryBlue : Colors.white, size: 18),
           label: Text(
-            loading ? 'Creating...' : label,
-            style: const TextStyle(
-              color: Colors.white,
+            loading ? 'Processing...' : label,
+            style: TextStyle(
+              color: isSecondary ? AppColors.primaryBlue : Colors.white,
               fontWeight: FontWeight.w600,
               fontSize: 14,
             ),

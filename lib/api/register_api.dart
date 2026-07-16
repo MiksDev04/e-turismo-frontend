@@ -15,8 +15,16 @@ class RegisterResult {
   const RegisterResult.err(this.error) : success = false;
 }
 
+class SendConfirmationResult {
+  final bool success;
+  final String? error;
+  final String? message;
+
+  const SendConfirmationResult.ok({this.message}) : success = true, error = null;
+  const SendConfirmationResult.err(this.error) : success = false, message = null;
+}
+
 class RegisterApi {
-  // Compute URL from environment variables
   String get _baseUrl {
     final baseUrl = kIsWeb
         ? const String.fromEnvironment(
@@ -27,6 +35,92 @@ class RegisterApi {
             ? dotenv.get('ANDROID_BACKEND_URL', fallback: 'http://10.0.2.2:3000')
             : dotenv.get('BACKEND_URL', fallback: 'http://localhost:3000');
     return '$baseUrl/api/auth/register';
+  }
+
+  String get _sendConfirmationUrl {
+    final baseUrl = kIsWeb
+        ? const String.fromEnvironment(
+            'BACKEND_URL',
+            defaultValue: 'http://localhost:3000',
+          )
+        : Platform.isAndroid
+            ? dotenv.get('ANDROID_BACKEND_URL', fallback: 'http://10.0.2.2:3000')
+            : dotenv.get('BACKEND_URL', fallback: 'http://localhost:3000');
+    return '$baseUrl/api/auth/register/send-confirmation';
+  }
+
+  String get _confirmationStatusUrl {
+    final baseUrl = kIsWeb
+        ? const String.fromEnvironment(
+            'BACKEND_URL',
+            defaultValue: 'http://localhost:3000',
+          )
+        : Platform.isAndroid
+            ? dotenv.get('ANDROID_BACKEND_URL', fallback: 'http://10.0.2.2:3000')
+            : dotenv.get('BACKEND_URL', fallback: 'http://localhost:3000');
+    return '$baseUrl/api/auth/register/confirmation-status';
+  }
+
+  String get _apiKey => kIsWeb
+      ? const String.fromEnvironment('API_KEY', defaultValue: '')
+      : dotenv.get('API_KEY', fallback: '');
+
+  Map<String, String> get _headers => {
+        'Content-Type': 'application/json',
+        'X-API-Key': _apiKey,
+      };
+
+  Future<SendConfirmationResult> sendConfirmation({
+    required String fullName,
+    required String username,
+    required String email,
+    required String phoneNumber,
+    required String password,
+  }) async {
+    try {
+      final uri = Uri.parse(_sendConfirmationUrl);
+      final response = await http.post(
+        uri,
+        headers: _headers,
+        body: jsonEncode({
+          'fullName': fullName,
+          'username': username.trim().toLowerCase(),
+          'email': email,
+          'phoneNumber': phoneNumber,
+          'password': password,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        return SendConfirmationResult.ok(message: data['message']?.toString());
+      } else {
+        final data = jsonDecode(response.body);
+        return SendConfirmationResult.err(data['message'] ?? 'Failed to send confirmation email.');
+      }
+    } catch (e) {
+      debugPrint('❌ Send confirmation error: $e');
+      return SendConfirmationResult.err('An unexpected error occurred: $e');
+    }
+  }
+
+  Future<bool> checkConfirmationStatus(String email) async {
+    try {
+      final uri = Uri.parse('$_confirmationStatusUrl?email=${Uri.encodeComponent(email)}');
+      final response = await http.get(
+        uri,
+        headers: _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['confirmed'] == true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('❌ Check confirmation status error: $e');
+      return false;
+    }
   }
 
   Future<RegisterResult> register({
@@ -54,7 +148,6 @@ class RegisterApi {
     required PlatformFile validIdFile,
   }) async {
     try {
-      // ── 1. Validate inputs ─────────────────────────────────────────────
       final validationError = _validate(
         fullName: fullName,
         username: username,
@@ -76,17 +169,11 @@ class RegisterApi {
       );
       if (validationError != null) return RegisterResult.err(validationError);
 
-      // ── 2. Prepare Multipart Request ───────────────────────────────────
       final uri = Uri.parse(_baseUrl);
       final request = http.MultipartRequest('POST', uri);
 
-      // Add API Key from environment
-      final apiKey = kIsWeb
-          ? const String.fromEnvironment('API_KEY', defaultValue: '')
-          : dotenv.get('API_KEY', fallback: '');
-      request.headers['X-API-Key'] = apiKey;
+      request.headers['X-API-Key'] = _apiKey;
 
-      // Add fields
       request.fields['fullName'] = fullName;
       request.fields['username'] = username.trim().toLowerCase();
       request.fields['email'] = email;
@@ -108,7 +195,6 @@ class RegisterApi {
       request.fields['province'] = province;
       request.fields['region'] = region;
 
-      // Add files
       if (kIsWeb) {
         if (permitFile.bytes != null) {
           request.files.add(http.MultipartFile.fromBytes(
@@ -143,7 +229,6 @@ class RegisterApi {
         }
       }
 
-      // ── 3. Send Request ───────────────────────────────────────────────
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
 
@@ -163,11 +248,15 @@ class RegisterApi {
   MediaType _getMediaType(String fileName) {
     final ext = fileName.split('.').last.toLowerCase();
     switch (ext) {
-      case 'pdf': return MediaType('application', 'pdf');
-      case 'png': return MediaType('image', 'png');
+      case 'pdf':
+        return MediaType('application', 'pdf');
+      case 'png':
+        return MediaType('image', 'png');
       case 'jpg':
-      case 'jpeg': return MediaType('image', 'jpeg');
-      default: return MediaType('application', 'octet-stream');
+      case 'jpeg':
+        return MediaType('image', 'jpeg');
+      default:
+        return MediaType('application', 'octet-stream');
     }
   }
 
@@ -181,8 +270,6 @@ class RegisterApi {
         return 'sole_proprietorship';
     }
   }
-
-  // ── Field-level validation ───────────────────────────────────────────────
 
   String? _validate({
     required String fullName,
@@ -258,4 +345,3 @@ class RegisterApi {
     return null;
   }
 }
-

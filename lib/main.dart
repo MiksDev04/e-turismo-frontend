@@ -39,7 +39,8 @@ void main() async {
 
   // ── Step 1: Load connectivity + session ───────────────────────────────────
   await ConnectivityService.instance.startWatching();
-  final session = await SessionService.instance.loadAndCache();
+  await SessionService.instance.loadAndCache();
+  final session = SessionService.instance.current;
 
   // ── Step 2: Initialise SQLite BEFORE any sync can run ─────────────────────
   // SyncService reads/writes SQLite the moment it detects connectivity, so the
@@ -66,9 +67,6 @@ void main() async {
   });
 
   // ── Step 4: Start connectivity listener (triggers immediate sync if online) ─
-  // listenForConnectivity() already handles the initial online check and fires
-  // _handleOnlineTransition → sync(). Do NOT call sync() again below — that
-  // creates a race condition where sync runs without a valid auth token.
   SyncService.instance.listenForConnectivity();
 
   // ── Step 5: Window constraints (desktop only) ──────────────────────────────

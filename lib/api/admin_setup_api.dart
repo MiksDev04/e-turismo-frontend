@@ -24,14 +24,14 @@ class AdminSetupApi extends BaseApi {
     return AdminSetupStatus.fromJson(data);
   }
 
-  Future<String> registerAdmin({
+  Future<String> requestAdminSetup({
     required String fullName,
     required String username,
     required String email,
     required String phoneNumber,
     required String password,
   }) async {
-    final response = await post('/api/auth/admin-setup/register', {
+    final response = await post('/api/auth/admin-setup/request', {
       'fullName': fullName,
       'username': username,
       'email': email,
@@ -39,7 +39,6 @@ class AdminSetupApi extends BaseApi {
       'password': password,
     });
     final data = handleResponse(response) as Map<String, dynamic>;
-    return data['message']?.toString() ??
-        'Admin account created successfully. You can now sign in.';
+    return data['message']?.toString() ?? 'Confirmation email sent.';
   }
 }
