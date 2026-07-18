@@ -422,15 +422,18 @@ class SyncService {
       }
 
       try {
-        final breakdowns = await db.query(
-          LocalDatabase.tableGuestBreakdowns,
+        // Read room IDs from junction table
+        final roomLinks = await db.query(
+          LocalDatabase.tableGuestRecordRooms,
+          columns: ['room_id'],
           where: 'guest_record_id = ?',
           whereArgs: [recordId],
         );
+        final roomIds = roomLinks.map((r) => r['room_id'] as String).toList();
 
         // Build payload and include the local UUID so the backend stores the
         // same ID — keeps SQLite and MySQL in sync without a remapping step.
-        final payload = _toApiPayload(record, breakdowns);
+        final payload = _toApiPayload(record, roomIds);
         payload['id'] = recordId;
 
         final response = await http
@@ -541,13 +544,16 @@ class SyncService {
       }
 
       try {
-        final breakdowns = await db.query(
-          LocalDatabase.tableGuestBreakdowns,
+        // Read room IDs from junction table
+        final roomLinks = await db.query(
+          LocalDatabase.tableGuestRecordRooms,
+          columns: ['room_id'],
           where: 'guest_record_id = ?',
           whereArgs: [recordId],
         );
+        final roomIds = roomLinks.map((r) => r['room_id'] as String).toList();
 
-        final payload = _toApiPayload(record, breakdowns);
+        final payload = _toApiPayload(record, roomIds);
 
         final response = await http
             .put(
@@ -699,7 +705,7 @@ class SyncService {
               whereArgs: [id],
             );
             await db.delete(
-              LocalDatabase.tableGuestBreakdowns,
+              LocalDatabase.tableGuestRecordRooms,
               where: 'guest_record_id = ?',
               whereArgs: [id],
             );
@@ -721,24 +727,43 @@ class SyncService {
             continue;
           }
 
+          // Upsert the guest record
           await db.insert(
             LocalDatabase.tableGuestRecords,
             _fromApiRecord(remote),
             conflictAlgorithm: ConflictAlgorithm.replace,
           );
 
+          // Replace room junction rows
           await db.delete(
-            LocalDatabase.tableGuestBreakdowns,
+            LocalDatabase.tableGuestRecordRooms,
             where: 'guest_record_id = ?',
             whereArgs: [recordId],
           );
 
-          final breakdowns =
-              remote['guest_breakdowns'] as List<dynamic>? ?? [];
-          for (final b in breakdowns) {
+          final rooms = remote['rooms'] as List<dynamic>? ?? [];
+          for (final r in rooms) {
+            final roomId = r['id'] as String;
+            // Ensure the room exists locally for FK
             await db.insert(
-              LocalDatabase.tableGuestBreakdowns,
-              _fromApiBreakdown(b as Map<String, dynamic>, recordId),
+              LocalDatabase.tableLocalRooms,
+              {
+                'id':          roomId,
+                'business_id': businessId,
+                'room_number': r['roomNumber'] ?? r['room_number'] ?? roomId.substring(0, 8),
+                'capacity':    r['capacity'] ?? 1,
+                'room_status': 'occupied',
+              },
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+            await db.insert(
+              LocalDatabase.tableGuestRecordRooms,
+              {
+                'id':              _generateUuid(),
+                'guest_record_id': recordId,
+                'room_id':         roomId,
+                'created_at':      remote['created_at'],
+              },
               conflictAlgorithm: ConflictAlgorithm.replace,
             );
           }
@@ -887,69 +912,60 @@ class SyncService {
   // Payload Mappers
   // ---------------------------------------------------------------------------
 
-  /// Converts a SQLite row + its breakdowns into the JSON body expected by
+  /// Converts a SQLite row + its room IDs into the JSON body expected by
   /// both POST /api/business/guest-entries and PUT /api/business/guest-records/:id.
   Map<String, dynamic> _toApiPayload(
     Map<String, dynamic> record,
-    List<Map<String, dynamic>> breakdowns,
+    List<String> roomIds,
   ) {
     return {
-      'businessId': record['business_id'],
-      'checkIn': record['check_in'],
-      'checkOut': record['check_out'],
-      'totalGuests': record['total_guests'],
-      'roomsOccupied': record['rooms_occupied'],
-      'purposeOfVisit': record['purpose_of_visit'],
-      'transportationMode': record['transportation_mode'],
-      'status': record['status'],
-      'breakdowns': breakdowns
-          .map(
-            (b) => {
-              'isOverseas': b['is_overseas'] == 1,
-              'country': b['country'],
-              'nationality': b['nationality'],
-              'philippinesRegion': b['philippines_region'],
-              'sex': b['sex'],
-              'ageGroup': b['age_group'],
-              'count': b['count'],
-            },
-          )
-          .toList(),
+      'businessId':            record['business_id'],
+      'checkIn':               record['check_in'],
+      'checkOut':              record['check_out'],
+      'totalGuests':           record['total_guests'],
+      'roomIds':               roomIds,
+      'purposeOfVisit':        record['purpose_of_visit'],
+      'transportationMode':    record['transportation_mode'],
+      'status':                record['status'],
+      'leadCountry':           record['lead_country'],
+      'leadMunicipality':      record['lead_municipality'],
+      'leadProvince':          record['lead_province'],
+      'leadNationality':       record['lead_nationality'],
+      'leadPhilippinesRegion': record['lead_philippines_region'],
+      'leadIsOverseas':        record['lead_is_overseas'] == 1,
+      'leadBirthdate':         record['lead_birthdate'],
+      'leadSex':               record['lead_sex'],
     };
   }
 
   Map<String, dynamic> _fromApiRecord(Map<String, dynamic> row) {
     return {
-      'id': row['id'],
-      'business_id': row['business_id'],
-      'check_in': row['check_in'],
-      'check_out': row['check_out'],
-      'total_guests': row['total_guests'],
-      'rooms_occupied': row['rooms_occupied'],
-      'purpose_of_visit': row['purpose_of_visit'],
-      'transportation_mode': row['transportation_mode'],
-      'status': row['status'] ?? 'active',
-      'is_deleted': (row['is_deleted'] == true) ? 1 : 0,
-      'created_at': row['created_at'],
-      'sync_status': LocalDatabase.syncSynced,
-      'local_updated_at': null,
+      'id':                      row['id'],
+      'business_id':             row['business_id'],
+      'check_in':                row['check_in'],
+      'check_out':               row['check_out'],
+      'length_of_stay':          row['length_of_stay'] ?? 1,
+      'total_guests':            row['total_guests'],
+      'purpose_of_visit':        row['purpose_of_visit'],
+      'transportation_mode':     row['transportation_mode'],
+      'lead_country':            row['lead_country'],
+      'lead_municipality':       row['lead_municipality'],
+      'lead_province':           row['lead_province'],
+      'lead_nationality':        row['lead_nationality'],
+      'lead_philippines_region': row['lead_philippines_region'],
+      'lead_is_overseas':        (row['lead_is_overseas'] == true || row['lead_is_overseas'] == 1) ? 1 : 0,
+      'lead_birthdate':          row['lead_birthdate'],
+      'lead_sex':                row['lead_sex'],
+      'status':                  row['status'] ?? 'active',
+      'is_deleted':              (row['is_deleted'] == true) ? 1 : 0,
+      'created_at':              row['created_at'],
+      'sync_status':             LocalDatabase.syncSynced,
+      'local_updated_at':        null,
     };
   }
 
-  Map<String, dynamic> _fromApiBreakdown(
-    Map<String, dynamic> row,
-    String recordId,
-  ) {
-    return {
-      'id': row['id'],
-      'guest_record_id': row['guest_record_id'] ?? recordId,
-      'country': row['country'],
-      'philippines_region': row['philippines_region'],
-      'nationality': row['nationality'],
-      'sex': row['sex'],
-      'age_group': row['age_group'],
-      'count': row['count'],
-      'is_overseas': (row['is_overseas'] == true) ? 1 : 0,
-    };
+  String _generateUuid() {
+    final now = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
+    return '$now-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
   }
 }

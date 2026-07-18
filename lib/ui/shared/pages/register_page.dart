@@ -132,6 +132,9 @@ class _V {
   static String? registrationNumber(String v) =>
       v.trim().isEmpty ? 'Registration number is required' : null;
 
+  static String? aeId(String v) =>
+      v.trim().isEmpty ? 'AE ID is required' : null;
+
   static String? street(String v) =>
       v.trim().isEmpty ? 'Street is required' : null;
 
@@ -304,6 +307,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _totalRoomsCtrl = TextEditingController();
   final _permitNumberCtrl = TextEditingController();
   final _registrationCtrl = TextEditingController();
+  final _aeIdCtrl = TextEditingController();
   final _streetCtrl = TextEditingController();
   final _barangayCtrl = TextEditingController();
   final _cityCtrl = TextEditingController(text: _fixedCityMunicipality);
@@ -354,6 +358,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _totalRoomsCtrl,
       _permitNumberCtrl,
       _registrationCtrl,
+      _aeIdCtrl,
       _streetCtrl,
       _barangayCtrl,
       _cityCtrl,
@@ -531,6 +536,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _V.totalRooms(_totalRoomsCtrl.text) == null &&
       _V.permitNumber(_permitNumberCtrl.text) == null &&
       _V.registrationNumber(_registrationCtrl.text) == null &&
+      _V.aeId(_aeIdCtrl.text) == null &&
       _V.street(_streetCtrl.text) == null &&
       _V.barangay(_barangayCtrl.text) == null &&
       _V.cityMunicipality(_cityCtrl.text) == null &&
@@ -598,6 +604,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       rooms: _rooms,
       permitNumber: _permitNumberCtrl.text.trim(),
       registrationNumber: _registrationCtrl.text.trim(),
+      aeId: _aeIdCtrl.text.trim(),
       street: _streetCtrl.text.trim(),
       barangay: _barangayCtrl.text.trim(),
       cityMunicipality: _fixedCityMunicipality,
@@ -713,8 +720,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ownerLastNameCtrl: _ownerLastNameCtrl,
                           totalRoomsCtrl: _totalRoomsCtrl,
                           permitNumberCtrl: _permitNumberCtrl,
-                          registrationCtrl: _registrationCtrl,
-                          streetCtrl: _streetCtrl,
+                           registrationCtrl: _registrationCtrl,
+                           aeIdCtrl: _aeIdCtrl,
+                           streetCtrl: _streetCtrl,
                           barangayCtrl: _barangayCtrl,
                           cityCtrl: _cityCtrl,
                           provinceCtrl: _provinceCtrl,
@@ -919,6 +927,7 @@ class _FormCard extends StatelessWidget {
     required this.totalRoomsCtrl,
     required this.permitNumberCtrl,
     required this.registrationCtrl,
+    required this.aeIdCtrl,
     required this.streetCtrl,
     required this.barangayCtrl,
     required this.cityCtrl,
@@ -966,6 +975,7 @@ class _FormCard extends StatelessWidget {
   final TextEditingController totalRoomsCtrl;
   final TextEditingController permitNumberCtrl;
   final TextEditingController registrationCtrl;
+  final TextEditingController aeIdCtrl;
   final TextEditingController streetCtrl;
   final TextEditingController barangayCtrl;
   final TextEditingController cityCtrl;
@@ -1032,6 +1042,7 @@ class _FormCard extends StatelessWidget {
               totalRoomsCtrl: totalRoomsCtrl,
               permitNumberCtrl: permitNumberCtrl,
               registrationCtrl: registrationCtrl,
+              aeIdCtrl: aeIdCtrl,
               streetCtrl: streetCtrl,
               barangayCtrl: barangayCtrl,
               cityCtrl: cityCtrl,
@@ -1470,6 +1481,7 @@ class _Step2Form extends StatefulWidget {
     required this.totalRoomsCtrl,
     required this.permitNumberCtrl,
     required this.registrationCtrl,
+    required this.aeIdCtrl,
     required this.streetCtrl,
     required this.barangayCtrl,
     required this.cityCtrl,
@@ -1496,6 +1508,7 @@ class _Step2Form extends StatefulWidget {
   final TextEditingController totalRoomsCtrl;
   final TextEditingController permitNumberCtrl;
   final TextEditingController registrationCtrl;
+  final TextEditingController aeIdCtrl;
   final TextEditingController streetCtrl;
   final TextEditingController barangayCtrl;
   final TextEditingController cityCtrl;
@@ -1672,6 +1685,20 @@ class _Step2FormState extends State<_Step2Form> {
                   _V.registrationNumber(widget.registrationCtrl.text) != null,
               onChanged: (_) => _touch('registration'),
             ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // ── AE ID ─────────────────────────────────────────────────────────
+        _LabeledField(
+          label: 'AE ID',
+          error: _show('aeId') ? _V.aeId(widget.aeIdCtrl.text) : null,
+          child: _Input(
+            controller: widget.aeIdCtrl,
+            hint: 'e.g. 9-902',
+            hasError:
+                _show('aeId') && _V.aeId(widget.aeIdCtrl.text) != null,
+            onChanged: (_) => _touch('aeId'),
           ),
         ),
         const SizedBox(height: 16),

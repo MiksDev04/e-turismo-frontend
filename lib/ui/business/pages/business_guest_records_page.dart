@@ -23,37 +23,6 @@ String _displayNationality(GuestBreakdownEntry b) {
 
 String _displayYesNo(bool value) => value ? 'Yes' : 'No';
 
-Map<String, int> _isOverseasSummary(List<GuestBreakdownEntry> breakdowns) {
-  var yes = 0;
-  var no  = 0;
-  for (final b in breakdowns) {
-    if (b.isOverseas) {
-      yes += b.count;
-    } else {
-      no += b.count;
-    }
-  }
-  return {'Yes': yes, 'No': no};
-}
-
-Map<String, int> _countrySummary(List<GuestBreakdownEntry> breakdowns) {
-  final summary = <String, int>{};
-  for (final b in breakdowns) {
-    if (b.isOverseas) continue;
-    final label = b.country ?? 'Unspecified';
-    summary[label] = (summary[label] ?? 0) + b.count;
-  }
-
-  final ordered = <String, int>{};
-  for (final label in const ['Philippines', 'Others', 'Unspecified']) {
-    if (summary.containsKey(label)) ordered[label] = summary[label]!;
-  }
-  for (final e in summary.entries) {
-    ordered.putIfAbsent(e.key, () => e.value);
-  }
-  return ordered;
-}
-
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 enum GuestRecordStatus { active, archived }
@@ -63,6 +32,8 @@ class GuestBreakdownEntry {
     this.country,
     this.nationality,
     this.philippinesRegion,
+    this.province,
+    this.municipalityCity,
     required this.sex,
     required this.ageGroup,
     required this.count,
@@ -72,6 +43,8 @@ class GuestBreakdownEntry {
   final String? country;
   final String? nationality;
   final String? philippinesRegion;
+  final String? province;
+  final String? municipalityCity;
   final String sex;
   final String ageGroup;
   final int count;
@@ -92,6 +65,12 @@ class GuestDemographics {
   final List<GuestBreakdownEntry> breakdowns;
 }
 
+class GuestRoom {
+  const GuestRoom({required this.id, required this.roomNumber});
+  final String id;
+  final String roomNumber;
+}
+
 class GuestRecord {
   const GuestRecord({
     required this.id,
@@ -100,10 +79,20 @@ class GuestRecord {
     required this.nights,
     required this.guests,
     required this.rooms,
+    this.roomDetails = const [],
+    this.roomIds = const [],
     required this.purpose,
     required this.transport,
     required this.status,
     required this.demographics,
+    this.leadCountry,
+    this.leadMunicipality,
+    this.leadProvince,
+    this.leadNationality,
+    this.leadPhilippinesRegion,
+    this.leadIsOverseas = false,
+    this.leadBirthdate,
+    this.leadSex,
   });
 
   final String id;
@@ -112,10 +101,20 @@ class GuestRecord {
   final String nights;
   final int guests;
   final int rooms;
+  final List<GuestRoom> roomDetails;
+  final List<String> roomIds;
   final String purpose;
   final String transport;
   final GuestRecordStatus status;
   final GuestDemographics? demographics;
+  final String? leadCountry;
+  final String? leadMunicipality;
+  final String? leadProvince;
+  final String? leadNationality;
+  final String? leadPhilippinesRegion;
+  final bool leadIsOverseas;
+  final String? leadBirthdate;
+  final String? leadSex;
 }
 
 // ─── Filter Options ───────────────────────────────────────────────────────────
@@ -311,14 +310,22 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
     if (updated == null || !mounted) return;
 
     final result = await _api.updateRecord(
-      recordId:           updated.id,
-      checkIn:            updated.checkIn,
-      checkOut:           updated.checkOut,
-      totalGuests:        updated.guests,
-      roomsOccupied:      updated.rooms,
-      purposeOfVisit:     updated.purpose,
-      transportationMode: updated.transport,
-      breakdowns:         updated.demographics?.breakdowns ?? [],
+      recordId:               updated.id,
+      checkIn:                updated.checkIn,
+      checkOut:               updated.checkOut,
+      totalGuests:            updated.guests,
+      roomIds:                updated.roomIds,
+      purposeOfVisit:         updated.purpose,
+      transportationMode:     updated.transport,
+      breakdowns:             updated.demographics?.breakdowns ?? [],
+      leadCountry:            updated.leadCountry,
+      leadMunicipality:       updated.leadMunicipality,
+      leadProvince:           updated.leadProvince,
+      leadNationality:        updated.leadNationality,
+      leadPhilippinesRegion:  updated.leadPhilippinesRegion,
+      leadIsOverseas:         updated.leadIsOverseas,
+      leadBirthdate:          updated.leadBirthdate,
+      leadSex:                updated.leadSex,
     );
     if (!mounted) return;
 
@@ -1614,7 +1621,7 @@ class _RecordDetailModal extends StatelessWidget {
                     const Divider(color: AppColors.cardBorder, height: 1),
                     const SizedBox(height: 20),
 
-                    const _ModalSectionLabel('Guest Breakdown by Segment'),
+                    const _ModalSectionLabel('Demographic Data (Lead Guest)'),
                     const SizedBox(height: 10),
                     if (demo == null || demo.breakdowns.isEmpty)
                       const Text(
@@ -1626,22 +1633,6 @@ class _RecordDetailModal extends StatelessWidget {
                       )
                     else ...[
                       _BreakdownTable(breakdowns: demo.breakdowns),
-                      const SizedBox(height: 20),
-                      const _ModalSectionLabel('Is Overseas'),
-                      const SizedBox(height: 10),
-                      _StatGrid(entries: _isOverseasSummary(demo.breakdowns)),
-                      const SizedBox(height: 20),
-                      const _ModalSectionLabel('Age Groups'),
-                      const SizedBox(height: 10),
-                      _StatGrid(entries: demo.ageGroups),
-                      const SizedBox(height: 20),
-                      const _ModalSectionLabel('Sex Distribution'),
-                      const SizedBox(height: 10),
-                      _StatGrid(entries: demo.sexDistribution),
-                      const SizedBox(height: 20),
-                      const _ModalSectionLabel('Country / Region'),
-                      const SizedBox(height: 10),
-                      _StatGrid(entries: _countrySummary(demo.breakdowns)),
                     ],
                   ],
                 ),
@@ -1662,64 +1653,89 @@ class _StayInfoGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final roomsDisplay = record.roomDetails.isNotEmpty
+        ? '${record.rooms} (${record.roomDetails.map((r) => r.roomNumber).join(', ')})'
+        : '${record.rooms}';
+
     final items = [
-      ('Check-in', record.checkIn),
-      ('Check-out', record.checkOut),
-      ('Length of Stay', record.nights),
-      ('Total Guests', '${record.guests}'),
-      ('Rooms Occupied', '${record.rooms}'),
-      ('Purpose of Visit', record.purpose),
-      ('Mode of Transport', record.transport),
+      (Icons.login,                 'Check-in',          record.checkIn),
+      (Icons.logout,                'Check-out',         record.checkOut),
+      (Icons.nights_stay_outlined,  'Length of Stay',    record.nights),
+      (Icons.people_outline,        'Total Guests',      '${record.guests}'),
+      (Icons.meeting_room_outlined, 'Rooms Occupied',    roomsDisplay),
+      (Icons.work_outline,          'Purpose of Visit',  record.purpose),
+      (Icons.directions_car_outlined, 'Mode of Transport', record.transport),
     ];
 
-    const spacing = 10.0;
+    const spacing = 12.0;
+    const rowGap  = 12.0;
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final itemWidth = (constraints.maxWidth - spacing) / 2;
         return Wrap(
           spacing: spacing,
-          runSpacing: spacing,
-          children: items.map((item) {
-            return SizedBox(
-              width: itemWidth,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.inputBackground,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.cardBorder),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.$1,
-                      style: const TextStyle(
-                        color: AppColors.textGray,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      item.$2,
-                      style: const TextStyle(
-                        color: AppColors.textWhite,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+          runSpacing: rowGap,
+          children: [
+            for (final item in items)
+              SizedBox(
+                width: itemWidth,
+                child: _DetailField(
+                  icon: item.$1,
+                  label: item.$2,
+                  value: item.$3,
                 ),
               ),
-            );
-          }).toList(),
+          ],
         );
       },
+    );
+  }
+}
+
+class _DetailField extends StatelessWidget {
+  const _DetailField({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: AppColors.textSubtle, size: 13),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textSubtle,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          style: const TextStyle(
+            color: AppColors.textWhite,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1816,7 +1832,9 @@ class _BreakdownTable extends StatelessWidget {
                       spacing: 8,
                       runSpacing: 6,
                       children: [
-                        _BreakdownInfoChip(label: 'Is Overseas', value: yesNoLabel),
+                        _BreakdownInfoChip(label: 'Age', value: b.ageGroup),
+                        _BreakdownInfoChip(label: 'Sex', value: b.sex),
+                        _BreakdownInfoChip(label: 'Country', value: _displayCountry(b)),
                         _BreakdownInfoChip(
                           label: 'Nationality',
                           value: _displayNationality(b),
@@ -1825,8 +1843,9 @@ class _BreakdownTable extends StatelessWidget {
                           label: 'Region',
                           value: b.philippinesRegion ?? '—',
                         ),
-                        _BreakdownInfoChip(label: 'Sex', value: b.sex),
-                        _BreakdownInfoChip(label: 'Age', value: b.ageGroup),
+                        _BreakdownInfoChip(label: 'Province', value: b.province ?? '—'),
+                        _BreakdownInfoChip(label: 'Municipality', value: b.municipalityCity ?? '—'),
+                        _BreakdownInfoChip(label: 'Is Overseas', value: yesNoLabel),
                         _BreakdownInfoChip(label: 'Count', value: '${b.count}'),
                       ],
                     ),
@@ -1844,51 +1863,63 @@ class _BreakdownTable extends StatelessWidget {
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Table(
-              border: TableBorder.symmetric(
-                inside: BorderSide(color: AppColors.cardBorder, width: 0.5),
-              ),
-              columnWidths: const {
-                0: FlexColumnWidth(1),
-                1: FlexColumnWidth(1),
-                2: FlexColumnWidth(1),
-                3: FlexColumnWidth(1),
-                4: FlexColumnWidth(1),
-                5: FlexColumnWidth(1),
-                6: FlexColumnWidth(1),
-              },
-              children: [
-                TableRow(
-                  decoration: BoxDecoration(color: AppColors.inputBackground),
-                  children: const [
-                    _TCell('Country',     isHeader: true),
-                    _TCell('Nationality', isHeader: true),
-                    _TCell('Region',      isHeader: true),
-                    _TCell('Is Overseas', isHeader: true),
-                    _TCell('Sex',         isHeader: true),
-                    _TCell('Age Group',   isHeader: true),
-                    _TCell('Count',       isHeader: true),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 700),
+                child: Table(
+                  border: TableBorder.symmetric(
+                    inside: BorderSide(color: AppColors.cardBorder, width: 0.5),
+                  ),
+                  columnWidths: const {
+                    0: FlexColumnWidth(1),
+                    1: FlexColumnWidth(1),
+                    2: FlexColumnWidth(1.2),
+                    3: FlexColumnWidth(1.2),
+                    4: FlexColumnWidth(1.2),
+                    5: FlexColumnWidth(1.2),
+                    6: FlexColumnWidth(1.5),
+                    7: FlexColumnWidth(1),
+                    8: FlexColumnWidth(0.7),
+                  },
+                  children: [
+                    TableRow(
+                      decoration: BoxDecoration(color: AppColors.inputBackground),
+                      children: const [
+                        _TCell('Age Group',    isHeader: true),
+                        _TCell('Sex',          isHeader: true),
+                        _TCell('Country',      isHeader: true),
+                        _TCell('Nationality',  isHeader: true),
+                        _TCell('Region',       isHeader: true),
+                        _TCell('Province',     isHeader: true),
+                        _TCell('Municipality', isHeader: true),
+                        _TCell('Is Overseas',  isHeader: true),
+                        _TCell('Count',        isHeader: true),
+                      ],
+                    ),
+                    ...breakdowns.map(
+                      (b) => TableRow(
+                        children: [
+                          _TCell(b.ageGroup),
+                          _TCell(b.sex),
+                          _TCell(_displayCountry(b)),
+                          _TCell(_displayNationality(b)),
+                          _TCell(b.philippinesRegion ?? '—'),
+                          _TCell(b.province ?? '—'),
+                          _TCell(b.municipalityCity ?? '—'),
+                          _TCellBadge(
+                            label: _displayYesNo(b.isOverseas),
+                            color: b.isOverseas
+                                ? const Color(0xFF3B82F6)
+                                : const Color(0xFF10B981),
+                          ),
+                          _TCell('${b.count}'),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-                ...breakdowns.map(
-                  (b) => TableRow(
-                    children: [
-                      _TCell(_displayCountry(b)),
-                      _TCell(_displayNationality(b)),
-                      _TCell(b.philippinesRegion ?? '—'),
-                      _TCellBadge(
-                        label: _displayYesNo(b.isOverseas),
-                        color: b.isOverseas
-                            ? const Color(0xFF3B82F6)
-                            : const Color(0xFF10B981),
-                      ),
-                      _TCell(b.sex),
-                      _TCell(b.ageGroup),
-                      _TCell('${b.count}'),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         );
@@ -1975,57 +2006,6 @@ class _TCellBadge extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _StatGrid extends StatelessWidget {
-  const _StatGrid({required this.entries});
-  final Map<String, int> entries;
-
-  @override
-  Widget build(BuildContext context) {
-    if (entries.isEmpty) {
-      return const Text(
-        '—',
-        style: TextStyle(color: AppColors.textSubtle, fontSize: 12),
-      );
-    }
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: entries.entries.map((e) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.inputBackground,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppColors.cardBorder),
-          ),
-          child: RichText(
-            text: TextSpan(
-              children: [
-                TextSpan(
-                  text: e.key,
-                  style: const TextStyle(
-                    color: AppColors.textGray,
-                    fontSize: 12,
-                  ),
-                ),
-                const TextSpan(text: '  ', style: TextStyle(fontSize: 12)),
-                TextSpan(
-                  text: '${e.value}',
-                  style: const TextStyle(
-                    color: AppColors.primaryCyan,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
     );
   }
 }

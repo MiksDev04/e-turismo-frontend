@@ -478,15 +478,19 @@ class BusinessDashboardApi extends BaseApi {
         'check_in',
         'check_out',
         'total_guests',
-        'rooms_occupied',
         'purpose_of_visit',
+        'lead_country',
+        'lead_nationality',
+        'lead_philippines_region',
+        'lead_is_overseas',
+        'lead_birthdate',
+        'lead_sex',
       ],
       where:
           'business_id = ? AND is_deleted = 0  '
           'AND check_in >= ? AND check_in <= ?',
       whereArgs: [businessId, startDate, endDate],
     );
-    // Convert Map<String, Object?> to Map<String, dynamic>
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
 
@@ -497,16 +501,61 @@ class BusinessDashboardApi extends BaseApi {
 
     final db = await LocalDatabase.instance.database;
 
-    // SQLite doesn't support inFilter so we build a placeholder string.
     final placeholders = recordIds.map((_) => '?').join(', ');
     final rows = await db.rawQuery(
-      'SELECT guest_record_id, country, philippines_region, sex, age_group, count '
-      'FROM ${LocalDatabase.tableGuestBreakdowns} '
-      'WHERE guest_record_id IN ($placeholders)',
+      'SELECT id as guest_record_id, '
+      '  lead_country as country, '
+      '  lead_philippines_region as philippines_region, '
+      '  lead_sex as sex, '
+      '  lead_is_overseas as is_overseas, '
+      '  lead_birthdate, '
+      '  check_in '
+      'FROM ${LocalDatabase.tableGuestRecords} '
+      'WHERE id IN ($placeholders)',
       recordIds,
     );
 
-    return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+    final breakdowns = <Map<String, dynamic>>[];
+    for (final r in rows) {
+      final sex = r['sex'] as String? ?? '';
+      final isOverseas = (r['is_overseas'] as int?) == 1;
+      final country = r['country'] as String?;
+
+      // Compute age group from lead_birthdate + check_in.
+      String ageGroup = 'Unknown';
+      final birthdateStr = r['lead_birthdate'] as String?;
+      final checkInStr = r['check_in'] as String?;
+      if (birthdateStr != null && checkInStr != null) {
+        final birthdate = DateTime.tryParse(birthdateStr);
+        final checkIn = DateTime.tryParse(checkInStr);
+        if (birthdate != null && checkIn != null) {
+          int age = checkIn.year - birthdate.year;
+          if (checkIn.month < birthdate.month ||
+              (checkIn.month == birthdate.month && checkIn.day < birthdate.day)) {
+            age--;
+          }
+          if (age <= 9)       ageGroup = '0-9';
+          else if (age <= 17) ageGroup = '10-17';
+          else if (age <= 25) ageGroup = '18-25';
+          else if (age <= 35) ageGroup = '26-35';
+          else if (age <= 45) ageGroup = '36-45';
+          else if (age <= 55) ageGroup = '46-55';
+          else                ageGroup = '56+';
+        }
+      }
+
+      breakdowns.add({
+        'guest_record_id':     r['guest_record_id'],
+        'country':             country,
+        'philippines_region':  r['philippines_region'],
+        'sex':                 sex,
+        'age_group':           ageGroup,
+        'count':               1,
+        'is_overseas':         isOverseas,
+      });
+    }
+
+    return breakdowns;
   }
 
   // ===========================================================================
@@ -778,7 +827,7 @@ class BusinessDashboardApi extends BaseApi {
       ..writeln('Period,${month == 0 ? 'Full Year' : _monthName(month)} $year')
       ..writeln()
       ..writeln(
-        'Check In,Check Out,Total Guests,Rooms Occupied,'
+        'Check In,Check Out,Total Guests,'
         'Country,Region,Sex,Age Group,Count',
       );
 
@@ -791,7 +840,6 @@ class BusinessDashboardApi extends BaseApi {
         _stringValue(rec, 'check_in') ?? '',
         _stringValue(rec, 'check_out') ?? '',
         _intValue(rec, 'total_guests') ?? 0,
-        _intValue(rec, 'rooms_occupied') ?? 0,
         _csvCell(_stringValue(b, 'country') ?? 'Unknown'),
         _csvCell(_stringValue(b, 'philippines_region') ?? ''),
         _stringValue(b, 'sex') ?? '',

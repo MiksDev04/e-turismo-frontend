@@ -1,8 +1,8 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
-import 'dart:convert';
 import 'package:app/core/database/local_database.dart';
 import 'package:app/core/services/offline_service.dart';
 import 'package:app/core/services/session_service.dart';
@@ -11,7 +11,7 @@ import 'base_api.dart';
 class GuestEntryResult {
   final bool success;
   final String? error;
-  final bool syncedToCloud; // true only when cloud API confirmed the write
+  final bool syncedToCloud;
 
   const GuestEntryResult._({
     required this.success,
@@ -26,24 +26,16 @@ class GuestEntryResult {
       GuestEntryResult._(success: false, error: error);
 }
 
-class GuestBreakdownData {
-  const GuestBreakdownData({
-    this.country,
-    this.philippinesRegion,
-    this.nationality,
-    required this.sex,
-    required this.ageGroup,
-    required this.count,
-    required this.isOverseas,
+class RoomInfo {
+  const RoomInfo({
+    required this.id,
+    required this.roomNumber,
+    required this.capacity,
   });
 
-  final String? country;
-  final String? philippinesRegion;
-  final String? nationality;
-  final String sex;
-  final String ageGroup;
-  final int count;
-  final bool isOverseas;
+  final String id;
+  final String roomNumber;
+  final int capacity;
 }
 
 class GuestEntryData {
@@ -52,33 +44,136 @@ class GuestEntryData {
     required this.checkIn,
     required this.checkOut,
     required this.totalGuests,
-    required this.roomsOccupied,
+    required this.roomIds,
     required this.purposeOfVisit,
     required this.transportationMode,
-    required this.breakdowns,
+    this.leadCountry,
+    this.leadMunicipality,
+    this.leadProvince,
+    this.leadNationality,
+    this.leadPhilippinesRegion,
+    this.leadIsOverseas = false,
+    this.leadBirthdate,
+    this.leadSex,
   });
 
   final String businessId;
   final DateTime checkIn;
   final DateTime checkOut;
   final int totalGuests;
-  final int roomsOccupied;
+  final List<String> roomIds;
   final String purposeOfVisit;
   final String transportationMode;
-  final List<GuestBreakdownData> breakdowns;
+  final String? leadCountry;
+  final String? leadMunicipality;
+  final String? leadProvince;
+  final String? leadNationality;
+  final String? leadPhilippinesRegion;
+  final bool leadIsOverseas;
+  final DateTime? leadBirthdate;
+  final String? leadSex;
 }
 
 class BusinessGuestEntryApi extends BaseApi {
   // ── Fetch business ID ──────────────────────────────────────────────────────
-  // Online  → ask Cloud API.
-  // Offline → read from cached session (already populated at login time).
 
   Future<String?> fetchBusinessId() async {
-    // Both online and offline we can rely on the cached session for businessId
     return SessionService.instance.current?.businessId;
   }
 
-  // ── Save guest entry + breakdowns ──────────────────────────────────────────
+  // ── Fetch vacant rooms for a business ──────────────────────────────────────
+
+  Future<List<RoomInfo>> fetchVacantRooms(String businessId) async {
+    if (!ConnectivityService.instance.isOnline || !hasToken) {
+      // Offline: return from local cache
+      return _fetchVacantRoomsLocal(businessId);
+    }
+
+    try {
+      final response = await get('/api/business/vacant-rooms?businessId=$businessId');
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        final data = body['data'] as List<dynamic>? ?? [];
+        final rooms = data
+            .map((r) => RoomInfo(
+                  id: r['id'] as String,
+                  roomNumber: r['roomNumber'] as String,
+                  capacity: r['capacity'] as int,
+                ))
+            .toList();
+
+        // Cache rooms locally for offline use
+        await _cacheRoomsLocally(businessId, rooms);
+        return rooms;
+      }
+      throw Exception('Failed to fetch rooms: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('⚠️ fetchVacantRooms: API failed, falling back to local cache — $e');
+      return _fetchVacantRoomsLocal(businessId);
+    }
+  }
+
+  Future<List<RoomInfo>> _fetchVacantRoomsLocal(String businessId) async {
+    final db = await LocalDatabase.instance.database;
+    final rows = await db.query(
+      LocalDatabase.tableLocalRooms,
+      where: 'business_id = ? AND room_status = ?',
+      whereArgs: [businessId, 'vacant'],
+      orderBy: 'room_number',
+    );
+    return rows
+        .map((r) => RoomInfo(
+              id: r['id'] as String,
+              roomNumber: r['room_number'] as String,
+              capacity: r['capacity'] as int,
+            ))
+        .toList();
+  }
+
+  Future<void> _cacheRoomsLocally(String businessId, List<RoomInfo> rooms) async {
+    if (kIsWeb) return;
+    try {
+      final db = await LocalDatabase.instance.database;
+      // Delete junction rows that reference rooms for this business first
+      final existingIds = (await db.query(
+        LocalDatabase.tableLocalRooms,
+        columns: ['id'],
+        where: 'business_id = ?',
+        whereArgs: [businessId],
+      )).map((r) => r['id'] as String).toList();
+      if (existingIds.isNotEmpty) {
+        await db.delete(
+          LocalDatabase.tableGuestRecordRooms,
+          where: 'room_id IN (${existingIds.map((_) => '?').join(',')})',
+          whereArgs: existingIds,
+        );
+      }
+      // Delete old cache for this business
+      await db.delete(
+        LocalDatabase.tableLocalRooms,
+        where: 'business_id = ?',
+        whereArgs: [businessId],
+      );
+      // Insert fresh cache
+      for (final room in rooms) {
+        await db.insert(
+          LocalDatabase.tableLocalRooms,
+          {
+            'id': room.id,
+            'business_id': businessId,
+            'room_number': room.roomNumber,
+            'capacity': room.capacity,
+            'room_status': 'vacant',
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    } catch (e) {
+      debugPrint('⚠️ _cacheRoomsLocally: $e');
+    }
+  }
+
+  // ── Save guest entry ──────────────────────────────────────────────────────
 
   Future<GuestEntryResult> saveGuestEntry(GuestEntryData data) async {
     if (ConnectivityService.instance.isOnline && hasToken) {
@@ -89,15 +184,16 @@ class BusinessGuestEntryApi extends BaseApi {
   }
 
   // ---------------------------------------------------------------------------
-  // ONLINE — push to Node API, then mirror to SQLite as 'synced'.
+  // ONLINE
   // ---------------------------------------------------------------------------
   Future<GuestEntryResult> _saveOnline(GuestEntryData data) async {
     final guestRecordId = _generateId();
     final checkInStr  = _formatDate(data.checkIn);
     final checkOutStr = _formatDate(data.checkOut);
     final now         = DateTime.now().toUtc().toIso8601String();
+    final leadBirthStr = data.leadBirthdate != null ? _formatDate(data.leadBirthdate!) : null;
 
-    // ── Step 1: SQLite first (safe local copy, pending_create) ───────────────
+    // ── Step 1: SQLite first ────────────────────────────────────────────────
     if (!kIsWeb) {
       try {
         await _upsertLocalRecord(
@@ -106,14 +202,21 @@ class BusinessGuestEntryApi extends BaseApi {
           checkIn:            checkInStr,
           checkOut:           checkOutStr,
           totalGuests:        data.totalGuests,
-          roomsOccupied:      data.roomsOccupied,
           purposeOfVisit:     data.purposeOfVisit,
           transportationMode: data.transportationMode,
+          leadCountry:        data.leadCountry,
+          leadMunicipality:   data.leadMunicipality,
+          leadProvince:       data.leadProvince,
+          leadNationality:    data.leadNationality,
+          leadRegion:         data.leadPhilippinesRegion,
+          leadIsOverseas:     data.leadIsOverseas,
+          leadBirthdate:      leadBirthStr,
+          leadSex:            data.leadSex,
+          roomIds:            data.roomIds,
           createdAt:          now,
           syncStatus:         LocalDatabase.syncPendingCreate,
           localUpdatedAt:     now,
         );
-        await _upsertLocalBreakdowns(guestRecordId, data.breakdowns);
       } catch (e) {
         debugPrint('❌ _saveOnline: local write failed — $e');
         return GuestEntryResult.err('Failed to save guest entry. Please try again.');
@@ -128,18 +231,17 @@ class BusinessGuestEntryApi extends BaseApi {
         'checkIn': checkInStr,
         'checkOut': checkOutStr,
         'totalGuests': data.totalGuests,
-        'roomsOccupied': data.roomsOccupied,
+        'roomIds': data.roomIds,
         'purposeOfVisit': data.purposeOfVisit,
         'transportationMode': data.transportationMode,
-        'breakdowns': data.breakdowns.map((b) => {
-          'isOverseas': b.isOverseas,
-          'country': b.country,
-          'nationality': b.nationality,
-          'philippinesRegion': b.philippinesRegion,
-          'sex': _mapSex(b.sex),
-          'ageGroup': _mapAgeGroup(b.ageGroup),
-          'count': b.count,
-        }).toList(),
+        'leadCountry': data.leadCountry,
+        'leadMunicipality': data.leadMunicipality,
+        'leadProvince': data.leadProvince,
+        'leadNationality': data.leadNationality,
+        'leadPhilippinesRegion': data.leadPhilippinesRegion,
+        'leadIsOverseas': data.leadIsOverseas,
+        'leadBirthdate': leadBirthStr,
+        'leadSex': data.leadSex,
       };
 
       final response = await post('/api/business/guest-entries', payload);
@@ -168,15 +270,13 @@ class BusinessGuestEntryApi extends BaseApi {
         debugPrint('⚠️ _saveOnline: Unauthorized (401). Queuing for sync.');
         return GuestEntryResult.ok(syncedToCloud: false);
       }
-      // API failed — record stays pending_create; SyncService will retry.
       debugPrint('⚠️ _saveOnline: Node API request failed, queued for sync — $e');
       return GuestEntryResult.ok(syncedToCloud: false);
     }
   }
 
   // ---------------------------------------------------------------------------
-  // OFFLINE — write only to SQLite, tagged as 'pending_create'.
-  // SyncService will push this to Node API when back online.
+  // OFFLINE
   // ---------------------------------------------------------------------------
   Future<GuestEntryResult> _saveOffline(GuestEntryData data) async {
     try {
@@ -184,6 +284,7 @@ class BusinessGuestEntryApi extends BaseApi {
       final checkInStr    = _formatDate(data.checkIn);
       final checkOutStr   = _formatDate(data.checkOut);
       final now           = DateTime.now().toUtc().toIso8601String();
+      final leadBirthStr  = data.leadBirthdate != null ? _formatDate(data.leadBirthdate!) : null;
 
       await _upsertLocalRecord(
         recordId:           guestRecordId,
@@ -191,14 +292,21 @@ class BusinessGuestEntryApi extends BaseApi {
         checkIn:            checkInStr,
         checkOut:           checkOutStr,
         totalGuests:        data.totalGuests,
-        roomsOccupied:      data.roomsOccupied,
         purposeOfVisit:     data.purposeOfVisit,
         transportationMode: data.transportationMode,
+        leadCountry:        data.leadCountry,
+        leadMunicipality:   data.leadMunicipality,
+        leadProvince:       data.leadProvince,
+        leadNationality:    data.leadNationality,
+        leadRegion:         data.leadPhilippinesRegion,
+        leadIsOverseas:     data.leadIsOverseas,
+        leadBirthdate:      leadBirthStr,
+        leadSex:            data.leadSex,
+        roomIds:            data.roomIds,
         createdAt:          now,
         syncStatus:         LocalDatabase.syncPendingCreate,
         localUpdatedAt:     now,
       );
-      await _upsertLocalBreakdowns(guestRecordId, data.breakdowns);
 
       return GuestEntryResult.ok();
     } catch (e) {
@@ -217,16 +325,29 @@ class BusinessGuestEntryApi extends BaseApi {
     required String checkIn,
     required String checkOut,
     required int totalGuests,
-    required int roomsOccupied,
     required String purposeOfVisit,
     required String transportationMode,
-    required String? createdAt,
+    String? leadCountry,
+    String? leadMunicipality,
+    String? leadProvince,
+    String? leadNationality,
+    String? leadRegion,
+    bool leadIsOverseas = false,
+    String? leadBirthdate,
+    String? leadSex,
+    List<String>? roomIds,
+    String? createdAt,
     required String syncStatus,
     required String? localUpdatedAt,
   }) async {
     final db = await LocalDatabase.instance.database;
     final current = SessionService.instance.current;
-    
+
+    // Compute length_of_stay from dates
+    final dIn  = DateTime.parse(checkIn);
+    final dOut = DateTime.parse(checkOut);
+    final lengthOfStay = dOut.difference(dIn).inDays.clamp(1, 999);
+
     // Ensure the profile and business exist locally to satisfy foreign key constraints
     if (current != null) {
       await db.insert(
@@ -242,7 +363,7 @@ class BusinessGuestEntryApi extends BaseApi {
         },
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
-      
+
       await db.insert(
         LocalDatabase.tableLocalBusinesses,
         {
@@ -255,68 +376,86 @@ class BusinessGuestEntryApi extends BaseApi {
       );
     }
 
+    // Ensure local_rooms entries exist for the room IDs being assigned,
+    // so the junction table foreign key won't fail.
+    if (roomIds != null) {
+      for (final roomId in roomIds) {
+        await db.insert(
+          LocalDatabase.tableLocalRooms,
+          {
+            'id': roomId,
+            'business_id': businessId,
+            'room_number': roomId.substring(0, 8),
+            'capacity': 1,
+            'room_status': 'occupied',
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+    }
+
     await db.insert(
       LocalDatabase.tableGuestRecords,
       {
-        'id':                  recordId,
-        'business_id':         businessId,
-        'check_in':            checkIn,
-        'check_out':           checkOut,
-        'total_guests':        totalGuests,
-        'rooms_occupied':      roomsOccupied,
-        'purpose_of_visit':    purposeOfVisit,
-        'transportation_mode': transportationMode,
-        'status':              'active',
-        'is_deleted':          0,
-        'created_at':          createdAt,
-        'sync_status':         syncStatus,
-        'local_updated_at':    localUpdatedAt,
+        'id':                      recordId,
+        'business_id':             businessId,
+        'check_in':                checkIn,
+        'check_out':               checkOut,
+        'length_of_stay':          lengthOfStay,
+        'total_guests':            totalGuests,
+        'purpose_of_visit':        purposeOfVisit,
+        'transportation_mode':     transportationMode,
+        'lead_country':            leadCountry,
+        'lead_municipality':       leadMunicipality,
+        'lead_province':           leadProvince,
+        'lead_nationality':        leadNationality,
+        'lead_philippines_region': leadRegion,
+        'lead_is_overseas':        leadIsOverseas ? 1 : 0,
+        'lead_birthdate':          leadBirthdate,
+        'lead_sex':                leadSex?.toLowerCase(),
+        'status':                  'active',
+        'is_deleted':              0,
+        'created_at':              createdAt,
+        'sync_status':             syncStatus,
+        'local_updated_at':        localUpdatedAt,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+
+    // Write room assignments to junction table
+    if (roomIds != null && roomIds.isNotEmpty) {
+      // Clear old links for this record
+      await db.delete(
+        LocalDatabase.tableGuestRecordRooms,
+        where: 'guest_record_id = ?',
+        whereArgs: [recordId],
+      );
+      for (final roomId in roomIds) {
+        final junctionId = _generateId();
+        await db.insert(
+          LocalDatabase.tableGuestRecordRooms,
+          {
+            'id':                junctionId,
+            'guest_record_id':   recordId,
+            'room_id':           roomId,
+            'created_at':        createdAt,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    }
+
     debugPrint('💾 SQLite: saved record $recordId (status: $syncStatus, business: $businessId)');
   }
 
-  Future<void> _upsertLocalBreakdowns(
-    String recordId,
-    List<GuestBreakdownData> breakdowns,
-  ) async {
-    final db = await LocalDatabase.instance.database;
-
-    // Delete old ones first (safe on first insert too — nothing to delete)
-    await db.delete(
-      LocalDatabase.tableGuestBreakdowns,
-      where: 'guest_record_id = ?',
-      whereArgs: [recordId],
-    );
-
-    for (final b in breakdowns) {
-      await db.insert(
-        LocalDatabase.tableGuestBreakdowns,
-        {
-          'id':                 _generateId(),
-          'guest_record_id':    recordId,
-          'country':            b.country,
-          'philippines_region': b.philippinesRegion,
-          'nationality':        b.nationality,
-          'sex':                _mapSex(b.sex),
-          'age_group':          _mapAgeGroup(b.ageGroup),
-          'count':              b.count,
-          'is_overseas':        b.isOverseas ? 1 : 0,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    }
-  }
-
   // ---------------------------------------------------------------------------
-  // Generates a UUID v4-like string without any extra package.
+  // UUID generator
   // ---------------------------------------------------------------------------
   String _generateId() {
     final rand = Random.secure();
     final bytes = List<int>.generate(16, (_) => rand.nextInt(256));
-    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
-    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
     final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
         '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
@@ -324,30 +463,8 @@ class BusinessGuestEntryApi extends BaseApi {
   }
 
   // ---------------------------------------------------------------------------
-  // Value mappers (unchanged from original)
+  // Value helpers
   // ---------------------------------------------------------------------------
-
-  String _mapSex(String sex) {
-    switch (sex.toLowerCase()) {
-      case 'male':   return 'male';
-      case 'female': return 'female';
-      default:       return 'male';
-    }
-  }
-
-  String _mapAgeGroup(String ageGroup) {
-    switch (ageGroup) {
-      case '0–9':               return '0-9';
-      case '10–17':             return '10-17';
-      case '18–25':             return '18-25';
-      case '26–35':             return '26-35';
-      case '36–45':             return '36-45';
-      case '46–55':             return '46-55';
-      case '56+':               return '56+';
-      case 'Prefer not to say': return 'prefer_not_to_say';
-      default:                  return 'prefer_not_to_say';
-    }
-  }
 
   String _formatDate(DateTime dt) {
     final y = dt.year.toString();

@@ -140,6 +140,7 @@ class RegisterApi {
     required List<Map<String, String>> rooms,
     required String permitNumber,
     required String registrationNumber,
+    required String aeId,
     required String street,
     required String barangay,
     required String cityMunicipality,
@@ -163,6 +164,7 @@ class RegisterApi {
         rooms: rooms,
         permitNumber: permitNumber,
         registrationNumber: registrationNumber,
+        aeId: aeId,
         street: street,
         barangay: barangay,
         cityMunicipality: cityMunicipality,
@@ -192,6 +194,7 @@ class RegisterApi {
       request.fields['rooms'] = jsonEncode(rooms);
       request.fields['permitNumber'] = permitNumber;
       request.fields['registrationNumber'] = registrationNumber;
+      request.fields['aeId'] = aeId;
       request.fields['street'] = street;
       request.fields['barangay'] = barangay;
       request.fields['cityMunicipality'] = cityMunicipality;
@@ -288,6 +291,7 @@ class RegisterApi {
     required List<Map<String, String>> rooms,
     required String permitNumber,
     required String registrationNumber,
+    required String aeId,
     required String street,
     required String barangay,
     required String cityMunicipality,
@@ -340,6 +344,7 @@ class RegisterApi {
     if (registrationNumber.trim().isEmpty) {
       return 'Registration number is required.';
     }
+    if (aeId.trim().isEmpty) return 'AE ID is required.';
     if (street.trim().isEmpty) return 'Street is required.';
     if (barangay.trim().isEmpty) return 'Barangay is required.';
     if (cityMunicipality.trim().isEmpty)

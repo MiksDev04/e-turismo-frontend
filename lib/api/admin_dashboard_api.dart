@@ -477,7 +477,7 @@ class AdminDashboardApi extends BaseApi {
       ..writeln('Period,${month == 0 ? 'Full Year' : _monthName(month)} $year')
       ..writeln()
       ..writeln(
-        'Check In,Check Out,Total Guests,Rooms Occupied,'
+        'Check In,Check Out,Total Guests,'
         'Country,Region,Sex,Age Group,Count',
       );
 
@@ -488,7 +488,6 @@ class AdminDashboardApi extends BaseApi {
         record['check_in'],
         record['check_out'],
         record['total_guests'],
-        record['rooms_occupied'],
         _csvCell(breakdown['country'] as String? ?? ''),
         _csvCell(breakdown['philippines_region'] as String? ?? ''),
         breakdown['sex'],

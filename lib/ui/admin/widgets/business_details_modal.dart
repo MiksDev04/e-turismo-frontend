@@ -21,6 +21,7 @@ class BusinessDetails {
     required this.owner,
     required this.permitNumber,
     required this.registrationNumber,
+    required this.aeId,
     required this.registeredDate,
     required this.address,
     required this.street,
@@ -44,6 +45,7 @@ class BusinessDetails {
   final String owner;
   final String permitNumber;
   final String registrationNumber;
+  final String aeId;
   final String registeredDate;
   final String address;
   final String street;
@@ -431,6 +433,14 @@ class _DetailsGrid extends StatelessWidget {
             value: details.registrationNumber,
           ),
         ),
+        const SizedBox(height: 12),
+        _DetailRow(
+          first: _DetailField(label: 'AE ID', value: details.aeId),
+          second: _DetailField(
+            label: 'Registered',
+            value: _formatRegisteredDate(details.registeredDate),
+          ),
+        ),
       ],
     );
   }
@@ -483,6 +493,14 @@ String _formatRegisteredDate(String rawValue) {
 
   final local = parsed.toLocal();
   return '${monthNames[local.month - 1]} ${local.day}, ${local.year}';
+}
+
+String _formatPhone(String raw) {
+  final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digits.length == 11) {
+    return '${digits.substring(0, 4)}-${digits.substring(4, 7)}-${digits.substring(7)}';
+  }
+  return raw;
 }
 
 class _DetailField extends StatelessWidget {
@@ -568,7 +586,7 @@ class _RoomInfoSection extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  '${rooms.fold(0, (sum, r) => sum + r.occupancy)} pax',
+                  '${rooms.fold(0, (sum, r) => sum + r.capacity)} pax',
                   style: const TextStyle(
                     color: AppColors.primaryCyan,
                     fontSize: 11,
@@ -708,7 +726,7 @@ class _RoomInfoSection extends StatelessWidget {
                         ),
                         Expanded(
                           child: Text(
-                            '${room.occupancy}',
+                            '${room.capacity}',
                             style: const TextStyle(
                               color: AppColors.textGray,
                               fontSize: 13,
@@ -802,7 +820,7 @@ class _ContactInfo extends StatelessWidget {
       children: [
         _ContactRow(icon: Icons.location_on_outlined, text: addressText),
         const SizedBox(height: 10),
-        _ContactRow(icon: Icons.phone_outlined, text: details.phone),
+        _ContactRow(icon: Icons.phone_outlined, text: _formatPhone(details.phone)),
         const SizedBox(height: 10),
         _ContactRow(icon: Icons.email_outlined, text: details.email),
       ],

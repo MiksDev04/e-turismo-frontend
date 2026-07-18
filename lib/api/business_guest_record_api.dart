@@ -142,41 +142,65 @@ class BusinessGuestRecordApi extends BaseApi {
     );
   }
 
-  // ── Update a Record (stay info + breakdowns) ──────────────────────────────
+  // ── Update a Record (stay info + lead guest + breakdowns) ────────────────
 
   Future<ApiResult<void>> updateRecord({
     required String recordId,
     required String checkIn,
     required String checkOut,
     required int totalGuests,
-    required int roomsOccupied,
+    required List<String> roomIds,
     required String purposeOfVisit,
     required String transportationMode,
     required List<GuestBreakdownEntry> breakdowns,
+    String? leadCountry,
+    String? leadMunicipality,
+    String? leadProvince,
+    String? leadNationality,
+    String? leadPhilippinesRegion,
+    bool leadIsOverseas = false,
+    String? leadBirthdate,
+    String? leadSex,
   }) async {
     if (ConnectivityService.instance.isOnline && hasToken) {
       try {
         return await _updateOnline(
-          recordId:           recordId,
-          checkIn:            checkIn,
-          checkOut:           checkOut,
-          totalGuests:        totalGuests,
-          roomsOccupied:      roomsOccupied,
-          purposeOfVisit:     purposeOfVisit,
-          transportationMode: transportationMode,
-          breakdowns:         breakdowns,
+          recordId:               recordId,
+          checkIn:                checkIn,
+          checkOut:               checkOut,
+          totalGuests:            totalGuests,
+          roomIds:                roomIds,
+          purposeOfVisit:         purposeOfVisit,
+          transportationMode:     transportationMode,
+          breakdowns:             breakdowns,
+          leadCountry:            leadCountry,
+          leadMunicipality:       leadMunicipality,
+          leadProvince:           leadProvince,
+          leadNationality:        leadNationality,
+          leadPhilippinesRegion:  leadPhilippinesRegion,
+          leadIsOverseas:         leadIsOverseas,
+          leadBirthdate:          leadBirthdate,
+          leadSex:                leadSex,
         );
       } on ApiException catch (e) {
         if (e.statusCode == 401) {
           return _updateOffline(
-            recordId:           recordId,
-            checkIn:            checkIn,
-            checkOut:           checkOut,
-            totalGuests:        totalGuests,
-            roomsOccupied:      roomsOccupied,
-            purposeOfVisit:     purposeOfVisit,
-            transportationMode: transportationMode,
-            breakdowns:         breakdowns,
+            recordId:               recordId,
+            checkIn:                checkIn,
+            checkOut:               checkOut,
+            totalGuests:            totalGuests,
+            roomIds:                roomIds,
+            purposeOfVisit:         purposeOfVisit,
+            transportationMode:     transportationMode,
+            breakdowns:             breakdowns,
+            leadCountry:            leadCountry,
+            leadMunicipality:       leadMunicipality,
+            leadProvince:           leadProvince,
+            leadNationality:        leadNationality,
+            leadPhilippinesRegion:  leadPhilippinesRegion,
+            leadIsOverseas:         leadIsOverseas,
+            leadBirthdate:          leadBirthdate,
+            leadSex:                leadSex,
           );
         }
         return ApiResult.failure('Update failed: ${e.message}');
@@ -184,14 +208,22 @@ class BusinessGuestRecordApi extends BaseApi {
     }
     
     return _updateOffline(
-      recordId:           recordId,
-      checkIn:            checkIn,
-      checkOut:           checkOut,
-      totalGuests:        totalGuests,
-      roomsOccupied:      roomsOccupied,
-      purposeOfVisit:     purposeOfVisit,
-      transportationMode: transportationMode,
-      breakdowns:         breakdowns,
+      recordId:               recordId,
+      checkIn:                checkIn,
+      checkOut:               checkOut,
+      totalGuests:            totalGuests,
+      roomIds:                roomIds,
+      purposeOfVisit:         purposeOfVisit,
+      transportationMode:     transportationMode,
+      breakdowns:             breakdowns,
+      leadCountry:            leadCountry,
+      leadMunicipality:       leadMunicipality,
+      leadProvince:           leadProvince,
+      leadNationality:        leadNationality,
+      leadPhilippinesRegion:  leadPhilippinesRegion,
+      leadIsOverseas:         leadIsOverseas,
+      leadBirthdate:          leadBirthdate,
+      leadSex:                leadSex,
     );
   }
 
@@ -263,9 +295,6 @@ class BusinessGuestRecordApi extends BaseApi {
     try {
       final db = await LocalDatabase.instance.database;
       
-      // We want:
-      // 1. Records with sync_status != synced (pending changes)
-      // 2. Records with sync_status == synced BUT updated/synced very recently (grace period)
       final now = DateTime.now().toUtc();
       final graceThreshold = now.subtract(const Duration(minutes: 2)).toIso8601String();
 
@@ -282,31 +311,16 @@ class BusinessGuestRecordApi extends BaseApi {
       }
 
       final records = <GuestRecord>[];
-      final localIds = rows.map((r) => r['id'] as String).where((id) => !cloudIds.contains(id)).toList();
-
-      Map<String, List<Map<String, dynamic>>> breakdownsByRecord = {};
-      if (localIds.isNotEmpty) {
-        final placeholders = localIds.map((_) => '?').join(', ');
-        final allBreakdowns = await db.rawQuery(
-          'SELECT * FROM ${LocalDatabase.tableGuestBreakdowns} '
-          'WHERE guest_record_id IN ($placeholders)',
-          localIds,
-        );
-        for (final b in allBreakdowns) {
-          final gid = b['guest_record_id'] as String;
-          breakdownsByRecord.putIfAbsent(gid, () => []).add(
-            Map<String, dynamic>.from(b),
-          );
-        }
-      }
 
       for (final row in rows) {
         final recordId = row['id'] as String;
         if (cloudIds.contains(recordId)) continue;
-        final breakdownRows = breakdownsByRecord[recordId] ?? [];
 
         final checkIn  = row['check_in']  as String;
         final checkOut = row['check_out'] as String;
+
+        final roomDetails = await _fetchLocalRoomDetails(db, recordId);
+        final roomIds = roomDetails.map((r) => r.id).toList();
 
         records.add(GuestRecord(
           id:           recordId,
@@ -314,13 +328,23 @@ class BusinessGuestRecordApi extends BaseApi {
           checkOut:     checkOut,
           nights:       _calcNights(checkIn, checkOut),
           guests:       (row['total_guests']       as int?) ?? 0,
-          rooms:        (row['rooms_occupied']      as int?) ?? 0,
+          rooms:        roomDetails.length,
+          roomDetails:  roomDetails,
+          roomIds:      roomIds,
           purpose:      row['purpose_of_visit']     as String? ?? '',
           transport:    row['transportation_mode']  as String? ?? '',
           status:       (row['status'] as String?) == 'archived'
               ? GuestRecordStatus.archived
               : GuestRecordStatus.active,
-          demographics: _buildDemographicsFromLocal(breakdownRows),
+          demographics: _buildDemographicsFromLeadFields(row),
+          leadCountry:            row['lead_country'] as String?,
+          leadMunicipality:       row['lead_municipality'] as String?,
+          leadProvince:           row['lead_province'] as String?,
+          leadNationality:        row['lead_nationality'] as String?,
+          leadPhilippinesRegion:  row['lead_philippines_region'] as String?,
+          leadIsOverseas:         (row['lead_is_overseas'] as int?) == 1,
+          leadBirthdate:          row['lead_birthdate'] as String?,
+          leadSex:                _normaliseSex(row['lead_sex'] as String?),
         ));
       }
       return records;
@@ -401,30 +425,15 @@ class BusinessGuestRecordApi extends BaseApi {
       );
 
       final records = <GuestRecord>[];
-      final recordIds = rows.map((r) => r['id'] as String).toList();
-
-      Map<String, List<Map<String, dynamic>>> breakdownsByRecord = {};
-      if (recordIds.isNotEmpty) {
-        final placeholders = recordIds.map((_) => '?').join(', ');
-        final allBreakdowns = await db.rawQuery(
-          'SELECT * FROM ${LocalDatabase.tableGuestBreakdowns} '
-          'WHERE guest_record_id IN ($placeholders)',
-          recordIds,
-        );
-        for (final b in allBreakdowns) {
-          final gid = b['guest_record_id'] as String;
-          breakdownsByRecord.putIfAbsent(gid, () => []).add(
-            Map<String, dynamic>.from(b),
-          );
-        }
-      }
 
       for (final row in rows) {
         final recordId = row['id'] as String;
-        final breakdownRows = breakdownsByRecord[recordId] ?? [];
 
         final checkIn  = row['check_in']  as String;
         final checkOut = row['check_out'] as String;
+
+        final roomDetails = await _fetchLocalRoomDetails(db, recordId);
+        final roomIds = roomDetails.map((r) => r.id).toList();
 
         records.add(GuestRecord(
           id:           recordId,
@@ -432,13 +441,23 @@ class BusinessGuestRecordApi extends BaseApi {
           checkOut:     checkOut,
           nights:       _calcNights(checkIn, checkOut),
           guests:       (row['total_guests']       as int?) ?? 0,
-          rooms:        (row['rooms_occupied']      as int?) ?? 0,
+          rooms:        roomDetails.length,
+          roomDetails:  roomDetails,
+          roomIds:      roomIds,
           purpose:      row['purpose_of_visit']     as String? ?? '',
           transport:    row['transportation_mode']  as String? ?? '',
           status:       (row['status'] as String?) == 'archived'
               ? GuestRecordStatus.archived
               : GuestRecordStatus.active,
-          demographics: _buildDemographicsFromLocal(breakdownRows),
+          demographics: _buildDemographicsFromLeadFields(row),
+          leadCountry:            row['lead_country'] as String?,
+          leadMunicipality:       row['lead_municipality'] as String?,
+          leadProvince:           row['lead_province'] as String?,
+          leadNationality:        row['lead_nationality'] as String?,
+          leadPhilippinesRegion:  row['lead_philippines_region'] as String?,
+          leadIsOverseas:         (row['lead_is_overseas'] as int?) == 1,
+          leadBirthdate:          row['lead_birthdate'] as String?,
+          leadSex:                _normaliseSex(row['lead_sex'] as String?),
         ));
       }
 
@@ -458,22 +477,38 @@ class BusinessGuestRecordApi extends BaseApi {
     required String checkIn,
     required String checkOut,
     required int totalGuests,
-    required int roomsOccupied,
+    required List<String> roomIds,
     required String purposeOfVisit,
     required String transportationMode,
     required List<GuestBreakdownEntry> breakdowns,
+    String? leadCountry,
+    String? leadMunicipality,
+    String? leadProvince,
+    String? leadNationality,
+    String? leadPhilippinesRegion,
+    bool leadIsOverseas = false,
+    String? leadBirthdate,
+    String? leadSex,
   }) async {
     try {
       final businessId = SessionService.instance.current?.businessId;
       final payload = {
-        'businessId':         businessId,
-        'checkIn':            checkIn,
-        'checkOut':           checkOut,
-        'totalGuests':        totalGuests,
-        'roomsOccupied':      roomsOccupied,
-        'purposeOfVisit':     purposeOfVisit,
-        'transportationMode': transportationMode,
-        'breakdowns':         breakdowns.map((b) => _breakdownEntryToPayload(b)).toList(),
+        'businessId':            businessId,
+        'checkIn':               checkIn,
+        'checkOut':              checkOut,
+        'totalGuests':           totalGuests,
+        'roomIds':               roomIds,
+        'purposeOfVisit':        purposeOfVisit,
+        'transportationMode':    transportationMode,
+        'leadCountry':           leadCountry,
+        'leadMunicipality':      leadMunicipality,
+        'leadProvince':          leadProvince,
+        'leadNationality':       leadNationality,
+        'leadPhilippinesRegion': leadPhilippinesRegion,
+        'leadIsOverseas':        leadIsOverseas,
+        'leadSex':               leadSex?.toLowerCase(),
+        'leadBirthdate':         leadBirthdate,
+        'breakdowns':            breakdowns.map((b) => _breakdownEntryToPayload(b)).toList(),
       };
 
       await put('/api/business/guest-records/$recordId', payload);
@@ -483,19 +518,27 @@ class BusinessGuestRecordApi extends BaseApi {
         await db.update(
           LocalDatabase.tableGuestRecords,
           {
-            'check_in':            checkIn,
-            'check_out':           checkOut,
-            'total_guests':        totalGuests,
-            'rooms_occupied':      roomsOccupied,
-            'purpose_of_visit':    purposeOfVisit,
-            'transportation_mode': transportationMode,
-            'sync_status':         LocalDatabase.syncSynced,
-            'local_updated_at':    DateTime.now().toUtc().toIso8601String(),
+            'check_in':                checkIn,
+            'check_out':               checkOut,
+            'total_guests':            totalGuests,
+            'purpose_of_visit':        purposeOfVisit,
+            'transportation_mode':     transportationMode,
+            'lead_country':            leadCountry,
+            'lead_municipality':       leadMunicipality,
+            'lead_province':           leadProvince,
+            'lead_nationality':        leadNationality,
+            'lead_philippines_region': leadPhilippinesRegion,
+            'lead_is_overseas':        leadIsOverseas ? 1 : 0,
+            'lead_birthdate':          leadBirthdate,
+            'lead_sex':                leadSex?.toLowerCase(),
+            'sync_status':             LocalDatabase.syncSynced,
+            'local_updated_at':        DateTime.now().toUtc().toIso8601String(),
           },
           where:     'id = ?',
           whereArgs: [recordId],
         );
-        await _replaceLocalBreakdowns(db, recordId, breakdowns);
+        // Update room assignments
+        await _updateLocalRoomAssignments(db, recordId, businessId ?? '', roomIds);
       }
 
       return const ApiResult.success(null);
@@ -513,10 +556,18 @@ class BusinessGuestRecordApi extends BaseApi {
     required String checkIn,
     required String checkOut,
     required int totalGuests,
-    required int roomsOccupied,
+    required List<String> roomIds,
     required String purposeOfVisit,
     required String transportationMode,
     required List<GuestBreakdownEntry> breakdowns,
+    String? leadCountry,
+    String? leadMunicipality,
+    String? leadProvince,
+    String? leadNationality,
+    String? leadPhilippinesRegion,
+    bool leadIsOverseas = false,
+    String? leadBirthdate,
+    String? leadSex,
   }) async {
     try {
       final now = DateTime.now().toUtc().toIso8601String();
@@ -525,20 +576,29 @@ class BusinessGuestRecordApi extends BaseApi {
       await db.update(
         LocalDatabase.tableGuestRecords,
         {
-          'check_in':            checkIn,
-          'check_out':           checkOut,
-          'total_guests':        totalGuests,
-          'rooms_occupied':      roomsOccupied,
-          'purpose_of_visit':    purposeOfVisit,
-          'transportation_mode': transportationMode,
-          'sync_status':         LocalDatabase.syncPendingUpdate,
-          'local_updated_at':    now,
+          'check_in':                checkIn,
+          'check_out':               checkOut,
+          'total_guests':            totalGuests,
+          'purpose_of_visit':        purposeOfVisit,
+          'transportation_mode':     transportationMode,
+          'lead_country':            leadCountry,
+          'lead_municipality':       leadMunicipality,
+          'lead_province':           leadProvince,
+          'lead_nationality':        leadNationality,
+          'lead_philippines_region': leadPhilippinesRegion,
+          'lead_is_overseas':        leadIsOverseas ? 1 : 0,
+          'lead_birthdate':          leadBirthdate,
+          'lead_sex':                leadSex?.toLowerCase(),
+          'sync_status':             LocalDatabase.syncPendingUpdate,
+          'local_updated_at':        now,
         },
         where:     'id = ?',
         whereArgs: [recordId],
       );
 
-      await _replaceLocalBreakdowns(db, recordId, breakdowns);
+      // Update room assignments locally
+      final businessId = SessionService.instance.current?.businessId ?? '';
+      await _updateLocalRoomAssignments(db, recordId, businessId, roomIds);
 
       return const ApiResult.success(null);
     } catch (e) {
@@ -552,6 +612,27 @@ class BusinessGuestRecordApi extends BaseApi {
   // ===========================================================================
   // Local cache helpers
   // ===========================================================================
+
+  /// Fetches room details for a guest record from the local SQLite
+  /// junction table `local_guest_record_rooms` joined with `local_rooms`.
+  Future<List<GuestRoom>> _fetchLocalRoomDetails(dynamic db, String recordId) async {
+    try {
+      final rows = await db.rawQuery(
+        'SELECT r.id, r.room_number '
+        'FROM local_guest_record_rooms grr '
+        'JOIN local_rooms r ON r.id = grr.room_id '
+        'WHERE grr.guest_record_id = ?',
+        [recordId],
+      );
+      return rows.map((r) => GuestRoom(
+        id: r['id'] as String? ?? '',
+        roomNumber: r['room_number'] as String? ?? '',
+      )).toList();
+    } catch (e) {
+      debugPrint('⚠️ _fetchLocalRoomDetails error: $e');
+      return [];
+    }
+  }
 
   Future<void> _refreshLocalCache(String businessId, List rows) async {
     if (kIsWeb) {
@@ -577,78 +658,99 @@ class BusinessGuestRecordApi extends BaseApi {
       await db.insert(
         LocalDatabase.tableGuestRecords,
         {
-          'id':                  recordId,
-          'business_id':         businessId,
-          'check_in':            row['check_in'],
-          'check_out':           row['check_out'],
-          'total_guests':        row['total_guests'],
-          'rooms_occupied':      row['rooms_occupied'],
-          'purpose_of_visit':    row['purpose_of_visit'],
-          'transportation_mode': row['transportation_mode'],
-          'status':              row['status'] ?? 'active',
-          'is_deleted':          0,
-          'created_at':          row['created_at'],
-          'sync_status':         LocalDatabase.syncSynced,
-          'local_updated_at':    null,
+          'id':                      recordId,
+          'business_id':             businessId,
+          'check_in':                row['check_in'],
+          'check_out':               row['check_out'],
+          'length_of_stay':          row['length_of_stay'] ?? 1,
+          'total_guests':            row['total_guests'],
+          'purpose_of_visit':        row['purpose_of_visit'],
+          'transportation_mode':     row['transportation_mode'],
+          'lead_country':            row['lead_country'],
+          'lead_municipality':       row['lead_city_municipality'] ?? row['lead_municipality'],
+          'lead_province':           row['lead_province'],
+          'lead_nationality':        row['lead_nationality'],
+          'lead_philippines_region': row['lead_philippines_region'],
+          'lead_is_overseas':        (row['lead_is_overseas'] == true || row['lead_is_overseas'] == 1) ? 1 : 0,
+          'lead_birthdate':          row['lead_birthdate'],
+          'lead_sex':                row['lead_sex'],
+          'status':                  row['status'] ?? 'active',
+          'is_deleted':              0,
+          'created_at':              row['created_at'],
+          'sync_status':             LocalDatabase.syncSynced,
+          'local_updated_at':        null,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
-
-      await db.delete(
-        LocalDatabase.tableGuestBreakdowns,
-        where:     'guest_record_id = ?',
-        whereArgs: [recordId],
-      );
-
-      final bds = row['guest_breakdowns'] as List? ?? [];
-      for (final b in bds) {
-        await db.insert(
-          LocalDatabase.tableGuestBreakdowns,
-          {
-            'id':                 b['id'],
-            'guest_record_id':    recordId,
-            'country':            b['country'],
-            'philippines_region': b['philippines_region'],
-            'nationality':        b['nationality'],
-            'sex':                b['sex'],
-            'age_group':          b['age_group'],
-            'count':              b['count'],
-            'is_overseas':        (b['is_overseas'] == true || b['is_overseas'] == 1) ? 1 : 0,
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-      }
     }
   }
 
-  Future<void> _replaceLocalBreakdowns(
+  /// Updates the lead guest fields on a local_guest_records row from a
+  /// GuestBreakdownEntry list. Uses the first entry as the lead guest.
+  Future<void> _updateLeadFields(
     dynamic db,
     String recordId,
     List<GuestBreakdownEntry> breakdowns,
   ) async {
-    await db.delete(
-      LocalDatabase.tableGuestBreakdowns,
-      where:     'guest_record_id = ?',
+    if (breakdowns.isEmpty) return;
+
+    final b             = breakdowns.first;
+    final isOverseas    = b.isOverseas;
+    final isPhilippines = !isOverseas && b.country == 'Philippines';
+
+    await db.update(
+      LocalDatabase.tableGuestRecords,
+      {
+        'lead_country':            isOverseas ? null : b.country,
+        'lead_nationality':        isPhilippines ? b.nationality : null,
+        'lead_philippines_region': isPhilippines ? b.philippinesRegion : null,
+        'lead_province':           isOverseas ? null : b.province,
+        'lead_municipality':       isOverseas ? null : b.municipalityCity,
+        'lead_is_overseas':        isOverseas ? 1 : 0,
+        'lead_sex':                _mapSex(b.sex),
+      },
+      where:     'id = ?',
       whereArgs: [recordId],
     );
+  }
 
-    for (int i = 0; i < breakdowns.length; i++) {
-      final b             = breakdowns[i];
-      final isOverseas    = b.isOverseas;
-      final isPhilippines = !isOverseas && b.country == 'Philippines';
-
+  /// Updates room assignments in the local junction table.
+  Future<void> _updateLocalRoomAssignments(
+    dynamic db,
+    String recordId,
+    String businessId,
+    List<String> roomIds,
+  ) async {
+    // Clear old links
+    await db.delete(
+      LocalDatabase.tableGuestRecordRooms,
+      where: 'guest_record_id = ?',
+      whereArgs: [recordId],
+    );
+    // Ensure each room exists in local_rooms (FK constraint requires it)
+    for (final roomId in roomIds) {
       await db.insert(
-        LocalDatabase.tableGuestBreakdowns,
+        LocalDatabase.tableLocalRooms,
         {
-          'id':                 '${recordId}_breakdown_$i',
-          'guest_record_id':    recordId,
-          'country':            isOverseas ? null : b.country,
-          'philippines_region': isPhilippines ? b.philippinesRegion : null,
-          'nationality':        isPhilippines ? b.nationality : null,
-          'sex':                _mapSex(b.sex),
-          'age_group':          _mapAgeGroup(b.ageGroup),
-          'count':              b.count,
-          'is_overseas':        isOverseas ? 1 : 0,
+          'id':          roomId,
+          'business_id': businessId,
+          'room_number': roomId.substring(0, 8),
+          'capacity':    1,
+          'room_status': 'occupied',
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
+    // Insert new links
+    for (final roomId in roomIds) {
+      final junctionId = DateTime.now().toUtc().toIso8601String() + '-' + roomId;
+      await db.insert(
+        LocalDatabase.tableGuestRecordRooms,
+        {
+          'id':                junctionId,
+          'guest_record_id':   recordId,
+          'room_id':           roomId,
+          'created_at':        DateTime.now().toUtc().toIso8601String(),
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -667,6 +769,8 @@ class BusinessGuestRecordApi extends BaseApi {
       'country':            isOverseas ? null : b.country,
       'nationality':        isPhilippines ? b.nationality : null,
       'philippinesRegion': isPhilippines ? b.philippinesRegion : null,
+      'province':          isOverseas ? null : b.province,
+      'municipalityCity':  isOverseas ? null : b.municipalityCity,
       'sex':                _mapSex(b.sex),
       'ageGroup':          _mapAgeGroup(b.ageGroup),
       'count':              b.count,
@@ -684,19 +788,38 @@ class BusinessGuestRecordApi extends BaseApi {
       final checkOut   = row['check_out'] as String;
       final statusStr  = row['status']    as String? ?? 'active';
 
+      final roomsList = (row['rooms'] as List?) ?? [];
+      final roomDetails = roomsList.map((r) => GuestRoom(
+        id: r['id'] as String? ?? '',
+        roomNumber: r['roomNumber'] as String? ?? '',
+      )).toList();
+      final roomIds = roomsList.map((r) => r['id'] as String? ?? '').where((id) => id.isNotEmpty).toList();
+
       return GuestRecord(
         id:           row['id'] as String,
         checkIn:      checkIn,
         checkOut:     checkOut,
         nights:       _calcNights(checkIn, checkOut),
         guests:       (row['total_guests']       as int?) ?? 0,
-        rooms:        (row['rooms_occupied']      as int?) ?? 0,
+        rooms:        roomsList.length,
+        roomDetails:  roomDetails,
+        roomIds:      roomIds,
         purpose:      row['purpose_of_visit']     as String? ?? '',
         transport:    row['transportation_mode']  as String? ?? '',
         status:       statusStr == 'archived'
             ? GuestRecordStatus.archived
             : GuestRecordStatus.active,
-        demographics: _buildDemographicsFromNode(breakdowns),
+        demographics: breakdowns.isNotEmpty
+            ? _buildDemographicsFromNode(breakdowns)
+            : _buildDemographicsFromLeadFields(row),
+        leadCountry:            row['lead_country'] as String?,
+        leadMunicipality:       row['lead_city_municipality'] as String?,
+        leadProvince:           row['lead_province'] as String?,
+        leadNationality:        row['lead_nationality'] as String?,
+        leadPhilippinesRegion:  row['lead_philippines_region'] as String?,
+        leadIsOverseas:         (row['lead_is_overseas'] == true || row['lead_is_overseas'] == 1),
+        leadBirthdate:          row['lead_birthdate'] as String?,
+        leadSex:                _normaliseSex(row['lead_sex'] as String?),
       );
     }).toList();
   }
@@ -742,6 +865,8 @@ class BusinessGuestRecordApi extends BaseApi {
                 (b['philippines_region'] as String?) != 'N/A')
             ? b['philippines_region'] as String?
             : null,
+        province:          (!isOverseas ? b['province'] as String? : null),
+        municipalityCity:  (!isOverseas ? b['municipality_city'] as String? : null),
         sex:        b['sex']       as String? ?? '',
         ageGroup:   b['age_group'] as String? ?? '',
         count:      count,
@@ -800,12 +925,93 @@ class BusinessGuestRecordApi extends BaseApi {
                 (b['philippines_region'] as String?) != 'N/A')
             ? b['philippines_region'] as String?
             : null,
+        province:          (!isOverseas ? b['province'] as String? : null),
+        municipalityCity:  (!isOverseas ? b['municipality_city'] as String? : null),
         sex:        b['sex']       as String? ?? '',
         ageGroup:   b['age_group'] as String? ?? '',
         count:      count,
         isOverseas: isOverseas,
       ));
     }
+
+    return GuestDemographics(
+      ageGroups:       ageGroups,
+      sexDistribution: sex,
+      countries:       countries,
+      breakdowns:      entries,
+    );
+  }
+
+  /// Builds GuestDemographics from the lead guest fields stored directly on a
+  /// local_guest_records row (the breakdowns table was retired in v2).
+  GuestDemographics? _buildDemographicsFromLeadFields(
+    Map<String, dynamic> row,
+  ) {
+    final s = row['lead_sex'] as String?;
+    if (s == null || s.isEmpty) return null;
+
+    final sex = <String, int>{s: 1};
+
+    final isOverseas = (row['lead_is_overseas'] as int?) == 1;
+    final country    = row['lead_country'] as String?;
+    final region     = row['lead_philippines_region'] as String?;
+
+    final countries = <String, int>{};
+    final String countryKey;
+    if (isOverseas) {
+      countryKey = 'Overseas';
+    } else if (country == 'Philippines' && region != null && region != 'N/A') {
+      countryKey = 'PH – $region';
+    } else {
+      countryKey = country ?? 'Unknown';
+    }
+    countries[countryKey] = 1;
+
+    // Compute age group from lead_birthdate + check_in.
+    String ageGroup = 'Unknown';
+    final birthdateStr = row['lead_birthdate'] as String?;
+    final checkInStr   = row['check_in'] as String?;
+    if (birthdateStr != null && checkInStr != null) {
+      final birthdate = DateTime.tryParse(birthdateStr);
+      final checkIn   = DateTime.tryParse(checkInStr);
+      if (birthdate != null && checkIn != null) {
+        int age = checkIn.year - birthdate.year;
+        if (checkIn.month < birthdate.month ||
+            (checkIn.month == birthdate.month && checkIn.day < birthdate.day)) {
+          age--;
+        }
+        if (age <= 9)       ageGroup = '0-9';
+        else if (age <= 17) ageGroup = '10-17';
+        else if (age <= 25) ageGroup = '18-25';
+        else if (age <= 35) ageGroup = '26-35';
+        else if (age <= 45) ageGroup = '36-45';
+        else if (age <= 55) ageGroup = '46-55';
+        else                ageGroup = '56+';
+      }
+    }
+
+    final ageGroups = <String, int>{ageGroup: 1};
+
+    final entries = <GuestBreakdownEntry>[
+      GuestBreakdownEntry(
+        country:           isOverseas ? null : country,
+        nationality:       (!isOverseas && country == 'Philippines')
+            ? row['lead_nationality'] as String?
+            : null,
+        philippinesRegion: (!isOverseas &&
+                country == 'Philippines' &&
+                region != null &&
+                region != 'N/A')
+            ? region
+            : null,
+        province:          (!isOverseas ? row['lead_province'] as String? : null),
+        municipalityCity:  (!isOverseas ? (row['lead_city_municipality'] ?? row['lead_municipality']) as String? : null),
+        sex:        s,
+        ageGroup:   ageGroup,
+        count:      1,
+        isOverseas: isOverseas,
+      ),
+    ];
 
     return GuestDemographics(
       ageGroups:       ageGroups,
@@ -836,6 +1042,12 @@ class BusinessGuestRecordApi extends BaseApi {
       case 'female': return 'female';
       default:       return 'male';
     }
+  }
+
+  /// Normalise sex value from DB to Title Case for UI dropdowns.
+  static String _normaliseSex(String? sex) {
+    if (sex == null || sex.isEmpty) return sex ?? '';
+    return sex[0].toUpperCase() + sex.substring(1).toLowerCase();
   }
 
   String _mapAgeGroup(String ageGroup) {

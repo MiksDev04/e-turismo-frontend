@@ -9,7 +9,6 @@ import 'package:app/ui/shared/pages/error_page.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/accommodation_export_service.dart';
 import '../../shared/layouts/admin_layout.dart';
-import '../../shared/widgets/action_icon_button.dart';
 import '../../shared/widgets/paginator.dart';
 import '../widgets/business_details_modal.dart';
 import '../models/accommodation_models.dart';
@@ -1083,12 +1082,12 @@ class _RankingsViewState extends State<_RankingsView> {
                       color: AppColors.primaryCyan,
                       size: 15,
                     ),
-                    const SizedBox(width: 6),
+                const SizedBox(width: 5),
                     Text(
                       '${_commify(_totalGuests)} total tourists',
                       style: const TextStyle(
                         color: AppColors.primaryCyan,
-                        fontSize: 12.5,
+                    fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -1656,7 +1655,7 @@ class _TableHeader extends StatelessWidget {
             ),
           ),
           Expanded(
-            flex: 2,
+            flex: 3,
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
               child: _HeaderCell('Actions'),
@@ -1717,7 +1716,7 @@ class _TableRow extends StatelessWidget {
                     child: const Icon(
                       Icons.apartment_rounded,
                       color: AppColors.primaryCyan,
-                      size: 16,
+                  size: 14,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -1802,7 +1801,7 @@ class _TableRow extends StatelessWidget {
             ),
           ),
           Expanded(
-            flex: 2,
+            flex: 3,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Align(
@@ -2229,70 +2228,142 @@ class _ActionButtons extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPending = item.status == AccommodationStatus.pending;
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: Alignment.centerLeft,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ActionIconButton(
-            icon: Icons.remove_red_eye_outlined,
-            tooltip: 'View Details',
-            color: AppColors.primaryCyan,
-            showBorder: true,
-            label: 'View',
-            onTap: () {
-              showBusinessDetailsModal(
-                context,
-                BusinessDetails(
-                  businessId: item.id,
-                  name: item.name,
-                  tradeName: item.tradeName,
-                  type: item.businessType.label,
-                  businessLine: item.businessLineLabel,
-                  rooms: item.rooms,
-                  status: item.status,
-                  owner: item.owner,
-                  permitNumber: item.permitNumber,
-                  registrationNumber: item.registrationNumber,
-                  registeredDate: _formatRegisteredDate(item.createdAt),
-                  address: item.address,
-                  street: item.street,
-                  barangay: item.barangay,
-                  cityMunicipality: item.cityMunicipality,
-                  province: item.province,
-                  region: item.region,
-                  phone: item.contact,
-                  email: item.email ?? '—',
-                  permitFileUrl: item.permitFileUrl,
-                  validIdUrl: item.validIdUrl,
-                ),
-              );
-            },
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        _ActionButton(
+          icon: Icons.remove_red_eye_outlined,
+          tooltip: 'View Details',
+          color: AppColors.primaryCyan,
+          label: 'View',
+          onTap: () {
+            showBusinessDetailsModal(
+              context,
+              BusinessDetails(
+                businessId: item.id,
+                name: item.name,
+                tradeName: item.tradeName,
+                type: item.businessType.label,
+                businessLine: item.businessLineLabel,
+                rooms: item.rooms,
+                status: item.status,
+                owner: item.owner,
+                permitNumber: item.permitNumber,
+                registrationNumber: item.registrationNumber,
+                aeId: item.aeIdCodeLgu,
+                registeredDate: _formatRegisteredDate(item.createdAt),
+                address: item.address,
+                street: item.street,
+                barangay: item.barangay,
+                cityMunicipality: item.cityMunicipality,
+                province: item.province,
+                region: item.region,
+                phone: item.contact,
+                email: item.email ?? '—',
+                permitFileUrl: item.permitFileUrl,
+                validIdUrl: item.validIdUrl,
+              ),
+            );
+          },
+        ),
+        if (isPending) ...[
+          _ActionButton(
+            icon: Icons.check_circle_outline_rounded,
+            tooltip: 'Approve',
+            color: const Color(0xFF00C48C),
+            label: 'Approve',
+            onTap: () => _showRemarksModal(
+              context,
+              action: AccommodationStatus.approved,
+            ),
           ),
-          if (isPending) ...[
-            const SizedBox(width: 8),
-            ActionIconButton(
-              icon: Icons.check_circle_outline_rounded,
-              tooltip: 'Approve',
-              color: const Color(0xFF00C48C),
-              onTap: () => _showRemarksModal(
-                context,
-                action: AccommodationStatus.approved,
-              ),
+          _ActionButton(
+            icon: Icons.cancel_outlined,
+            tooltip: 'Reject',
+            color: const Color(0xFFFF4D6A),
+            label: 'Reject',
+            onTap: () => _showRemarksModal(
+              context,
+              action: AccommodationStatus.rejected,
             ),
-            const SizedBox(width: 8),
-            ActionIconButton(
-              icon: Icons.cancel_outlined,
-              tooltip: 'Reject',
-              color: const Color(0xFFFF4D6A),
-              onTap: () => _showRemarksModal(
-                context,
-                action: AccommodationStatus.rejected,
-              ),
-            ),
-          ],
+          ),
         ],
+      ],
+    );
+  }
+}
+
+// ─── Action Button ────────────────────────────────────────────────────────────
+
+class _ActionButton extends StatefulWidget {
+  const _ActionButton({
+    required this.icon,
+    required this.tooltip,
+    required this.color,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final Color color;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  State<_ActionButton> createState() => _ActionButtonState();
+}
+
+class _ActionButtonState extends State<_ActionButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.color;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: SystemMouseCursors.click,
+      child: Tooltip(
+        message: widget.tooltip,
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            decoration: BoxDecoration(
+              color: _hovered
+                  ? color.withOpacity(0.12)
+                  : color.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: _hovered
+                    ? color.withOpacity(0.7)
+                    : color.withOpacity(0.35),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  widget.icon,
+                  color: _hovered ? color : color.withOpacity(0.7),
+                  size: 11,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  widget.label,
+                  style: TextStyle(
+                    color: _hovered ? color : color.withOpacity(0.7),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

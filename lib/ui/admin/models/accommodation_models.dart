@@ -152,7 +152,7 @@ class Accommodation {
       province: map['province'] as String? ?? '—',
       region: map['region'] as String? ?? '—',
       dotAccreditationClassification: map['dot_accreditation_classification'] as String? ?? '—',
-      aeIdCodeLgu: map['ae_id_code_lgu'] as String? ?? map['ae_id_code'] as String? ?? '—',
+      aeIdCodeLgu: map['ae_id'] as String? ?? map['ae_id_code_lgu'] as String? ?? map['ae_id_code'] as String? ?? '—',
       permitNumber: map['permit_number'] as String? ?? '—',
       registrationNumber: map['registration_number'] as String? ?? '—',
       permitFileUrl: map['permit_file_url'] as String? ?? '',
@@ -201,18 +201,18 @@ class Accommodation {
 class RoomInfo {
   const RoomInfo({
     required this.roomNumber,
-    required this.occupancy,
+    required this.capacity,
     required this.roomStatus,
   });
 
   final String roomNumber;
-  final int occupancy;
+  final int capacity;
   final String roomStatus;
 
   factory RoomInfo.fromMap(Map<String, dynamic> map) {
     return RoomInfo(
       roomNumber: map['room_number'] as String? ?? '—',
-      occupancy: (map['occupancy'] as num?)?.toInt() ?? 1,
+      capacity: (map['capacity'] as num?)?.toInt() ?? 1,
       roomStatus: (map['room_status'] as String?) ?? 'vacant',
     );
   }
