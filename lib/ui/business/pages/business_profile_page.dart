@@ -164,7 +164,6 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
 
   // ── Validation ────────────────────────────────────────────────────────────
   String? _phoneError;
-  String? _roomsError;
 
   static final _phoneRe = RegExp(r'^09\d{9}$');
 
@@ -179,26 +178,12 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
     if (_phoneError != err) setState(() => _phoneError = err);
   }
 
-  void _validateRooms() {
-    final n = int.tryParse(_totalRoomsCtrl.text.trim());
-    String? err;
-    if (_totalRoomsCtrl.text.trim().isEmpty) {
-      err = null;
-    } else if (n == null) {
-      err = 'Enter a valid number';
-    } else if (n <= 0) {
-      err = 'Must be at least 1';
-    }
-    if (_roomsError != err) setState(() => _roomsError = err);
-  }
-
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
     _phoneCtrl.addListener(_validatePhone);
-    _totalRoomsCtrl.addListener(_validateRooms);
     _subscribeConnectivity();
     _loadData();
   }
@@ -207,7 +192,6 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
   void dispose() {
     _connectivitySub?.cancel();
     _phoneCtrl.removeListener(_validatePhone);
-    _totalRoomsCtrl.removeListener(_validateRooms);
     for (final c in [
       _fullNameCtrl, _usernameCtrl, _emailCtrl, _phoneCtrl,
       _businessNameCtrl, _tradenameCtrl, _ownerFirstCtrl, _ownerMiddleCtrl,
@@ -392,8 +376,6 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
       _showSnack('No business record found.');
       return;
     }
-    _validateRooms();
-    if (_roomsError != null) return;
     setState(() => _isSavingBusiness = true);
     try {
       await _api.updateBusinessInfo(
@@ -622,7 +604,6 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                 onSave:    _saveBusinessInfo,
                                 isNarrow:  isNarrow,
                                 hasRecord: _business != null,
-                                roomsError: _roomsError,
                                 selectedBarangay: _selectedBarangay,
                                 onBarangayChanged: (v) => setState(() {
                                   _selectedBarangay = v;
@@ -992,7 +973,6 @@ class _BusinessInfoCard extends StatelessWidget {
     required this.hasRecord,
     required this.selectedBarangay,
     required this.onBarangayChanged,
-    this.roomsError,
   });
 
   final TextEditingController businessNameCtrl, tradenameCtrl;
@@ -1010,7 +990,6 @@ class _BusinessInfoCard extends StatelessWidget {
   final bool isNarrow;
   final bool hasRecord;
   final String? selectedBarangay;
-  final String? roomsError;
   final ValueChanged<String?> onBarangayChanged;
 
   @override
@@ -1056,11 +1035,9 @@ class _BusinessInfoCard extends StatelessWidget {
             _LabeledField(
               label: 'Total Rooms / Units',
               icon: Icons.bed_outlined,
-              error: roomsError,
-              child: _InputField(
+              child: _ReadonlyField(
                   controller: totalRoomsCtrl,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly]),
+                  tooltip: 'Total room count is automatically synced from your room listings.'),
             ),
           ] else
             Row(children: [
@@ -1077,11 +1054,9 @@ class _BusinessInfoCard extends StatelessWidget {
               Expanded(child: _LabeledField(
                 label: 'Total Rooms / Units',
                 icon: Icons.bed_outlined,
-                error: roomsError,
-                child: _InputField(
+                child: _ReadonlyField(
                     controller: totalRoomsCtrl,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly]),
+                    tooltip: 'Total room count is automatically synced from your room listings.'),
               )),
             ]),
           const SizedBox(height: 14),

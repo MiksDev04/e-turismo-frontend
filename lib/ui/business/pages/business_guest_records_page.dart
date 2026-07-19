@@ -1663,6 +1663,7 @@ class _StayInfoGrid extends StatelessWidget {
       (Icons.nights_stay_outlined,  'Length of Stay',    record.nights),
       (Icons.people_outline,        'Total Guests',      '${record.guests}'),
       (Icons.meeting_room_outlined, 'Rooms Occupied',    roomsDisplay),
+      (Icons.location_city_outlined,'City/Municipality', record.leadMunicipality ?? '-'),
       (Icons.work_outline,          'Purpose of Visit',  record.purpose),
       (Icons.directions_car_outlined, 'Mode of Transport', record.transport),
     ];

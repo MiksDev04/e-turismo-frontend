@@ -7,6 +7,8 @@ import '../pages/business_guest_records_page.dart';
 import '../../../api/business_guest_entry_api.dart';
 import 'dart:async';
 import '../../../core/services/offline_service.dart';
+import '../../../core/services/psgc_repository.dart';
+import '../../../core/models/psgc_models.dart';
 
 // ─── Light input colours ──────────────────────────────────────────────────────
 
@@ -91,26 +93,6 @@ const _countryOptions = [
   'Others',
 ];
 
-const _regionOptions = [
-  'NCR',
-  'CAR',
-  'Region I',
-  'Region II',
-  'Region III',
-  'Region IV-A (CALABARZON)',
-  'Region IV-B (MIMAROPA)',
-  'Region V',
-  'Region VI',
-  'Region VII',
-  'Region VIII',
-  'Region IX',
-  'Region X',
-  'Region XI',
-  'Region XII',
-  'Region XIII',
-  'BARMM',
-];
-
 const _nationalityOptions = ['Filipino', 'Foreign'];
 
 const _sexOptions = ['Male', 'Female'];
@@ -156,11 +138,11 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
 
   // ── Lead guest fields ────────────────────────────────────────────────────
   late final TextEditingController _leadBirthdateCtrl;
-  late final TextEditingController _leadMunicipalityCtrl;
-  late final TextEditingController _leadProvinceCtrl;
   String? _leadCountry;
   String? _leadNationality;
-  String? _leadRegion;
+  String? _selectedRegionCode;
+  String? _selectedProvinceCode;
+  String? _selectedCityCode;
   bool _leadIsOverseas = false;
   String? _leadSex;
 
@@ -232,13 +214,28 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
 
     // Lead guest
     _leadCountry = r.leadCountry;
-    _leadMunicipalityCtrl = TextEditingController(text: r.leadMunicipality ?? '');
-    _leadProvinceCtrl = TextEditingController(text: r.leadProvince ?? '');
     _leadNationality = r.leadNationality;
-    _leadRegion = r.leadPhilippinesRegion;
     _leadIsOverseas = r.leadIsOverseas;
     _leadBirthdateCtrl = TextEditingController(text: r.leadBirthdate ?? '');
     _leadSex = r.leadSex;
+
+    // PSGC reverse-lookup: resolve names → codes for cascading dropdowns
+    final repo = PsgcRepository.instance;
+    _selectedRegionCode = r.leadPhilippinesRegion != null
+        ? repo.findRegionCodeByName(r.leadPhilippinesRegion!)
+        : null;
+    if (_selectedRegionCode != null && r.leadProvince != null) {
+      _selectedProvinceCode = repo.findProvinceCodeByName(
+        _selectedRegionCode!,
+        r.leadProvince!,
+      );
+    }
+    if (_selectedProvinceCode != null && r.leadMunicipality != null) {
+      _selectedCityCode = repo.findCityCodeByName(
+        _selectedProvinceCode!,
+        r.leadMunicipality!,
+      );
+    }
 
     // Room selection
     _selectedRoomIds.addAll(r.roomIds);
@@ -260,8 +257,6 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
     _purposeOtherCtrl.dispose();
     _transportOtherCtrl.dispose();
     _leadBirthdateCtrl.dispose();
-    _leadMunicipalityCtrl.dispose();
-    _leadProvinceCtrl.dispose();
     _connectivitySub?.cancel();
     super.dispose();
   }
@@ -283,9 +278,26 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       if (!mounted) return;
 
       final existingIds = rooms.map((r) => r.id).toSet();
+
+      // Add assigned rooms from roomDetails (has full info)
       for (final gr in widget.record.roomDetails) {
         if (!existingIds.contains(gr.id)) {
           rooms.add(RoomInfo(id: gr.id, roomNumber: gr.roomNumber, capacity: 0));
+          existingIds.add(gr.id);
+        }
+      }
+
+      // Fallback: add rooms from roomIds (just UUIDs) if roomDetails was empty
+      if (widget.record.roomDetails.isEmpty) {
+        for (final roomId in widget.record.roomIds) {
+          if (!existingIds.contains(roomId)) {
+            rooms.add(RoomInfo(
+              id: roomId,
+              roomNumber: roomId.length > 8 ? roomId.substring(0, 8) : roomId,
+              capacity: 0,
+            ));
+            existingIds.add(roomId);
+          }
         }
       }
 
@@ -430,8 +442,33 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
     final transportValue =
         _transport == 'Others' ? _transportOtherCtrl.text.trim() : _transport;
 
-    final leadMunicipality = _leadMunicipalityCtrl.text.trim();
-    final leadProvince = _leadProvinceCtrl.text.trim();
+    // Derive PSGC names from selected codes
+    final repo = PsgcRepository.instance;
+    String? regionName;
+    String? provinceName;
+    String? cityName;
+    if (!_leadIsOverseas && _leadCountry == 'Philippines') {
+      if (_selectedRegionCode != null) {
+        regionName = repo.regions
+            .where((r) => r.code == _selectedRegionCode)
+            .firstOrNull
+            ?.name;
+      }
+      if (_selectedProvinceCode != null) {
+        provinceName = repo
+            .provincesFor(_selectedRegionCode ?? '')
+            .where((p) => p.code == _selectedProvinceCode)
+            .firstOrNull
+            ?.name;
+      }
+      if (_selectedCityCode != null && _selectedProvinceCode != null) {
+        cityName = repo
+            .citiesFor(_selectedProvinceCode!)
+            .where((c) => c.code == _selectedCityCode)
+            .firstOrNull
+            ?.name;
+      }
+    }
 
     final updated = GuestRecord(
       id: widget.record.id,
@@ -447,12 +484,12 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       status: widget.record.status,
       demographics: widget.record.demographics,
       leadCountry: _leadIsOverseas ? null : _leadCountry,
-      leadMunicipality: leadMunicipality.isEmpty ? null : leadMunicipality,
-      leadProvince: leadProvince.isEmpty ? null : leadProvince,
+      leadMunicipality: cityName,
+      leadProvince: provinceName,
       leadNationality:
           _leadIsOverseas ? null : _leadNationality,
       leadPhilippinesRegion:
-          _leadIsOverseas || _leadCountry != 'Philippines' ? null : _leadRegion,
+          _leadIsOverseas || _leadCountry != 'Philippines' ? null : regionName,
       leadIsOverseas: _leadIsOverseas,
       leadBirthdate: _leadBirthdateCtrl.text.trim().isEmpty
           ? null
@@ -488,8 +525,6 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
     _purposeOtherCtrl.clear();
     _transportOtherCtrl.clear();
     _leadBirthdateCtrl.clear();
-    _leadMunicipalityCtrl.clear();
-    _leadProvinceCtrl.clear();
     setState(() {
       _purpose = _purposes.first;
       _transport = _transports.first;
@@ -498,8 +533,10 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       _lengthOfStay = '0 nights';
       _leadCountry = null;
       _leadNationality = null;
-      _leadRegion = null;
       _leadIsOverseas = false;
+      _selectedRegionCode = null;
+      _selectedProvinceCode = null;
+      _selectedCityCode = null;
       _leadSex = null;
       _selectedRoomIds.clear();
       _errors = {};
@@ -952,10 +989,17 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                       // ── Lead Guest Information ──────────────────────
                       _LeadGuestCard(
                         leadCountry: _leadCountry,
-                        leadMunicipality: _leadMunicipalityCtrl,
-                        leadProvince: _leadProvinceCtrl,
+                        selectedRegionCode: _selectedRegionCode,
+                        selectedProvinceCode: _selectedProvinceCode,
+                        selectedCityCode: _selectedCityCode,
+                        regions: PsgcRepository.instance.regions,
+                        provinces: _selectedRegionCode != null
+                            ? PsgcRepository.instance.provincesFor(_selectedRegionCode!)
+                            : [],
+                        cities: _selectedProvinceCode != null
+                            ? PsgcRepository.instance.citiesFor(_selectedProvinceCode!)
+                            : [],
                         leadNationality: _leadNationality,
-                        leadRegion: _leadRegion,
                         leadIsOverseas: _leadIsOverseas,
                         leadBirthdate: _leadBirthdateCtrl,
                         leadSex: _leadSex,
@@ -966,7 +1010,9 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                             _leadCountry = v;
                             if (v != 'Philippines') {
                               _leadNationality = null;
-                              _leadRegion = null;
+                              _selectedRegionCode = null;
+                              _selectedProvinceCode = null;
+                              _selectedCityCode = null;
                             }
                           });
                           _clearFieldError('leadCountry');
@@ -977,16 +1023,31 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                             if (v) {
                               _leadCountry = null;
                               _leadNationality = null;
-                              _leadRegion = null;
+                              _selectedRegionCode = null;
+                              _selectedProvinceCode = null;
+                              _selectedCityCode = null;
                             }
                           });
+                        },
+                        onRegionChanged: (v) {
+                          setState(() {
+                            _selectedRegionCode = v;
+                            _selectedProvinceCode = null;
+                            _selectedCityCode = null;
+                          });
+                        },
+                        onProvinceChanged: (v) {
+                          setState(() {
+                            _selectedProvinceCode = v;
+                            _selectedCityCode = null;
+                          });
+                        },
+                        onCityChanged: (v) {
+                          setState(() => _selectedCityCode = v);
                         },
                         onNationalityChanged: (v) {
                           setState(() => _leadNationality = v);
                           _clearFieldError('leadNationality');
-                        },
-                        onRegionChanged: (v) {
-                          setState(() => _leadRegion = v);
                         },
                         onBirthdatePicked: () {
                           _clearFieldError('leadBirthdate');
@@ -1100,10 +1161,13 @@ class _GlobalErrorBanner extends StatelessWidget {
 class _LeadGuestCard extends StatelessWidget {
   const _LeadGuestCard({
     required this.leadCountry,
-    required this.leadMunicipality,
-    required this.leadProvince,
+    required this.selectedRegionCode,
+    required this.selectedProvinceCode,
+    required this.selectedCityCode,
+    required this.regions,
+    required this.provinces,
+    required this.cities,
     required this.leadNationality,
-    required this.leadRegion,
     required this.leadIsOverseas,
     required this.leadBirthdate,
     required this.leadSex,
@@ -1111,17 +1175,22 @@ class _LeadGuestCard extends StatelessWidget {
     required this.errors,
     required this.onCountryChanged,
     required this.onOverseasToggled,
-    required this.onNationalityChanged,
     required this.onRegionChanged,
+    required this.onProvinceChanged,
+    required this.onCityChanged,
+    required this.onNationalityChanged,
     required this.onBirthdatePicked,
     required this.onSexChanged,
   });
 
   final String? leadCountry;
-  final TextEditingController leadMunicipality;
-  final TextEditingController leadProvince;
+  final String? selectedRegionCode;
+  final String? selectedProvinceCode;
+  final String? selectedCityCode;
+  final List<Region> regions;
+  final List<Province> provinces;
+  final List<CityMunicipality> cities;
   final String? leadNationality;
-  final String? leadRegion;
   final bool leadIsOverseas;
   final TextEditingController leadBirthdate;
   final String? leadSex;
@@ -1129,14 +1198,17 @@ class _LeadGuestCard extends StatelessWidget {
   final Map<String, String?> errors;
   final ValueChanged<String?> onCountryChanged;
   final ValueChanged<bool> onOverseasToggled;
-  final ValueChanged<String?> onNationalityChanged;
   final ValueChanged<String?> onRegionChanged;
+  final ValueChanged<String?> onProvinceChanged;
+  final ValueChanged<String?> onCityChanged;
+  final ValueChanged<String?> onNationalityChanged;
   final VoidCallback onBirthdatePicked;
   final ValueChanged<String?> onSexChanged;
 
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 600;
+    final hasProvinces = provinces.isNotEmpty;
 
     return _SectionCard(
       title: 'Lead Guest Information',
@@ -1191,35 +1263,17 @@ class _LeadGuestCard extends StatelessWidget {
             ),
             if (isPhilippines) ...[
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _FieldCol(
-                      label: 'Nationality *',
-                      errorText: errors['leadNationality'],
-                      child: _DropdownField(
-                        value: leadNationality,
-                        items: _nationalityOptions,
-                        hint: 'Select',
-                        hasError:
-                            errors['leadNationality'] != null,
-                        onChanged: onNationalityChanged,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _FieldCol(
-                      label: 'Region',
-                      child: _DropdownField(
-                        value: leadRegion,
-                        items: _regionOptions,
-                        hint: 'Select region',
-                        onChanged: onRegionChanged,
-                      ),
-                    ),
-                  ),
-                ],
+              _FieldCol(
+                label: 'Nationality *',
+                errorText: errors['leadNationality'],
+                child: _DropdownField(
+                  value: leadNationality,
+                  items: _nationalityOptions,
+                  hint: 'Select',
+                  hasError:
+                      errors['leadNationality'] != null,
+                  onChanged: onNationalityChanged,
+                ),
               ),
             ],
           ] else ...[
@@ -1260,69 +1314,107 @@ class _LeadGuestCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 3,
-                    child: _FieldCol(
-                      label: 'Region',
-                      child: _DropdownField(
-                        value: leadRegion,
-                        items: _regionOptions,
-                        hint: 'Select region',
-                        onChanged: onRegionChanged,
-                      ),
-                    ),
-                  ),
                 ],
               ],
             ),
           ],
           const SizedBox(height: 14),
 
-          // ── Municipality & Province ────────────────────────────────────
-          if (isMobile) ...[
-            _FieldCol(
-              label: 'City / Municipality',
-              child: _PlainTextField(
-                controller: leadMunicipality,
-                hint: 'City/Municipality',
-              ),
-            ),
-            const SizedBox(height: 12),
-            _FieldCol(
-              label: 'Province',
-              child: _PlainTextField(
-                controller: leadProvince,
-                hint: 'Province',
-              ),
-            ),
-          ] else ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: _FieldCol(
-                    label: 'City / Municipality',
-                    child: _PlainTextField(
-                      controller: leadMunicipality,
-                      hint: 'City/Municipality',
-                    ),
-                  ),
+          // ── Region / Province / City (Philippines only) ───────────────
+          if (isPhilippines) ...[
+            if (isMobile) ...[
+              _FieldCol(
+                label: 'Region *',
+                child: _DropdownField(
+                  value: selectedRegionCode,
+                  items: regions.map((r) => r.code).toList(),
+                  displayLabels: {for (final r in regions) r.code: r.name},
+                  hint: 'Select region',
+                  onChanged: onRegionChanged,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _FieldCol(
-                    label: 'Province',
-                    child: _PlainTextField(
-                      controller: leadProvince,
-                      hint: 'Province',
-                    ),
+              ),
+              if (hasProvinces) ...[
+                const SizedBox(height: 12),
+                _FieldCol(
+                  label: 'Province *',
+                  child: _DropdownField(
+                    value: selectedProvinceCode,
+                    items: provinces.map((p) => p.code).toList(),
+                    displayLabels: {for (final p in provinces) p.code: p.name},
+                    hint: 'Select province',
+                    onChanged: onProvinceChanged,
                   ),
                 ),
               ],
-            ),
+              if ((hasProvinces && selectedProvinceCode != null) ||
+                  (!hasProvinces && selectedRegionCode != null)) ...[
+                const SizedBox(height: 12),
+                _FieldCol(
+                  label: 'City / Municipality *',
+                  child: _DropdownField(
+                    value: selectedCityCode,
+                    items: cities.map((c) => c.code).toList(),
+                    displayLabels: {for (final c in cities) c.code: c.name},
+                    hint: 'Select city/municipality',
+                    onChanged: onCityChanged,
+                  ),
+                ),
+              ],
+            ] else ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: _FieldCol(
+                      label: 'Region *',
+                      child: _DropdownField(
+                        value: selectedRegionCode,
+                        items: regions.map((r) => r.code).toList(),
+                        displayLabels: {for (final r in regions) r.code: r.name},
+                        hint: 'Select region',
+                        onChanged: onRegionChanged,
+                      ),
+                    ),
+                  ),
+                  if (hasProvinces) ...[
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 3,
+                      child: _FieldCol(
+                        label: 'Province *',
+                        child: _DropdownField(
+                          value: selectedProvinceCode,
+                          items: provinces.map((p) => p.code).toList(),
+                          displayLabels: {for (final p in provinces) p.code: p.name},
+                          hint: 'Select province',
+                          onChanged: onProvinceChanged,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if ((hasProvinces && selectedProvinceCode != null) ||
+                      (!hasProvinces && selectedRegionCode != null)) ...[
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 3,
+                      child: _FieldCol(
+                        label: 'City / Municipality *',
+                        child: _DropdownField(
+                          value: selectedCityCode,
+                          items: cities.map((c) => c.code).toList(),
+                          displayLabels: {for (final c in cities) c.code: c.name},
+                          hint: 'Select city/municipality',
+                          onChanged: onCityChanged,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+            const SizedBox(height: 14),
           ],
-          const SizedBox(height: 14),
 
           // ── Birthdate & Sex ────────────────────────────────────────────
           if (isMobile) ...[
@@ -2036,12 +2128,14 @@ class _DropdownField extends StatelessWidget {
     required this.items,
     required this.onChanged,
     this.hasError = false,
+    this.displayLabels,
   });
   final String? value;
   final String hint;
   final List<String> items;
   final ValueChanged<String?>? onChanged;
   final bool hasError;
+  final Map<String, String>? displayLabels;
 
   @override
   Widget build(BuildContext context) {
@@ -2082,7 +2176,7 @@ class _DropdownField extends StatelessWidget {
                 (e) => DropdownMenuItem<String>(
                   value: e,
                   child: Text(
-                    e,
+                    displayLabels?[e] ?? e,
                     style: const TextStyle(
                         color: _kInputText, fontSize: 13),
                   ),

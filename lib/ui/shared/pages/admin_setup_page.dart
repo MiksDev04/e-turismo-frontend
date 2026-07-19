@@ -76,6 +76,7 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
       });
       if (status.adminExists && _waitingForConfirmation) {
         _pollTimer?.cancel();
+        await AdminSetupApi.setAdminExists(true);
         Navigator.pushNamedAndRemoveUntil(context, AppRoutes.login, (route) => false);
       }
     } on ApiException catch (e) {
@@ -142,6 +143,7 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
         if (!mounted) return;
         if (status.adminExists) {
           _pollTimer?.cancel();
+          await AdminSetupApi.setAdminExists(true);
           Navigator.pushNamedAndRemoveUntil(context, AppRoutes.login, (route) => false);
         }
       } catch (_) {}

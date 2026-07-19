@@ -257,9 +257,21 @@ class _InitialRouterState extends State<_InitialRouter> {
 
     final session = SessionService.instance.current;
 
+    if (await AdminSetupApi.isCachedAdminExists()) {
+      if (!mounted) return;
+      _routeBasedOnSession(session);
+      return;
+    }
+
     try {
       final status = await AdminSetupApi().getStatus();
       if (!mounted) return;
+
+      if (status.adminExists) {
+        await AdminSetupApi.setAdminExists(true);
+        _routeBasedOnSession(session);
+        return;
+      }
 
       if (status.setupAvailable) {
         if (session != null) {
@@ -274,8 +286,11 @@ class _InitialRouterState extends State<_InitialRouter> {
       // Fall through
     }
 
-    if (!mounted) return;
+    _routeBasedOnSession(session);
+  }
 
+  void _routeBasedOnSession(session) {
+    if (!mounted) return;
     if (session != null) {
       final route = session.role == 'admin'
           ? AppRoutes.adminDashboard

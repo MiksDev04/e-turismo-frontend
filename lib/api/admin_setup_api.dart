@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'base_api.dart';
 
 class AdminSetupStatus {
@@ -18,6 +19,23 @@ class AdminSetupStatus {
 }
 
 class AdminSetupApi extends BaseApi {
+  static const _cacheKey = 'admin_setup_complete';
+
+  static Future<void> setAdminExists(bool exists) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_cacheKey, exists);
+  }
+
+  static Future<bool> isCachedAdminExists() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_cacheKey) ?? false;
+  }
+
+  static Future<void> clearCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_cacheKey);
+  }
+
   Future<AdminSetupStatus> getStatus() async {
     final response = await get('/api/auth/admin-setup/status');
     final data = handleResponse(response) as Map<String, dynamic>;

@@ -78,6 +78,8 @@ class LoginApi extends BaseApi {
         email: user['email'],
         phone: user['phone'],
         role: user['role'],
+        createdAt: user['created_at'],
+        updatedAt: user['updated_at'],
         business: biz,
         );
       }
@@ -252,6 +254,8 @@ class LoginApi extends BaseApi {
         email: user['email'],
         phone: user['phone'],
         role: user['role'],
+        createdAt: user['created_at'],
+        updatedAt: user['updated_at'],
         business: biz,
         );
       }

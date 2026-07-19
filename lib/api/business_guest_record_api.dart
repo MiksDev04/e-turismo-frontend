@@ -338,7 +338,7 @@ class BusinessGuestRecordApi extends BaseApi {
               : GuestRecordStatus.active,
           demographics: _buildDemographicsFromLeadFields(row),
           leadCountry:            row['lead_country'] as String?,
-          leadMunicipality:       row['lead_municipality'] as String?,
+          leadMunicipality:       row['lead_city_municipality'] as String?,
           leadProvince:           row['lead_province'] as String?,
           leadNationality:        row['lead_nationality'] as String?,
           leadPhilippinesRegion:  row['lead_philippines_region'] as String?,
@@ -451,7 +451,7 @@ class BusinessGuestRecordApi extends BaseApi {
               : GuestRecordStatus.active,
           demographics: _buildDemographicsFromLeadFields(row),
           leadCountry:            row['lead_country'] as String?,
-          leadMunicipality:       row['lead_municipality'] as String?,
+          leadMunicipality:       row['lead_city_municipality'] as String?,
           leadProvince:           row['lead_province'] as String?,
           leadNationality:        row['lead_nationality'] as String?,
           leadPhilippinesRegion:  row['lead_philippines_region'] as String?,
@@ -524,13 +524,14 @@ class BusinessGuestRecordApi extends BaseApi {
             'purpose_of_visit':        purposeOfVisit,
             'transportation_mode':     transportationMode,
             'lead_country':            leadCountry,
-            'lead_municipality':       leadMunicipality,
+            'lead_city_municipality':  leadMunicipality,
             'lead_province':           leadProvince,
             'lead_nationality':        leadNationality,
             'lead_philippines_region': leadPhilippinesRegion,
             'lead_is_overseas':        leadIsOverseas ? 1 : 0,
             'lead_birthdate':          leadBirthdate,
             'lead_sex':                leadSex?.toLowerCase(),
+            'updated_at':              DateTime.now().toUtc().toIso8601String(),
             'sync_status':             LocalDatabase.syncSynced,
             'local_updated_at':        DateTime.now().toUtc().toIso8601String(),
           },
@@ -582,13 +583,14 @@ class BusinessGuestRecordApi extends BaseApi {
           'purpose_of_visit':        purposeOfVisit,
           'transportation_mode':     transportationMode,
           'lead_country':            leadCountry,
-          'lead_municipality':       leadMunicipality,
+          'lead_city_municipality':  leadMunicipality,
           'lead_province':           leadProvince,
           'lead_nationality':        leadNationality,
           'lead_philippines_region': leadPhilippinesRegion,
           'lead_is_overseas':        leadIsOverseas ? 1 : 0,
           'lead_birthdate':          leadBirthdate,
           'lead_sex':                leadSex?.toLowerCase(),
+          'updated_at':              now,
           'sync_status':             LocalDatabase.syncPendingUpdate,
           'local_updated_at':        now,
         },
@@ -623,7 +625,7 @@ class BusinessGuestRecordApi extends BaseApi {
         'JOIN local_rooms r ON r.id = grr.room_id '
         'WHERE grr.guest_record_id = ?',
         [recordId],
-      );
+      ) as List<Map<String, Object?>>;
       return rows.map((r) => GuestRoom(
         id: r['id'] as String? ?? '',
         roomNumber: r['room_number'] as String? ?? '',
@@ -667,7 +669,7 @@ class BusinessGuestRecordApi extends BaseApi {
           'purpose_of_visit':        row['purpose_of_visit'],
           'transportation_mode':     row['transportation_mode'],
           'lead_country':            row['lead_country'],
-          'lead_municipality':       row['lead_city_municipality'] ?? row['lead_municipality'],
+          'lead_city_municipality':  row['lead_city_municipality'],
           'lead_province':           row['lead_province'],
           'lead_nationality':        row['lead_nationality'],
           'lead_philippines_region': row['lead_philippines_region'],
@@ -677,11 +679,58 @@ class BusinessGuestRecordApi extends BaseApi {
           'status':                  row['status'] ?? 'active',
           'is_deleted':              0,
           'created_at':              row['created_at'],
+          'updated_at':              row['updated_at'],
           'sync_status':             LocalDatabase.syncSynced,
           'local_updated_at':        null,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
+
+      // Cache junction table + room data from cloud response
+      final roomsList = (row['rooms'] as List?) ?? [];
+      if (roomsList.isNotEmpty) {
+        // Clear old junction rows for this record
+        await db.delete(
+          LocalDatabase.tableGuestRecordRooms,
+          where: 'guest_record_id = ?',
+          whereArgs: [recordId],
+        );
+        for (final room in roomsList) {
+          final roomId = room['id'] as String?;
+          if (roomId == null || roomId.isEmpty) continue;
+          // Ensure room exists in local_rooms (FK requirement)
+          await db.insert(
+            LocalDatabase.tableLocalRooms,
+            {
+              'id':               roomId,
+              'business_id':      businessId,
+              'room_number':      room['roomNumber'] ?? '',
+              'capacity':         room['capacity'] ?? 1,
+              'room_status':      'occupied',
+              'created_at':       room['created_at'] ?? room['createdAt'],
+              'updated_at':       room['updated_at'] ?? room['updatedAt'],
+              'sync_status':      LocalDatabase.syncSynced,
+              'local_updated_at': null,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+          // Insert junction row
+          final junctionId = '$recordId-$roomId';
+          await db.insert(
+            LocalDatabase.tableGuestRecordRooms,
+            {
+              'id':               junctionId,
+              'guest_record_id':  recordId,
+              'room_id':          roomId,
+              'created_at':       room['created_at'] ?? room['createdAt'],
+              'updated_at':       room['updated_at'] ?? room['updatedAt'],
+              'sync_status':      LocalDatabase.syncSynced,
+              'local_updated_at': null,
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+      }
     }
   }
 
@@ -705,7 +754,7 @@ class BusinessGuestRecordApi extends BaseApi {
         'lead_nationality':        isPhilippines ? b.nationality : null,
         'lead_philippines_region': isPhilippines ? b.philippinesRegion : null,
         'lead_province':           isOverseas ? null : b.province,
-        'lead_municipality':       isOverseas ? null : b.municipalityCity,
+        'lead_city_municipality':  isOverseas ? null : b.municipalityCity,
         'lead_is_overseas':        isOverseas ? 1 : 0,
         'lead_sex':                _mapSex(b.sex),
       },
@@ -721,6 +770,12 @@ class BusinessGuestRecordApi extends BaseApi {
     String businessId,
     List<String> roomIds,
   ) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+    final isOnline = ConnectivityService.instance.isOnline && hasToken;
+    final junctionSyncStatus = isOnline
+        ? LocalDatabase.syncSynced
+        : LocalDatabase.syncPendingUpdate;
+
     // Clear old links
     await db.delete(
       LocalDatabase.tableGuestRecordRooms,
@@ -732,11 +787,15 @@ class BusinessGuestRecordApi extends BaseApi {
       await db.insert(
         LocalDatabase.tableLocalRooms,
         {
-          'id':          roomId,
-          'business_id': businessId,
-          'room_number': roomId.substring(0, 8),
-          'capacity':    1,
-          'room_status': 'occupied',
+          'id':               roomId,
+          'business_id':      businessId,
+          'room_number':      roomId.substring(0, 8),
+          'capacity':         1,
+          'room_status':      'occupied',
+          'created_at':       now,
+          'updated_at':       now,
+          'sync_status':      isOnline ? LocalDatabase.syncSynced : LocalDatabase.syncPendingUpdate,
+          'local_updated_at': isOnline ? null : now,
         },
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
@@ -747,10 +806,13 @@ class BusinessGuestRecordApi extends BaseApi {
       await db.insert(
         LocalDatabase.tableGuestRecordRooms,
         {
-          'id':                junctionId,
-          'guest_record_id':   recordId,
-          'room_id':           roomId,
-          'created_at':        DateTime.now().toUtc().toIso8601String(),
+          'id':               junctionId,
+          'guest_record_id':  recordId,
+          'room_id':          roomId,
+          'created_at':       now,
+          'updated_at':       now,
+          'sync_status':      junctionSyncStatus,
+          'local_updated_at': isOnline ? null : now,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -1005,7 +1067,7 @@ class BusinessGuestRecordApi extends BaseApi {
             ? region
             : null,
         province:          (!isOverseas ? row['lead_province'] as String? : null),
-        municipalityCity:  (!isOverseas ? (row['lead_city_municipality'] ?? row['lead_municipality']) as String? : null),
+        municipalityCity:  (!isOverseas ? row['lead_city_municipality'] as String? : null),
         sex:        s,
         ageGroup:   ageGroup,
         count:      1,

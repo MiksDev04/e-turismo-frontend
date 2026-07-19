@@ -134,38 +134,25 @@ class BusinessGuestEntryApi extends BaseApi {
     if (kIsWeb) return;
     try {
       final db = await LocalDatabase.instance.database;
-      // Delete junction rows that reference rooms for this business first
-      final existingIds = (await db.query(
-        LocalDatabase.tableLocalRooms,
-        columns: ['id'],
-        where: 'business_id = ?',
-        whereArgs: [businessId],
-      )).map((r) => r['id'] as String).toList();
-      if (existingIds.isNotEmpty) {
-        await db.delete(
-          LocalDatabase.tableGuestRecordRooms,
-          where: 'room_id IN (${existingIds.map((_) => '?').join(',')})',
-          whereArgs: existingIds,
-        );
-      }
-      // Delete old cache for this business
-      await db.delete(
-        LocalDatabase.tableLocalRooms,
-        where: 'business_id = ?',
-        whereArgs: [businessId],
-      );
-      // Insert fresh cache
+      // Only insert rooms that don't already exist locally.
+      // Do NOT delete existing rooms or junction rows — that would destroy
+      // occupied-room data and guest_record_rooms relationships needed for
+      // offline display.
       for (final room in rooms) {
         await db.insert(
           LocalDatabase.tableLocalRooms,
           {
-            'id': room.id,
-            'business_id': businessId,
-            'room_number': room.roomNumber,
-            'capacity': room.capacity,
-            'room_status': 'vacant',
+            'id':               room.id,
+            'business_id':      businessId,
+            'room_number':      room.roomNumber,
+            'capacity':         room.capacity,
+            'room_status':      'vacant',
+            'created_at':       DateTime.now().toUtc().toIso8601String(),
+            'updated_at':       DateTime.now().toUtc().toIso8601String(),
+            'sync_status':      LocalDatabase.syncSynced,
+            'local_updated_at': null,
           },
-          conflictAlgorithm: ConflictAlgorithm.replace,
+          conflictAlgorithm: ConflictAlgorithm.ignore,
         );
       }
     } catch (e) {
@@ -383,11 +370,15 @@ class BusinessGuestEntryApi extends BaseApi {
         await db.insert(
           LocalDatabase.tableLocalRooms,
           {
-            'id': roomId,
-            'business_id': businessId,
-            'room_number': roomId.substring(0, 8),
-            'capacity': 1,
-            'room_status': 'occupied',
+            'id':               roomId,
+            'business_id':      businessId,
+            'room_number':      roomId.substring(0, 8),
+            'capacity':         1,
+            'room_status':      'occupied',
+            'created_at':       createdAt,
+            'updated_at':       createdAt,
+            'sync_status':      syncStatus,
+            'local_updated_at': localUpdatedAt,
           },
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
@@ -406,7 +397,7 @@ class BusinessGuestEntryApi extends BaseApi {
         'purpose_of_visit':        purposeOfVisit,
         'transportation_mode':     transportationMode,
         'lead_country':            leadCountry,
-        'lead_municipality':       leadMunicipality,
+        'lead_city_municipality':  leadMunicipality,
         'lead_province':           leadProvince,
         'lead_nationality':        leadNationality,
         'lead_philippines_region': leadRegion,
@@ -416,6 +407,7 @@ class BusinessGuestEntryApi extends BaseApi {
         'status':                  'active',
         'is_deleted':              0,
         'created_at':              createdAt,
+        'updated_at':              createdAt,
         'sync_status':             syncStatus,
         'local_updated_at':        localUpdatedAt,
       },
@@ -435,10 +427,13 @@ class BusinessGuestEntryApi extends BaseApi {
         await db.insert(
           LocalDatabase.tableGuestRecordRooms,
           {
-            'id':                junctionId,
-            'guest_record_id':   recordId,
-            'room_id':           roomId,
-            'created_at':        createdAt,
+            'id':               junctionId,
+            'guest_record_id':  recordId,
+            'room_id':          roomId,
+            'created_at':       createdAt,
+            'updated_at':       localUpdatedAt,
+            'sync_status':      syncStatus,
+            'local_updated_at': localUpdatedAt,
           },
           conflictAlgorithm: ConflictAlgorithm.replace,
         );

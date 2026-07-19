@@ -26,7 +26,7 @@ class LocalDatabase {
   static const String _kDbName = 'tourism_local.db';
 
   // ── schema version ─────────────────────────────────────────────────────────
-  static const int _kDbVersion = 3;
+  static const int _kDbVersion = 6;
 
   // ── table names ────────────────────────────────────────────────────────────
   static const String tableLocalProfiles   = 'local_profiles';
@@ -94,6 +94,7 @@ class LocalDatabase {
       await txn.execute(_sqlIndexGuestRecordsSyncStatus);
       await txn.execute(_sqlIndexLocalRoomsBusiness);
       await txn.execute(_sqlIndexGuestRecordRoomsRecord);
+      await txn.execute(_sqlIndexLocalRoomsSyncStatus);
     });
   }
 
@@ -158,6 +159,109 @@ class LocalDatabase {
       // 4. Drop legacy breakdowns table if still around
       await db.execute('DROP TABLE IF EXISTS local_guest_breakdowns');
     }
+
+    // v3 → v4: Add sync_status and local_updated_at to local_rooms
+    //          and local_guest_record_rooms for offline-first sync.
+    if (oldVersion < 4) {
+      // 1. Add sync columns to local_rooms if missing
+      final roomsInfo = await db.rawQuery("PRAGMA table_info($tableLocalRooms)");
+      final roomsCols = roomsInfo.map((c) => c['name'] as String).toSet();
+      if (!roomsCols.contains('sync_status')) {
+        await db.execute("ALTER TABLE $tableLocalRooms ADD COLUMN sync_status TEXT NOT NULL DEFAULT '$syncSynced'");
+      }
+      if (!roomsCols.contains('local_updated_at')) {
+        await db.execute("ALTER TABLE $tableLocalRooms ADD COLUMN local_updated_at TEXT");
+      }
+      await db.execute(_sqlIndexLocalRoomsSyncStatus);
+
+      // 2. Add sync columns to guest_record_rooms if missing
+      final grrInfo = await db.rawQuery("PRAGMA table_info($tableGuestRecordRooms)");
+      final grrCols = grrInfo.map((c) => c['name'] as String).toSet();
+      if (!grrCols.contains('sync_status')) {
+        await db.execute("ALTER TABLE $tableGuestRecordRooms ADD COLUMN sync_status TEXT NOT NULL DEFAULT '$syncSynced'");
+      }
+      if (!grrCols.contains('local_updated_at')) {
+        await db.execute("ALTER TABLE $tableGuestRecordRooms ADD COLUMN local_updated_at TEXT");
+      }
+    }
+
+    // v4 → v5: Align local schema with backend schema.
+    //   - local_rooms: add created_at, updated_at
+    //   - local_guest_records: rename lead_municipality → lead_city_municipality,
+    //                         add updated_at
+    if (oldVersion < 5) {
+      // ── 1. local_rooms: add created_at + updated_at ───────────────────────
+      final roomsInfo = await db.rawQuery("PRAGMA table_info($tableLocalRooms)");
+      final roomsCols = roomsInfo.map((c) => c['name'] as String).toSet();
+      if (!roomsCols.contains('created_at')) {
+        await db.execute("ALTER TABLE $tableLocalRooms ADD COLUMN created_at TEXT");
+      }
+      if (!roomsCols.contains('updated_at')) {
+        await db.execute("ALTER TABLE $tableLocalRooms ADD COLUMN updated_at TEXT");
+      }
+
+      // ── 2. local_guest_records: rename column + add updated_at ────────────
+      final grInfo = await db.rawQuery("PRAGMA table_info($tableGuestRecords)");
+      final grCols = grInfo.map((c) => c['name'] as String).toSet();
+      if (grCols.contains('lead_municipality') && !grCols.contains('lead_city_municipality')) {
+        // SQLite doesn't reliably support RENAME COLUMN on all platforms,
+        // so we recreate the table (same pattern as v1→v2 migration).
+        await db.execute('ALTER TABLE $tableGuestRecords RENAME TO ${tableGuestRecords}_old');
+        await db.execute(_sqlCreateGuestRecords);
+        await db.execute('''
+          INSERT INTO $tableGuestRecords (
+            id, business_id, check_in, check_out, length_of_stay, total_guests,
+            purpose_of_visit, transportation_mode,
+            lead_country, lead_city_municipality, lead_province,
+            lead_nationality, lead_philippines_region, lead_is_overseas,
+            lead_birthdate, lead_sex,
+            status, is_deleted, created_at, sync_status, local_updated_at
+          )
+          SELECT id, business_id, check_in, check_out, length_of_stay, total_guests,
+                 purpose_of_visit, transportation_mode,
+                 lead_country, lead_municipality, lead_province,
+                 lead_nationality, lead_philippines_region, lead_is_overseas,
+                 lead_birthdate, lead_sex,
+                 status, is_deleted, created_at, sync_status, local_updated_at
+          FROM ${tableGuestRecords}_old
+        ''');
+        await db.execute('DROP TABLE ${tableGuestRecords}_old');
+      } else if (!grCols.contains('updated_at')) {
+        // Column already renamed (or never had lead_municipality), just add updated_at
+        await db.execute("ALTER TABLE $tableGuestRecords ADD COLUMN updated_at TEXT");
+      }
+    }
+
+    // v5 → v6: Add created_at/updated_at to local_profiles and local_businesses,
+    //          and updated_at to local_guest_record_rooms.
+    if (oldVersion < 6) {
+      // ── 1. local_profiles: add created_at + updated_at ────────────────────
+      final profilesInfo = await db.rawQuery("PRAGMA table_info($tableLocalProfiles)");
+      final profilesCols = profilesInfo.map((c) => c['name'] as String).toSet();
+      if (!profilesCols.contains('created_at')) {
+        await db.execute("ALTER TABLE $tableLocalProfiles ADD COLUMN created_at TEXT");
+      }
+      if (!profilesCols.contains('updated_at')) {
+        await db.execute("ALTER TABLE $tableLocalProfiles ADD COLUMN updated_at TEXT");
+      }
+
+      // ── 2. local_businesses: add created_at + updated_at ──────────────────
+      final bizInfo = await db.rawQuery("PRAGMA table_info($tableLocalBusinesses)");
+      final bizCols = bizInfo.map((c) => c['name'] as String).toSet();
+      if (!bizCols.contains('created_at')) {
+        await db.execute("ALTER TABLE $tableLocalBusinesses ADD COLUMN created_at TEXT");
+      }
+      if (!bizCols.contains('updated_at')) {
+        await db.execute("ALTER TABLE $tableLocalBusinesses ADD COLUMN updated_at TEXT");
+      }
+
+      // ── 3. local_guest_record_rooms: add updated_at ───────────────────────
+      final grrInfo = await db.rawQuery("PRAGMA table_info($tableGuestRecordRooms)");
+      final grrCols = grrInfo.map((c) => c['name'] as String).toSet();
+      if (!grrCols.contains('updated_at')) {
+        await db.execute("ALTER TABLE $tableGuestRecordRooms ADD COLUMN updated_at TEXT");
+      }
+    }
   }
 
   // ── helper: close (mainly for tests) ──────────────────────────────────────
@@ -192,7 +296,9 @@ class LocalDatabase {
       email         TEXT,
       phone         TEXT,
       role          TEXT,
-      password_hash TEXT NOT NULL
+      password_hash TEXT NOT NULL,
+      created_at    TEXT,
+      updated_at    TEXT
     )
   ''';
 
@@ -218,6 +324,8 @@ class LocalDatabase {
       owner_last_name     TEXT,
       owner_middle_name   TEXT,
       business_type       TEXT,
+      created_at          TEXT,
+      updated_at          TEXT,
       FOREIGN KEY (profile_id) REFERENCES $tableLocalProfiles (id)
         ON DELETE CASCADE
     )
@@ -227,6 +335,7 @@ class LocalDatabase {
   /// sync_status drives the push phase of SyncService.
   /// All datetimes are stored as ISO 8601 strings (UTC).
   /// Room assignments live in the junction table local_guest_record_rooms.
+  /// Column order mirrors the backend `guest_records` table, with sync columns appended.
   static const String _sqlCreateGuestRecords = '''
     CREATE TABLE $tableGuestRecords (
       id                      TEXT PRIMARY KEY,
@@ -238,7 +347,7 @@ class LocalDatabase {
       purpose_of_visit        TEXT NOT NULL,
       transportation_mode     TEXT NOT NULL,
       lead_country            TEXT,
-      lead_municipality       TEXT,
+      lead_city_municipality  TEXT,
       lead_province           TEXT,
       lead_nationality        TEXT,
       lead_philippines_region TEXT,
@@ -248,6 +357,7 @@ class LocalDatabase {
       status                  TEXT NOT NULL DEFAULT 'active',
       is_deleted              INTEGER NOT NULL DEFAULT 0,
       created_at              TEXT,
+      updated_at              TEXT,
       sync_status             TEXT NOT NULL DEFAULT '$syncSynced',
       local_updated_at        TEXT,
       FOREIGN KEY (business_id) REFERENCES $tableLocalBusinesses (id)
@@ -257,13 +367,18 @@ class LocalDatabase {
 
   /// Cached rooms for a business, used for offline room selection.
   /// Refreshed from Backend when online.
+  /// Column order mirrors the backend `rooms` table, with sync columns appended.
   static const String _sqlCreateLocalRooms = '''
     CREATE TABLE $tableLocalRooms (
-      id            TEXT PRIMARY KEY,
-      business_id   TEXT NOT NULL,
-      room_number   TEXT NOT NULL,
-      capacity      INTEGER NOT NULL DEFAULT 1,
-      room_status   TEXT NOT NULL DEFAULT 'vacant'
+      id               TEXT PRIMARY KEY,
+      business_id      TEXT NOT NULL,
+      room_number      TEXT NOT NULL,
+      capacity         INTEGER NOT NULL DEFAULT 1,
+      room_status      TEXT NOT NULL DEFAULT 'vacant',
+      created_at       TEXT,
+      updated_at       TEXT,
+      sync_status      TEXT NOT NULL DEFAULT '$syncSynced',
+      local_updated_at TEXT
     )
   ''';
 
@@ -275,6 +390,9 @@ class LocalDatabase {
       guest_record_id   TEXT NOT NULL,
       room_id           TEXT NOT NULL,
       created_at        TEXT,
+      updated_at        TEXT,
+      sync_status       TEXT NOT NULL DEFAULT '$syncSynced',
+      local_updated_at  TEXT,
       FOREIGN KEY (guest_record_id) REFERENCES $tableGuestRecords (id) ON DELETE CASCADE,
       FOREIGN KEY (room_id) REFERENCES $tableLocalRooms (id) ON DELETE RESTRICT
     )
@@ -306,5 +424,11 @@ class LocalDatabase {
   static const String _sqlIndexGuestRecordRoomsRecord = '''
     CREATE INDEX idx_guest_record_rooms_record_id
       ON $tableGuestRecordRooms (guest_record_id)
+  ''';
+
+  /// Fast look-up of all unsynced rooms during the push phase.
+  static const String _sqlIndexLocalRoomsSyncStatus = '''
+    CREATE INDEX idx_local_rooms_sync_status
+      ON $tableLocalRooms (sync_status)
   ''';
 }

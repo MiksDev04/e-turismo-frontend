@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:app/core/services/session_service.dart';
 import 'package:app/core/database/local_database.dart';
 import 'package:app/core/services/offline_service.dart';
+import 'package:app/core/services/psgc_repository.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -69,7 +70,10 @@ void main() async {
   // ── Step 4: Start connectivity listener (triggers immediate sync if online) ─
   SyncService.instance.listenForConnectivity();
 
-  // ── Step 5: Window constraints (desktop only) ──────────────────────────────
+  // ── Step 5: Preload PSGC reference data ──────────────────────────────────
+  await PsgcRepository.instance.load();
+
+  // ── Step 6: Window constraints (desktop only) ──────────────────────────────
   if (!kIsWeb) {
     await windowManager.ensureInitialized();
     await windowManager.setMinimumSize(const Size(375, 500));

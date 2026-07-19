@@ -81,3 +81,6 @@ flutter:
   assets:
     - .env
     - assets/images/tourism_office_logo.jpg
+    - assets/data/regions.json
+    - assets/data/provinces_by_region.json
+    - assets/data/cities_municipalities.json
