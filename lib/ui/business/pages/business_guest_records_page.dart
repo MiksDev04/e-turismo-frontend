@@ -8,6 +8,7 @@ import '../../shared/widgets/paginator.dart';
 import '../../shared/widgets/action_icon_button.dart';
 import '../widgets/edit_guest_dialog.dart';
 import '../../../api/business_guest_record_api.dart';
+import '../../../api/business_room_api.dart';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -66,10 +67,11 @@ class GuestDemographics {
 }
 
 class GuestRoom {
-  const GuestRoom({required this.id, required this.roomNumber, this.capacity = 0});
+  const GuestRoom({required this.id, required this.roomNumber, this.capacity = 0, this.status = 'active'});
   final String id;
   final String roomNumber;
   final int capacity;
+  final String status;
 }
 
 class GuestRecord {
@@ -77,6 +79,7 @@ class GuestRecord {
     required this.id,
     required this.checkIn,
     required this.checkOut,
+    this.actualCheckOut,
     required this.nights,
     required this.guests,
     required this.rooms,
@@ -100,6 +103,7 @@ class GuestRecord {
   final String id;
   final String checkIn;
   final String checkOut;
+  final String? actualCheckOut;
   final String nights;
   final int guests;
   final int rooms;
@@ -339,6 +343,182 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
     }
   }
 
+  Future<void> _onCheckOut(GuestRecord record) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.6),
+      builder: (_) => Dialog(
+        backgroundColor: AppColors.cardBackground,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: AppColors.cardBorder),
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFB020).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.logout_rounded,
+                    color: Color(0xFFFFB020),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Check Out Guest',
+                  style: TextStyle(
+                    color: AppColors.textWhite,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'This will mark ${record.rooms > 1 ? '${record.rooms} rooms' : 'the room'} as vacant. Continue?',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.textGray,
+                    fontSize: 12.5,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(context).pop(false),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.inputBackground,
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(color: AppColors.cardBorder),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'Cancel',
+                              style: TextStyle(
+                                color: AppColors.textGray,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(context).pop(true),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFB020).withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(
+                              color: const Color(0xFFFFB020).withOpacity(0.4),
+                            ),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'Confirm',
+                              style: TextStyle(
+                                color: Color(0xFFFFB020),
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(0.4),
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: AppColors.primaryCyan),
+      ),
+    );
+
+    final roomApi = BusinessRoomApi();
+    final roomIds = record.roomIds.isNotEmpty
+        ? record.roomIds
+        : record.roomDetails.map((r) => r.id).toList();
+
+    bool allSuccess = true;
+    for (final roomId in roomIds) {
+      final result = await roomApi.updateRoomStatus(
+        roomId: roomId,
+        roomStatus: 'vacant',
+      );
+      if (!result.success) {
+        allSuccess = false;
+      }
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pop();
+
+    if (allSuccess) {
+      final now = DateTime.now();
+      final actualCheckOut = '${now.year.toString().padLeft(4, '0')}-'
+          '${now.month.toString().padLeft(2, '0')}-'
+          '${now.day.toString().padLeft(2, '0')} '
+          '${now.hour.toString().padLeft(2, '0')}:'
+          '${now.minute.toString().padLeft(2, '0')}:'
+          '${now.second.toString().padLeft(2, '0')}';
+      final updateResult = await _api.updateRecord(
+        recordId:               record.id,
+        checkIn:                record.checkIn,
+        checkOut:               record.checkOut,
+        totalGuests:            record.guests,
+        purposeOfVisit:         record.purpose,
+        transportationMode:     record.transport,
+        breakdowns:             record.demographics?.breakdowns ?? [],
+        leadCountry:            record.leadCountry,
+        leadMunicipality:       record.leadMunicipality,
+        leadProvince:           record.leadProvince,
+        leadNationality:        record.leadNationality,
+        leadPhilippinesRegion:  record.leadPhilippinesRegion,
+        leadIsOverseas:         record.leadIsOverseas,
+        leadBirthdate:          record.leadBirthdate,
+        leadSex:                record.leadSex,
+        actualCheckOut:         actualCheckOut,
+      );
+      if (updateResult.isSuccess) {
+        _showSnack('Room(s) marked as vacant and check-out recorded.');
+      } else {
+        _showSnack('Room(s) marked as vacant. Failed to record check-out time.');
+      }
+      _loadRecords();
+    } else {
+      _showSnack('Some rooms could not be updated. Please try again.', isError: true);
+    }
+  }
+
   void _showSnack(String msg, {bool isError = false, Color? color}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -449,6 +629,7 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
                               records:  _records,
                               isNarrow: isNarrow,
                               onEdit:   _onEdit,
+                              onCheckOut: _onCheckOut,
                             ),
                             const SizedBox(height: 12),
                             Paginator(
@@ -1155,11 +1336,13 @@ class _GuestTable extends StatelessWidget {
     required this.records,
     required this.isNarrow,
     required this.onEdit,
+    required this.onCheckOut,
   });
 
   final List<GuestRecord> records;
   final bool isNarrow;
   final ValueChanged<GuestRecord> onEdit;
+  final ValueChanged<GuestRecord> onCheckOut;
 
   @override
   Widget build(BuildContext context) {
@@ -1191,9 +1374,9 @@ class _GuestTable extends StatelessWidget {
               return Column(
                 children: [
                   if (isNarrow)
-                    _RecordCard(record: r, onEdit: onEdit)
+                    _RecordCard(record: r, onEdit: onEdit, onCheckOut: onCheckOut)
                   else
-                    _RecordRow(record: r, onEdit: onEdit),
+                    _RecordRow(record: r, onEdit: onEdit, onCheckOut: onCheckOut),
                   if (!isLast)
                     const Divider(color: AppColors.cardBorder, height: 1),
                 ],
@@ -1249,10 +1432,11 @@ class _HeaderCell extends StatelessWidget {
 // ─── Table Row (wide) ─────────────────────────────────────────────────────────
 
 class _RecordRow extends StatelessWidget {
-  const _RecordRow({required this.record, required this.onEdit});
+  const _RecordRow({required this.record, required this.onEdit, required this.onCheckOut});
 
   final GuestRecord record;
   final ValueChanged<GuestRecord> onEdit;
+  final ValueChanged<GuestRecord> onCheckOut;
 
   @override
   Widget build(BuildContext context) {
@@ -1332,8 +1516,10 @@ class _RecordRow extends StatelessWidget {
             flex: 3,
             child: _ActionButtons(
               status: r.status,
+              actualCheckOut: r.actualCheckOut,
               onEdit: () => onEdit(r),
               onView: () => _showRecordModal(context, r),
+              onCheckOut: () => onCheckOut(r),
             ),
           ),
         ],
@@ -1345,10 +1531,11 @@ class _RecordRow extends StatelessWidget {
 // ─── Record Card (narrow) ─────────────────────────────────────────────────────
 
 class _RecordCard extends StatelessWidget {
-  const _RecordCard({required this.record, required this.onEdit});
+  const _RecordCard({required this.record, required this.onEdit, required this.onCheckOut});
 
   final GuestRecord record;
   final ValueChanged<GuestRecord> onEdit;
+  final ValueChanged<GuestRecord> onCheckOut;
 
   @override
   Widget build(BuildContext context) {
@@ -1405,17 +1592,30 @@ class _RecordCard extends StatelessWidget {
                 label: 'View',
                 color: AppColors.accentGreen,
                 showBorder: true,
+                compact: true,
                 onTap: () => _showRecordModal(context, r),
               ),
               if (r.status == GuestRecordStatus.active) ...[
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 ActionIconButton(
                   icon: Icons.edit_outlined,
                   label: 'Edit',
                   color: AppColors.primaryCyan,
                   showBorder: true,
+                  compact: true,
                   onTap: () => onEdit(r),
                 ),
+                if (r.actualCheckOut == null) ...[
+                  const SizedBox(width: 6),
+                  ActionIconButton(
+                    icon: Icons.logout_rounded,
+                    label: 'Check Out',
+                    color: const Color(0xFFFFB020),
+                    showBorder: true,
+                    compact: true,
+                    onTap: () => onCheckOut(r),
+                  ),
+                ],
               ],
             ],
           ),
@@ -1484,35 +1684,51 @@ class _StatusBadge extends StatelessWidget {
 class _ActionButtons extends StatelessWidget {
   const _ActionButtons({
     required this.status,
+    required this.actualCheckOut,
     required this.onEdit,
     required this.onView,
+    required this.onCheckOut,
   });
 
   final GuestRecordStatus status;
+  final String? actualCheckOut;
   final VoidCallback onEdit;
   final VoidCallback onView;
+  final VoidCallback onCheckOut;
 
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: 6,
-      runSpacing: 6,
+      spacing: 4,
+      runSpacing: 4,
       children: [
         ActionIconButton(
           icon: Icons.visibility_outlined,
           label: 'View',
           color: AppColors.accentGreen,
           showBorder: true,
+          compact: true,
           onTap: onView,
         ),
-        if (status == GuestRecordStatus.active)
+        if (status == GuestRecordStatus.active) ...[
           ActionIconButton(
             icon: Icons.edit_outlined,
             label: 'Edit',
             color: AppColors.primaryCyan,
             showBorder: true,
+            compact: true,
             onTap: onEdit,
           ),
+          if (actualCheckOut == null)
+            ActionIconButton(
+              icon: Icons.logout_rounded,
+              label: 'Check Out',
+              color: const Color(0xFFFFB020),
+              showBorder: true,
+              compact: true,
+              onTap: onCheckOut,
+            ),
+        ],
       ],
     );
   }
@@ -1657,12 +1873,14 @@ class _StayInfoGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final roomsDisplay = record.roomDetails.isNotEmpty
-        ? '${record.rooms} (${record.roomDetails.map((r) => r.roomNumber).join(', ')})'
+        ? '${record.rooms} (${record.roomDetails.map((r) => '${r.roomNumber}${r.status == 'completed' ? ' (used)' : ''}').join(', ')})'
         : '${record.rooms}';
 
     final items = [
       (Icons.login,                 'Check-in',          record.checkIn),
-      (Icons.logout,                'Check-out',         record.checkOut),
+      (Icons.logout,                'Check-out (Planned)', record.checkOut),
+      if (record.actualCheckOut != null)
+        (Icons.event_available,     'Actual Check-out',  record.actualCheckOut!),
       (Icons.nights_stay_outlined,  'Length of Stay',    record.nights),
       (Icons.people_outline,        'Total Guests',      '${record.guests}'),
       (Icons.meeting_room_outlined, 'Rooms Occupied',    roomsDisplay),

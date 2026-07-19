@@ -155,6 +155,9 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
   // ── Inline validation state ───────────────────────────────────────────────
   Map<String, String?> _errors = {};
 
+  // ── Post-checkout lock ───────────────────────────────────────────────────
+  late final bool _isPostCheckout;
+
   // ─── Options ────────────────────────────────────────────────────────────────
 
   static const _purposes = [
@@ -181,6 +184,8 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
   void initState() {
     super.initState();
     final r = widget.record;
+
+    _isPostCheckout = r.actualCheckOut != null;
 
     String stripTime(String d) {
       if (d.contains('T')) return d.split('T')[0];
@@ -346,35 +351,37 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
     final errors = <String, String?>{};
     bool hasError = false;
 
-    // ── Check-in ────────────────────────────────────────────────────────────
-    final checkInText = _checkInCtrl.text.trim();
-    final checkIn = DateTime.tryParse(checkInText);
+    // ── Check-in (skip if post-checkout — field is locked) ─────────────────
+    if (!_isPostCheckout) {
+      final checkInText = _checkInCtrl.text.trim();
+      final checkIn = DateTime.tryParse(checkInText);
 
-    if (checkInText.isEmpty) {
-      errors['checkIn'] = 'Please select a check-in date.';
-      hasError = true;
-    } else if (checkIn == null) {
-      errors['checkIn'] = 'Invalid date — use yyyy-mm-dd format.';
-      hasError = true;
-    } else if (checkIn.isAfter(DateTime.now())) {
-      errors['checkIn'] = 'Check-in date cannot be in the future.';
-      hasError = true;
-    }
+      if (checkInText.isEmpty) {
+        errors['checkIn'] = 'Please select a check-in date.';
+        hasError = true;
+      } else if (checkIn == null) {
+        errors['checkIn'] = 'Invalid date — use yyyy-mm-dd format.';
+        hasError = true;
+      } else if (checkIn.isAfter(DateTime.now())) {
+        errors['checkIn'] = 'Check-in date cannot be in the future.';
+        hasError = true;
+      }
 
-    // ── Check-out ───────────────────────────────────────────────────────────
-    final checkOutText = _checkOutCtrl.text.trim();
-    final checkOut = DateTime.tryParse(checkOutText);
+      // ── Check-out ─────────────────────────────────────────────────────────
+      final checkOutText = _checkOutCtrl.text.trim();
+      final checkOut = DateTime.tryParse(checkOutText);
 
-    if (checkOutText.isEmpty) {
-      errors['checkOut'] = 'Please select a check-out date.';
-      hasError = true;
-    } else if (checkOut == null) {
-      errors['checkOut'] = 'Invalid date — use yyyy-mm-dd format.';
-      hasError = true;
-    } else if (checkIn != null && checkOut.isBefore(checkIn)) {
-      errors['checkOut'] =
-          'Check-out must be the same day as check-in or later.';
-      hasError = true;
+      if (checkOutText.isEmpty) {
+        errors['checkOut'] = 'Please select a check-out date.';
+        hasError = true;
+      } else if (checkOut == null) {
+        errors['checkOut'] = 'Invalid date — use yyyy-mm-dd format.';
+        hasError = true;
+      } else if (checkIn != null && checkOut.isBefore(checkIn)) {
+        errors['checkOut'] =
+            'Check-out must be the same day as check-in or later.';
+        hasError = true;
+      }
     }
 
     // ── Total Guests ────────────────────────────────────────────────────────
@@ -482,13 +489,13 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
 
     final updated = GuestRecord(
       id: widget.record.id,
-      checkIn: _checkInCtrl.text.trim(),
-      checkOut: _checkOutCtrl.text.trim(),
+      checkIn: _isPostCheckout ? widget.record.checkIn : _checkInCtrl.text.trim(),
+      checkOut: _isPostCheckout ? widget.record.checkOut : _checkOutCtrl.text.trim(),
       nights: _lengthOfStay,
       guests: _totalGuests,
-      rooms: _selectedRoomIds.length,
+      rooms: _isPostCheckout ? widget.record.rooms : _selectedRoomIds.length,
       roomDetails: widget.record.roomDetails,
-      roomIds: _selectedRoomIds.toList(),
+      roomIds: _isPostCheckout ? widget.record.roomIds : _selectedRoomIds.toList(),
       purpose: purposeValue,
       transport: transportValue,
       status: widget.record.status,
@@ -639,40 +646,42 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                                   Expanded(
                                     child: _FieldCol(
                                       label: 'Check-in Date *',
-                                      errorText: _errors['checkIn'],
-                                      child: _DateField(
-                                        controller: _checkInCtrl,
-                                        hint: 'yyyy-mm-dd',
-                                        hasError:
-                                            _errors['checkIn'] != null,
-                                        lastDate: DateTime.now(),
-                                        onPicked: () {
-                                          _recalcNights();
-                                          _clearFieldError('checkIn');
-                                          _clearFieldError('checkOut');
-                                        },
-                                      ),
+                                      errorText: _isPostCheckout ? null : _errors['checkIn'],
+                                      child: _isPostCheckout
+                                          ? _ReadOnlyField(value: _checkInCtrl.text)
+                                          : _DateField(
+                                              controller: _checkInCtrl,
+                                              hint: 'yyyy-mm-dd',
+                                              hasError: _errors['checkIn'] != null,
+                                              lastDate: DateTime.now(),
+                                              onPicked: () {
+                                                _recalcNights();
+                                                _clearFieldError('checkIn');
+                                                _clearFieldError('checkOut');
+                                              },
+                                            ),
                                     ),
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: _FieldCol(
                                       label: 'Check-out Date *',
-                                      errorText: _errors['checkOut'],
-                                      child: _DateField(
-                                        controller: _checkOutCtrl,
-                                        hint: 'yyyy-mm-dd',
-                                        hasError:
-                                            _errors['checkOut'] != null,
-                                        firstDate: DateTime.tryParse(
-                                              _checkInCtrl.text.trim(),
-                                            ) ??
-                                            DateTime(2020),
-                                        onPicked: () {
-                                          _recalcNights();
-                                          _clearFieldError('checkOut');
-                                        },
-                                      ),
+                                      errorText: _isPostCheckout ? null : _errors['checkOut'],
+                                      child: _isPostCheckout
+                                          ? _ReadOnlyField(value: _checkOutCtrl.text)
+                                          : _DateField(
+                                              controller: _checkOutCtrl,
+                                              hint: 'yyyy-mm-dd',
+                                              hasError: _errors['checkOut'] != null,
+                                              firstDate: DateTime.tryParse(
+                                                    _checkInCtrl.text.trim(),
+                                                  ) ??
+                                                  DateTime(2020),
+                                              onPicked: () {
+                                                _recalcNights();
+                                                _clearFieldError('checkOut');
+                                              },
+                                            ),
                                     ),
                                   ),
                                 ],
@@ -689,40 +698,42 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                                   Expanded(
                                     child: _FieldCol(
                                       label: 'Check-in Date *',
-                                      errorText: _errors['checkIn'],
-                                      child: _DateField(
-                                        controller: _checkInCtrl,
-                                        hint: 'yyyy-mm-dd',
-                                        hasError:
-                                            _errors['checkIn'] != null,
-                                        lastDate: DateTime.now(),
-                                        onPicked: () {
-                                          _recalcNights();
-                                          _clearFieldError('checkIn');
-                                          _clearFieldError('checkOut');
-                                        },
-                                      ),
+                                      errorText: _isPostCheckout ? null : _errors['checkIn'],
+                                      child: _isPostCheckout
+                                          ? _ReadOnlyField(value: _checkInCtrl.text)
+                                          : _DateField(
+                                              controller: _checkInCtrl,
+                                              hint: 'yyyy-mm-dd',
+                                              hasError: _errors['checkIn'] != null,
+                                              lastDate: DateTime.now(),
+                                              onPicked: () {
+                                                _recalcNights();
+                                                _clearFieldError('checkIn');
+                                                _clearFieldError('checkOut');
+                                              },
+                                            ),
                                     ),
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: _FieldCol(
                                       label: 'Check-out Date *',
-                                      errorText: _errors['checkOut'],
-                                      child: _DateField(
-                                        controller: _checkOutCtrl,
-                                        hint: 'yyyy-mm-dd',
-                                        hasError:
-                                            _errors['checkOut'] != null,
-                                        firstDate: DateTime.tryParse(
-                                              _checkInCtrl.text.trim(),
-                                            ) ??
-                                            DateTime(2020),
-                                        onPicked: () {
-                                          _recalcNights();
-                                          _clearFieldError('checkOut');
-                                        },
-                                      ),
+                                      errorText: _isPostCheckout ? null : _errors['checkOut'],
+                                      child: _isPostCheckout
+                                          ? _ReadOnlyField(value: _checkOutCtrl.text)
+                                          : _DateField(
+                                              controller: _checkOutCtrl,
+                                              hint: 'yyyy-mm-dd',
+                                              hasError: _errors['checkOut'] != null,
+                                              firstDate: DateTime.tryParse(
+                                                    _checkInCtrl.text.trim(),
+                                                  ) ??
+                                                  DateTime(2020),
+                                              onPicked: () {
+                                                _recalcNights();
+                                                _clearFieldError('checkOut');
+                                              },
+                                            ),
                                     ),
                                   ),
                                   const SizedBox(width: 12),
@@ -758,13 +769,16 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
 
                             // ── Rooms ─────────────────────────────────
                             _FieldCol(
-                              label: 'Rooms (leave empty for day-tour guests)',
-                              errorText: _errors['rooms'],
+                              label: _isPostCheckout
+                                  ? 'Rooms (locked after check-out)'
+                                  : 'Rooms (leave empty for day-tour guests)',
+                              errorText: _isPostCheckout ? null : _errors['rooms'],
                               child: _EditRoomSelector(
                                 vacantRooms: _vacantRooms,
                                 selectedRoomIds: _selectedRoomIds,
                                 isLoading: _isLoadingRooms,
                                 hasError: _errors['rooms'] != null,
+                                readOnly: _isPostCheckout,
                                 onRoomToggled: (roomId) {
                                   setState(() {
                                     if (_selectedRoomIds.contains(roomId)) {
@@ -1504,6 +1518,7 @@ class _EditRoomSelector extends StatelessWidget {
     required this.isLoading,
     required this.hasError,
     required this.onRoomToggled,
+    this.readOnly = false,
   });
 
   final List<RoomInfo> vacantRooms;
@@ -1511,6 +1526,7 @@ class _EditRoomSelector extends StatelessWidget {
   final bool isLoading;
   final bool hasError;
   final ValueChanged<String> onRoomToggled;
+  final bool readOnly;
 
   void _showRoomDialog(BuildContext context) {
     showDialog(
@@ -1613,7 +1629,7 @@ class _EditRoomSelector extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         GestureDetector(
-          onTap: (isLoading || vacantRooms.isEmpty)
+          onTap: (isLoading || vacantRooms.isEmpty || readOnly)
               ? null
               : () => _showRoomDialog(context),
           child: Container(
@@ -1680,10 +1696,14 @@ class _EditRoomSelector extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(
                     horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF3B82F6).withOpacity(0.12),
+                  color: readOnly
+                      ? _kReadOnlyFill
+                      : const Color(0xFF3B82F6).withOpacity(0.12),
                   borderRadius: BorderRadius.circular(7),
                   border: Border.all(
-                    color: const Color(0xFF3B82F6),
+                    color: readOnly
+                        ? _kInputBorder
+                        : const Color(0xFF3B82F6),
                     width: 1,
                   ),
                 ),
@@ -1692,21 +1712,23 @@ class _EditRoomSelector extends StatelessWidget {
                   children: [
                     Text(
                       room.roomNumber,
-                      style: const TextStyle(
-                        color: Color(0xFF3B82F6),
+                      style: TextStyle(
+                        color: readOnly ? const Color(0xFF6B7280) : const Color(0xFF3B82F6),
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(width: 4),
-                    GestureDetector(
-                      onTap: () => onRoomToggled(room.id),
-                      child: const Icon(
-                        Icons.close_rounded,
-                        size: 13,
-                        color: Color(0xFF3B82F6),
+                    if (!readOnly) ...[
+                      const SizedBox(width: 4),
+                      GestureDetector(
+                        onTap: () => onRoomToggled(room.id),
+                        child: const Icon(
+                          Icons.close_rounded,
+                          size: 13,
+                          color: Color(0xFF3B82F6),
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               );

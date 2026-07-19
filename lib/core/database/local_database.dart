@@ -26,7 +26,7 @@ class LocalDatabase {
   static const String _kDbName = 'tourism_local.db';
 
   // ── schema version ─────────────────────────────────────────────────────────
-  static const int _kDbVersion = 6;
+  static const int _kDbVersion = 8;
 
   // ── table names ────────────────────────────────────────────────────────────
   static const String tableLocalProfiles   = 'local_profiles';
@@ -262,6 +262,24 @@ class LocalDatabase {
         await db.execute("ALTER TABLE $tableGuestRecordRooms ADD COLUMN updated_at TEXT");
       }
     }
+
+    // v6 → v7: Add actual_checkout to local_guest_records.
+    if (oldVersion < 7) {
+      final grInfo = await db.rawQuery("PRAGMA table_info($tableGuestRecords)");
+      final grCols = grInfo.map((c) => c['name'] as String).toSet();
+      if (!grCols.contains('actual_checkout')) {
+        await db.execute("ALTER TABLE $tableGuestRecords ADD COLUMN actual_checkout TEXT");
+      }
+    }
+
+    // v7 → v8: Add status to local_guest_record_rooms.
+    if (oldVersion < 8) {
+      final grrInfo = await db.rawQuery("PRAGMA table_info($tableGuestRecordRooms)");
+      final grrCols = grrInfo.map((c) => c['name'] as String).toSet();
+      if (!grrCols.contains('status')) {
+        await db.execute("ALTER TABLE $tableGuestRecordRooms ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
+      }
+    }
   }
 
   // ── helper: close (mainly for tests) ──────────────────────────────────────
@@ -342,6 +360,7 @@ class LocalDatabase {
       business_id             TEXT NOT NULL,
       check_in                TEXT NOT NULL,
       check_out               TEXT NOT NULL,
+      actual_checkout         TEXT,
       length_of_stay          INTEGER NOT NULL DEFAULT 1,
       total_guests            INTEGER NOT NULL,
       purpose_of_visit        TEXT NOT NULL,
@@ -389,6 +408,7 @@ class LocalDatabase {
       id                TEXT PRIMARY KEY,
       guest_record_id   TEXT NOT NULL,
       room_id           TEXT NOT NULL,
+      status            TEXT NOT NULL DEFAULT 'active',
       created_at        TEXT,
       updated_at        TEXT,
       sync_status       TEXT NOT NULL DEFAULT '$syncSynced',

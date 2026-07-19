@@ -10,6 +10,7 @@ class ActionIconButton extends StatefulWidget {
     this.color,
     this.showBorder = false,
     this.label,
+    this.compact = false,
   });
 
   final IconData icon;
@@ -18,6 +19,7 @@ class ActionIconButton extends StatefulWidget {
   final Color? color;
   final bool showBorder;
   final String? label;
+  final bool compact;
 
   @override
   State<ActionIconButton> createState() => _ActionIconButtonState();
@@ -30,6 +32,7 @@ class _ActionIconButtonState extends State<ActionIconButton> {
   Widget build(BuildContext context) {
     final color = widget.color ?? AppColors.textGray;
     final hasLabel = widget.label != null;
+    final compact = widget.compact;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -41,8 +44,8 @@ class _ActionIconButtonState extends State<ActionIconButton> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             padding: EdgeInsets.symmetric(
-              horizontal: hasLabel ? 10 : 6,
-              vertical: 6,
+              horizontal: compact ? (hasLabel ? 7 : 4) : (hasLabel ? 10 : 6),
+              vertical: compact ? 4 : 6,
             ),
             decoration: BoxDecoration(
               color: _hovered
@@ -65,15 +68,15 @@ class _ActionIconButtonState extends State<ActionIconButton> {
                 Icon(
                   widget.icon,
                   color: _hovered ? color : color.withOpacity(0.7),
-                  size: 18,
+                  size: compact ? 15 : 18,
                 ),
                 if (hasLabel) ...[
-                  const SizedBox(width: 4),
+                  SizedBox(width: compact ? 3 : 4),
                   Text(
                     widget.label!,
                     style: TextStyle(
                       color: _hovered ? color : color.withOpacity(0.7),
-                      fontSize: 12,
+                      fontSize: compact ? 11 : 12,
                       fontWeight: FontWeight.w500,
                     ),
                   ),

@@ -430,6 +430,7 @@ class BusinessGuestEntryApi extends BaseApi {
             'id':               junctionId,
             'guest_record_id':  recordId,
             'room_id':          roomId,
+            'status':           'active',
             'created_at':       createdAt,
             'updated_at':       localUpdatedAt,
             'sync_status':      syncStatus,

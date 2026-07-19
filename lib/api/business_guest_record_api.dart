@@ -149,7 +149,7 @@ class BusinessGuestRecordApi extends BaseApi {
     required String checkIn,
     required String checkOut,
     required int totalGuests,
-    required List<String> roomIds,
+    List<String>? roomIds,
     required String purposeOfVisit,
     required String transportationMode,
     required List<GuestBreakdownEntry> breakdowns,
@@ -161,6 +161,7 @@ class BusinessGuestRecordApi extends BaseApi {
     bool leadIsOverseas = false,
     String? leadBirthdate,
     String? leadSex,
+    String? actualCheckOut,
   }) async {
     if (ConnectivityService.instance.isOnline && hasToken) {
       try {
@@ -181,6 +182,7 @@ class BusinessGuestRecordApi extends BaseApi {
           leadIsOverseas:         leadIsOverseas,
           leadBirthdate:          leadBirthdate,
           leadSex:                leadSex,
+          actualCheckOut:         actualCheckOut,
         );
       } on ApiException catch (e) {
         if (e.statusCode == 401) {
@@ -201,6 +203,7 @@ class BusinessGuestRecordApi extends BaseApi {
             leadIsOverseas:         leadIsOverseas,
             leadBirthdate:          leadBirthdate,
             leadSex:                leadSex,
+            actualCheckOut:         actualCheckOut,
           );
         }
         return ApiResult.failure('Update failed: ${e.message}');
@@ -224,6 +227,7 @@ class BusinessGuestRecordApi extends BaseApi {
       leadIsOverseas:         leadIsOverseas,
       leadBirthdate:          leadBirthdate,
       leadSex:                leadSex,
+      actualCheckOut:         actualCheckOut,
     );
   }
 
@@ -326,6 +330,7 @@ class BusinessGuestRecordApi extends BaseApi {
           id:           recordId,
           checkIn:      checkIn,
           checkOut:     checkOut,
+          actualCheckOut: row['actual_checkout'] as String?,
           nights:       _calcNights(checkIn, checkOut),
           guests:       (row['total_guests']       as int?) ?? 0,
           rooms:        roomDetails.length,
@@ -440,6 +445,7 @@ class BusinessGuestRecordApi extends BaseApi {
           id:           recordId,
           checkIn:      checkIn,
           checkOut:     checkOut,
+          actualCheckOut: row['actual_checkout'] as String?,
           nights:       _calcNights(checkIn, checkOut),
           guests:       (row['total_guests']       as int?) ?? 0,
           rooms:        roomDetails.length,
@@ -479,7 +485,7 @@ class BusinessGuestRecordApi extends BaseApi {
     required String checkIn,
     required String checkOut,
     required int totalGuests,
-    required List<String> roomIds,
+    List<String>? roomIds,
     required String purposeOfVisit,
     required String transportationMode,
     required List<GuestBreakdownEntry> breakdowns,
@@ -491,15 +497,16 @@ class BusinessGuestRecordApi extends BaseApi {
     bool leadIsOverseas = false,
     String? leadBirthdate,
     String? leadSex,
+    String? actualCheckOut,
   }) async {
     try {
       final businessId = SessionService.instance.current?.businessId;
-      final payload = {
+      final payload = <String, dynamic>{
         'businessId':            businessId,
         'checkIn':               checkIn,
         'checkOut':              checkOut,
+        'actualCheckOut':        actualCheckOut,
         'totalGuests':           totalGuests,
-        'roomIds':               roomIds,
         'purposeOfVisit':        purposeOfVisit,
         'transportationMode':    transportationMode,
         'leadCountry':           leadCountry,
@@ -512,6 +519,9 @@ class BusinessGuestRecordApi extends BaseApi {
         'leadBirthdate':         leadBirthdate,
         'breakdowns':            breakdowns.map((b) => _breakdownEntryToPayload(b)).toList(),
       };
+      if (roomIds != null) {
+        payload['roomIds'] = roomIds;
+      }
 
       await put('/api/business/guest-records/$recordId', payload);
 
@@ -522,6 +532,7 @@ class BusinessGuestRecordApi extends BaseApi {
           {
             'check_in':                checkIn,
             'check_out':               checkOut,
+            'actual_checkout':         actualCheckOut,
             'total_guests':            totalGuests,
             'purpose_of_visit':        purposeOfVisit,
             'transportation_mode':     transportationMode,
@@ -541,7 +552,9 @@ class BusinessGuestRecordApi extends BaseApi {
           whereArgs: [recordId],
         );
         // Update room assignments
-        await _updateLocalRoomAssignments(db, recordId, businessId ?? '', roomIds);
+        if (roomIds != null) {
+          await _updateLocalRoomAssignments(db, recordId, businessId ?? '', roomIds);
+        }
       }
 
       return const ApiResult.success(null);
@@ -559,7 +572,7 @@ class BusinessGuestRecordApi extends BaseApi {
     required String checkIn,
     required String checkOut,
     required int totalGuests,
-    required List<String> roomIds,
+    List<String>? roomIds,
     required String purposeOfVisit,
     required String transportationMode,
     required List<GuestBreakdownEntry> breakdowns,
@@ -571,6 +584,7 @@ class BusinessGuestRecordApi extends BaseApi {
     bool leadIsOverseas = false,
     String? leadBirthdate,
     String? leadSex,
+    String? actualCheckOut,
   }) async {
     try {
       final now = DateTime.now().toUtc().toIso8601String();
@@ -581,6 +595,7 @@ class BusinessGuestRecordApi extends BaseApi {
         {
           'check_in':                checkIn,
           'check_out':               checkOut,
+          'actual_checkout':         actualCheckOut,
           'total_guests':            totalGuests,
           'purpose_of_visit':        purposeOfVisit,
           'transportation_mode':     transportationMode,
@@ -601,8 +616,10 @@ class BusinessGuestRecordApi extends BaseApi {
       );
 
       // Update room assignments locally
-      final businessId = SessionService.instance.current?.businessId ?? '';
-      await _updateLocalRoomAssignments(db, recordId, businessId, roomIds);
+      if (roomIds != null) {
+        final businessId = SessionService.instance.current?.businessId ?? '';
+        await _updateLocalRoomAssignments(db, recordId, businessId, roomIds);
+      }
 
       return const ApiResult.success(null);
     } catch (e) {
@@ -622,7 +639,7 @@ class BusinessGuestRecordApi extends BaseApi {
   Future<List<GuestRoom>> _fetchLocalRoomDetails(dynamic db, String recordId) async {
     try {
       final rows = await db.rawQuery(
-        'SELECT r.id, r.room_number, r.capacity '
+        'SELECT r.id, r.room_number, r.capacity, grr.status '
         'FROM local_guest_record_rooms grr '
         'JOIN local_rooms r ON r.id = grr.room_id '
         'WHERE grr.guest_record_id = ?',
@@ -632,6 +649,7 @@ class BusinessGuestRecordApi extends BaseApi {
         id: r['id'] as String? ?? '',
         roomNumber: r['room_number'] as String? ?? '',
         capacity: (r['capacity'] as int?) ?? 0,
+        status: r['status'] as String? ?? 'active',
       )).toList();
     } catch (e) {
       debugPrint('⚠️ _fetchLocalRoomDetails error: $e');
@@ -667,6 +685,7 @@ class BusinessGuestRecordApi extends BaseApi {
           'business_id':             businessId,
           'check_in':                row['check_in'],
           'check_out':               row['check_out'],
+          'actual_checkout':         row['actual_check_out'],
           'length_of_stay':          row['length_of_stay'] ?? 1,
           'total_guests':            row['total_guests'],
           'purpose_of_visit':        row['purpose_of_visit'],
@@ -725,6 +744,7 @@ class BusinessGuestRecordApi extends BaseApi {
               'id':               junctionId,
               'guest_record_id':  recordId,
               'room_id':          roomId,
+              'status':           room['status'] ?? 'active',
               'created_at':       room['created_at'] ?? room['createdAt'],
               'updated_at':       room['updated_at'] ?? room['updatedAt'],
               'sync_status':      LocalDatabase.syncSynced,
@@ -812,6 +832,7 @@ class BusinessGuestRecordApi extends BaseApi {
           'id':               junctionId,
           'guest_record_id':  recordId,
           'room_id':          roomId,
+          'status':           'active',
           'created_at':       now,
           'updated_at':       now,
           'sync_status':      junctionSyncStatus,
@@ -858,6 +879,7 @@ class BusinessGuestRecordApi extends BaseApi {
         id: r['id'] as String? ?? '',
         roomNumber: r['roomNumber'] as String? ?? '',
         capacity: (r['capacity'] as int?) ?? 0,
+        status: r['status'] as String? ?? 'active',
       )).toList();
       final roomIds = roomsList.map((r) => r['id'] as String? ?? '').where((id) => id.isNotEmpty).toList();
 
@@ -865,6 +887,7 @@ class BusinessGuestRecordApi extends BaseApi {
         id:           row['id'] as String,
         checkIn:      checkIn,
         checkOut:     checkOut,
+        actualCheckOut: row['actual_check_out'] as String?,
         nights:       _calcNights(checkIn, checkOut),
         guests:       (row['total_guests']       as int?) ?? 0,
         rooms:        roomsList.length,
