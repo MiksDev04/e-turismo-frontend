@@ -279,7 +279,7 @@ class BusinessGuestRecordApi extends BaseApi {
       final merged = await _getMergedLocalRecords(businessId, cloudRecords.map((r) => r.id).toSet());
       debugPrint('🧩 _fetchOnline: merged ${merged.length} local records');
       allRecords.addAll(merged);
-      allRecords.sort((a, b) => b.checkIn.compareTo(a.checkIn));
+      allRecords.sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
     }
 
     if (page == 1) {
@@ -337,6 +337,7 @@ class BusinessGuestRecordApi extends BaseApi {
               ? GuestRecordStatus.archived
               : GuestRecordStatus.active,
           demographics: _buildDemographicsFromLeadFields(row),
+          createdAt:    row['created_at'] as String?,
           leadCountry:            row['lead_country'] as String?,
           leadMunicipality:       row['lead_city_municipality'] as String?,
           leadProvince:           row['lead_province'] as String?,
@@ -419,7 +420,7 @@ class BusinessGuestRecordApi extends BaseApi {
         LocalDatabase.tableGuestRecords,
         where:   whereClause,
         whereArgs: args,
-        orderBy: 'check_in DESC',
+        orderBy: 'created_at DESC',
         limit:   pageSize,
         offset:  offset,
       );
@@ -450,6 +451,7 @@ class BusinessGuestRecordApi extends BaseApi {
               ? GuestRecordStatus.archived
               : GuestRecordStatus.active,
           demographics: _buildDemographicsFromLeadFields(row),
+          createdAt:    row['created_at'] as String?,
           leadCountry:            row['lead_country'] as String?,
           leadMunicipality:       row['lead_city_municipality'] as String?,
           leadProvince:           row['lead_province'] as String?,
@@ -620,7 +622,7 @@ class BusinessGuestRecordApi extends BaseApi {
   Future<List<GuestRoom>> _fetchLocalRoomDetails(dynamic db, String recordId) async {
     try {
       final rows = await db.rawQuery(
-        'SELECT r.id, r.room_number '
+        'SELECT r.id, r.room_number, r.capacity '
         'FROM local_guest_record_rooms grr '
         'JOIN local_rooms r ON r.id = grr.room_id '
         'WHERE grr.guest_record_id = ?',
@@ -629,6 +631,7 @@ class BusinessGuestRecordApi extends BaseApi {
       return rows.map((r) => GuestRoom(
         id: r['id'] as String? ?? '',
         roomNumber: r['room_number'] as String? ?? '',
+        capacity: (r['capacity'] as int?) ?? 0,
       )).toList();
     } catch (e) {
       debugPrint('⚠️ _fetchLocalRoomDetails error: $e');
@@ -854,6 +857,7 @@ class BusinessGuestRecordApi extends BaseApi {
       final roomDetails = roomsList.map((r) => GuestRoom(
         id: r['id'] as String? ?? '',
         roomNumber: r['roomNumber'] as String? ?? '',
+        capacity: (r['capacity'] as int?) ?? 0,
       )).toList();
       final roomIds = roomsList.map((r) => r['id'] as String? ?? '').where((id) => id.isNotEmpty).toList();
 
@@ -874,6 +878,7 @@ class BusinessGuestRecordApi extends BaseApi {
         demographics: breakdowns.isNotEmpty
             ? _buildDemographicsFromNode(breakdowns)
             : _buildDemographicsFromLeadFields(row),
+        createdAt:    row['created_at'] as String?,
         leadCountry:            row['lead_country'] as String?,
         leadMunicipality:       row['lead_city_municipality'] as String?,
         leadProvince:           row['lead_province'] as String?,

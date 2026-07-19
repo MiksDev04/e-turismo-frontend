@@ -234,6 +234,13 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       _selectedCityCode = repo.findCityCodeByName(
         _selectedProvinceCode!,
         r.leadMunicipality!,
+        regionCode: _selectedRegionCode,
+      );
+    } else if (_selectedRegionCode != null && r.leadMunicipality != null) {
+      _selectedCityCode = repo.findCityCodeByName(
+        '',
+        r.leadMunicipality!,
+        regionCode: _selectedRegionCode,
       );
     }
 
@@ -282,7 +289,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       // Add assigned rooms from roomDetails (has full info)
       for (final gr in widget.record.roomDetails) {
         if (!existingIds.contains(gr.id)) {
-          rooms.add(RoomInfo(id: gr.id, roomNumber: gr.roomNumber, capacity: 0));
+          rooms.add(RoomInfo(id: gr.id, roomNumber: gr.roomNumber, capacity: gr.capacity));
           existingIds.add(gr.id);
         }
       }
@@ -380,12 +387,6 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       hasError = true;
     }
 
-    // ── Rooms ───────────────────────────────────────────────────────────────
-    if (_selectedRoomIds.isEmpty) {
-      errors['rooms'] = 'Select at least 1 room.';
-      hasError = true;
-    }
-
     // ── Purpose ─────────────────────────────────────────────────────────────
     if (_purpose.isEmpty) {
       errors['purpose'] = 'Please select a purpose of visit.';
@@ -461,12 +462,21 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
             .firstOrNull
             ?.name;
       }
-      if (_selectedCityCode != null && _selectedProvinceCode != null) {
-        cityName = repo
-            .citiesFor(_selectedProvinceCode!)
+      if (_selectedCityCode != null) {
+        final cityProvince = _selectedProvinceCode != null
+            ? repo.citiesFor(_selectedProvinceCode!)
+            : <CityMunicipality>[];
+        cityName = cityProvince
             .where((c) => c.code == _selectedCityCode)
             .firstOrNull
             ?.name;
+        if (cityName == null && _selectedRegionCode != null) {
+          cityName = repo
+              .citiesForRegion(_selectedRegionCode!)
+              .where((c) => c.code == _selectedCityCode)
+              .firstOrNull
+              ?.name;
+        }
       }
     }
 
@@ -748,7 +758,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
 
                             // ── Rooms ─────────────────────────────────
                             _FieldCol(
-                              label: 'Rooms *',
+                              label: 'Rooms (leave empty for day-tour guests)',
                               errorText: _errors['rooms'],
                               child: _EditRoomSelector(
                                 vacantRooms: _vacantRooms,
@@ -998,7 +1008,9 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                             : [],
                         cities: _selectedProvinceCode != null
                             ? PsgcRepository.instance.citiesFor(_selectedProvinceCode!)
-                            : [],
+                            : (_selectedRegionCode != null
+                                ? PsgcRepository.instance.citiesForRegion(_selectedRegionCode!)
+                                : []),
                         leadNationality: _leadNationality,
                         leadIsOverseas: _leadIsOverseas,
                         leadBirthdate: _leadBirthdateCtrl,
@@ -1508,6 +1520,8 @@ class _EditRoomSelector extends StatelessWidget {
           backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14)),
+          contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          actionsPadding: const EdgeInsets.only(right: 12, bottom: 8),
           title: const Text(
             'Select Rooms',
             style: TextStyle(
@@ -1517,7 +1531,7 @@ class _EditRoomSelector extends StatelessWidget {
             ),
           ),
           content: SizedBox(
-            width: double.maxFinite,
+            width: 360,
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: vacantRooms.length,
@@ -1528,8 +1542,7 @@ class _EditRoomSelector extends StatelessWidget {
                 final isSelected =
                     selectedRoomIds.contains(room.id);
                 return ListTile(
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 4),
+                  contentPadding: EdgeInsets.zero,
                   leading: Checkbox(
                     value: isSelected,
                     onChanged: (_) {

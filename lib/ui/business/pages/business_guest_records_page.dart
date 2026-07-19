@@ -66,9 +66,10 @@ class GuestDemographics {
 }
 
 class GuestRoom {
-  const GuestRoom({required this.id, required this.roomNumber});
+  const GuestRoom({required this.id, required this.roomNumber, this.capacity = 0});
   final String id;
   final String roomNumber;
+  final int capacity;
 }
 
 class GuestRecord {
@@ -85,6 +86,7 @@ class GuestRecord {
     required this.transport,
     required this.status,
     required this.demographics,
+    this.createdAt,
     this.leadCountry,
     this.leadMunicipality,
     this.leadProvince,
@@ -107,6 +109,7 @@ class GuestRecord {
   final String transport;
   final GuestRecordStatus status;
   final GuestDemographics? demographics;
+  final String? createdAt;
   final String? leadCountry;
   final String? leadMunicipality;
   final String? leadProvince;

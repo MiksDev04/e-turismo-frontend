@@ -68,6 +68,9 @@ class PsgcRepository {
   List<CityMunicipality> citiesFor(String provinceCode) =>
       _citiesByProvince[provinceCode] ?? [];
 
+  List<CityMunicipality> citiesForRegion(String regionCode) =>
+      _citiesByProvince[regionCode] ?? [];
+
   String? findRegionCodeByName(String name) {
     for (final r in _regions) {
       if (r.name == name) return r.code;
@@ -91,15 +94,30 @@ class PsgcRepository {
     return null;
   }
 
-  String? findCityCodeByName(String provinceCode, String name) {
+  String? findCityCodeByName(String provinceCode, String name,
+      {String? regionCode}) {
+    // Try province lookup first
     final cities = _citiesByProvince[provinceCode];
-    if (cities == null) return null;
+    if (cities != null) {
+      final result = _findCityInList(cities, name);
+      if (result != null) return result;
+    }
+    // Fallback to region lookup (for regions without provinces like NCR)
+    if (regionCode != null) {
+      final regionCities = _citiesByProvince[regionCode];
+      if (regionCities != null) {
+        return _findCityInList(regionCities, name);
+      }
+    }
+    return null;
+  }
+
+  String? _findCityInList(List<CityMunicipality> cities, String name) {
     final normalised = name.trim().toLowerCase();
     for (final c in cities) {
       final cName = c.name.trim().toLowerCase();
       if (cName == normalised) return c.code;
     }
-    // Fallback: try with/without "City of" prefix
     for (final c in cities) {
       final cName = 'City of ${c.name}'.trim().toLowerCase();
       if (cName == normalised) return c.code;

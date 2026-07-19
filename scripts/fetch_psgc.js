@@ -40,6 +40,10 @@ async function main() {
         name: p.name,
       }));
 
+      if (provinces.length === 0) {
+        throw new Error('No provinces found');
+      }
+
       for (const province of provinces) {
         console.log(`  Fetching cities for ${province.name} (${province.code})...`);
         try {
@@ -55,8 +59,20 @@ async function main() {
         }
       }
     } catch (e) {
-      console.log(`  Warning: ${e.message} — region may have no provinces (e.g. NCR)`);
+      console.log(`  Warning: ${e.message} — region may have no provinces (e.g. NCR). Fetching cities/municipalities directly...`);
       provincesByRegion[region.code] = [];
+      try {
+        const cities = await fetchJSON(`${BASE}/regions/${region.code}/cities-municipalities.json`);
+        citiesByProvince[region.code] = cities.map(c => ({
+          code: c.code,
+          name: c.name,
+          isCapital: c.isCapital ?? false,
+        }));
+        console.log(`    Saved ${citiesByProvince[region.code].length} cities/municipalities for ${region.name}`);
+      } catch (e2) {
+        console.log(`    Warning: ${e2.message} — no cities found directly under region either`);
+        citiesByProvince[region.code] = [];
+      }
     }
   }
 

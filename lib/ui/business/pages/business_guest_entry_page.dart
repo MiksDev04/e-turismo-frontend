@@ -307,10 +307,8 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
       hasError = true;
     }
 
-    if (_selectedRoomIds.isEmpty) {
-      errors['rooms'] = 'Please select at least one room.';
-      hasError = true;
-    }
+    // Rooms are intentionally optional: a day-tour guest (no overnight stay,
+    // no room taken — e.g. a resort day visitor) is still a valid record.
 
     if (_purpose == null) {
       errors['purpose'] = 'Please select a purpose of visit.';
@@ -396,12 +394,21 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
             .firstOrNull
             ?.name;
       }
-      if (_selectedCityCode != null && _selectedProvinceCode != null) {
-        cityName = repo
-            .citiesFor(_selectedProvinceCode!)
+      if (_selectedCityCode != null) {
+        final cityProvince = _selectedProvinceCode != null
+            ? repo.citiesFor(_selectedProvinceCode!)
+            : <CityMunicipality>[];
+        cityName = cityProvince
             .where((c) => c.code == _selectedCityCode)
             .firstOrNull
             ?.name;
+        if (cityName == null && _selectedRegionCode != null) {
+          cityName = repo
+              .citiesForRegion(_selectedRegionCode!)
+              .where((c) => c.code == _selectedCityCode)
+              .firstOrNull
+              ?.name;
+        }
       }
     }
 
@@ -624,7 +631,9 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                         : [],
                     cities: _selectedProvinceCode != null
                         ? PsgcRepository.instance.citiesFor(_selectedProvinceCode!)
-                        : [],
+                        : (_selectedRegionCode != null
+                            ? PsgcRepository.instance.citiesForRegion(_selectedRegionCode!)
+                            : []),
                     leadNationality: _leadNationality,
                     leadIsOverseas: _leadIsOverseas,
                     leadBirthdate: _leadBirthdate,
@@ -947,7 +956,7 @@ class _StayInfoCard extends StatelessWidget {
 
           // ── Room Selection ─────────────────────────────────────────────
           _FieldCol(
-            label: 'Rooms *',
+            label: 'Rooms (leave empty for day-tour guests)',
             errorText: errors['rooms'],
             child: _RoomSelector(
               vacantRooms: vacantRooms,
@@ -1109,6 +1118,8 @@ class _RoomSelector extends StatelessWidget {
         builder: (ctx, setDialogState) => AlertDialog(
           backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          actionsPadding: const EdgeInsets.only(right: 12, bottom: 8),
           title: const Text(
             'Select Rooms',
             style: TextStyle(
@@ -1118,7 +1129,7 @@ class _RoomSelector extends StatelessWidget {
             ),
           ),
           content: SizedBox(
-            width: double.maxFinite,
+            width: 360,
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: vacantRooms.length,
@@ -1128,7 +1139,7 @@ class _RoomSelector extends StatelessWidget {
                 final room = vacantRooms[index];
                 final isSelected = selectedRoomIds.contains(room.id);
                 return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  contentPadding: EdgeInsets.zero,
                   leading: Checkbox(
                     value: isSelected,
                     onChanged: (_) {

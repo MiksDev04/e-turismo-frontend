@@ -982,6 +982,93 @@
       "isCapital": false
     }
   ],
+  "130000000": [
+    {
+      "code": "133900000",
+      "name": "City of Manila",
+      "isCapital": false
+    },
+    {
+      "code": "137401000",
+      "name": "City of Mandaluyong",
+      "isCapital": false
+    },
+    {
+      "code": "137402000",
+      "name": "City of Marikina",
+      "isCapital": false
+    },
+    {
+      "code": "137403000",
+      "name": "City of Pasig",
+      "isCapital": false
+    },
+    {
+      "code": "137404000",
+      "name": "Quezon City",
+      "isCapital": false
+    },
+    {
+      "code": "137405000",
+      "name": "City of San Juan",
+      "isCapital": false
+    },
+    {
+      "code": "137501000",
+      "name": "City of Caloocan",
+      "isCapital": false
+    },
+    {
+      "code": "137502000",
+      "name": "City of Malabon",
+      "isCapital": false
+    },
+    {
+      "code": "137503000",
+      "name": "City of Navotas",
+      "isCapital": false
+    },
+    {
+      "code": "137504000",
+      "name": "City of Valenzuela",
+      "isCapital": false
+    },
+    {
+      "code": "137601000",
+      "name": "City of Las Piñas",
+      "isCapital": false
+    },
+    {
+      "code": "137602000",
+      "name": "City of Makati",
+      "isCapital": false
+    },
+    {
+      "code": "137603000",
+      "name": "City of Muntinlupa",
+      "isCapital": false
+    },
+    {
+      "code": "137604000",
+      "name": "City of Parañaque",
+      "isCapital": false
+    },
+    {
+      "code": "137605000",
+      "name": "Pasay City",
+      "isCapital": false
+    },
+    {
+      "code": "137606000",
+      "name": "Pateros",
+      "isCapital": false
+    },
+    {
+      "code": "137607000",
+      "name": "City of Taguig",
+      "isCapital": false
+    }
+  ],
   "140100000": [
     {
       "code": "140101000",
