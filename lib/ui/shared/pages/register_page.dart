@@ -691,8 +691,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           confirmationSent: _confirmationSent,
                           emailConfirmed: _emailConfirmed,
                           onSendConfirmation: _sendConfirmation,
-                          onCancelConfirmation: _cancelConfirmation,
-                          // Step 2
+                           onCancelConfirmation: _cancelConfirmation,
+                           onNextStep1: () => setState(() => _step = 2),
+                           // Step 2
                           businessNameCtrl: _businessNameCtrl,
                           tradeNameCtrl: _tradeNameCtrl,
                           businessType: _businessType,
@@ -899,6 +900,7 @@ class _FormCard extends StatelessWidget {
     required this.emailConfirmed,
     required this.onSendConfirmation,
     required this.onCancelConfirmation,
+    required this.onNextStep1,
     // Step 2
     required this.businessNameCtrl,
     required this.tradeNameCtrl,
@@ -945,6 +947,7 @@ class _FormCard extends StatelessWidget {
   final bool emailConfirmed;
   final VoidCallback onSendConfirmation;
   final VoidCallback onCancelConfirmation;
+  final VoidCallback onNextStep1;
 
   // Step 2
   final TextEditingController businessNameCtrl;
@@ -1009,6 +1012,7 @@ class _FormCard extends StatelessWidget {
               showErrors: showErrors,
               onSendConfirmation: onSendConfirmation,
               onCancelConfirmation: onCancelConfirmation,
+              onNext: onNextStep1,
             )
           else if (step == 2)
             _Step2Form(
@@ -1203,6 +1207,7 @@ class _Step1Form extends StatefulWidget {
     required this.showErrors,
     required this.onSendConfirmation,
     required this.onCancelConfirmation,
+    required this.onNext,
   });
 
   final TextEditingController fullNameCtrl;
@@ -1216,6 +1221,7 @@ class _Step1Form extends StatefulWidget {
   final bool showErrors;
   final VoidCallback onSendConfirmation;
   final VoidCallback onCancelConfirmation;
+  final VoidCallback onNext;
 
   @override
   State<_Step1Form> createState() => _Step1FormState();
@@ -1438,7 +1444,7 @@ class _Step1FormState extends State<_Step1Form> {
           const SizedBox(height: 16),
           _GradientButton(
             label: 'Next: Business Details →',
-            onPressed: () {},
+            onPressed: widget.onNext,
           ),
         ],
       ],

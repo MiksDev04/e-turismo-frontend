@@ -17,6 +17,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../shared/layouts/admin_layout.dart';
 import '../../../api/admin_dashboard_api.dart';
 import '../../../api/base_api.dart';
+import '../../../router/app_routes.dart';
 
 // ─── Admin Dashboard Page ─────────────────────────────────────────────────────
 
@@ -1161,9 +1162,8 @@ class _StatCards extends StatelessWidget {
         iconColor: AppColors.primaryCyan,
         value: '${stats.activeAccommodations}',
         label: 'Active Accommodations',
-        sub: stats.pendingRegistrations > 0
-            ? '${stats.pendingRegistrations} pending'
-            : null,
+        onTap: () =>
+            Navigator.pushReplacementNamed(context, AppRoutes.adminAccommodations),
       ),
       _StatCard(
         icon: Icons.people_alt_rounded,
@@ -1176,6 +1176,8 @@ class _StatCards extends StatelessWidget {
         iconColor: AppColors.accentOrange,
         value: '${stats.pendingRegistrations}',
         label: 'Pending Registrations',
+        onTap: () =>
+            Navigator.pushReplacementNamed(context, AppRoutes.adminAccommodations),
       ),
       _StatCard(
         icon: Icons.groups_rounded,
@@ -1233,21 +1235,21 @@ class _StatCard extends StatelessWidget {
     required this.iconColor,
     required this.value,
     required this.label,
-    this.sub,
     this.infoTooltip,
+    this.onTap,
   });
 
   final IconData icon;
   final Color iconColor;
   final String value;
   final String label;
-  final String? sub;
   final String? infoTooltip;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width >= 600;
-    return _DashCard(
+    final card = _DashCard(
       child: SizedBox(
         width: double.infinity,
         child: isDesktop
@@ -1295,16 +1297,6 @@ class _StatCard extends StatelessWidget {
                       ],
                     ],
                   ),
-                  if (sub != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      sub!,
-                      style: const TextStyle(
-                        color: AppColors.textSubtle,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
                 ],
               )
             : Column(
@@ -1343,26 +1335,23 @@ class _StatCard extends StatelessWidget {
                       ],
                     ],
                   ),
-                  if (sub != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      sub!,
-                      style: const TextStyle(
-                        color: AppColors.textSubtle,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ] else
-                    const SizedBox(height: 13),
+                  const SizedBox(height: 13),
                 ],
               ),
       ),
     );
+
+    if (onTap != null) {
+      return GestureDetector(
+        onTap: onTap,
+        child: card,
+      );
+    }
+    return card;
   }
 }
 
 // ─── Donut Charts Row ─────────────────────────────────────────────────────────
-
 class _DonutChartsRow extends StatelessWidget {
   const _DonutChartsRow({
     required this.genderDist,

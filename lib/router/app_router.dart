@@ -260,15 +260,46 @@ class _InitialRouterState extends State<_InitialRouter> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _resolve());
   }
 
+  static const _minSplashDuration = Duration(milliseconds: 1500);
+
+  Future<void> _ensureMinElapsed(DateTime startTime) async {
+    final elapsed = DateTime.now().difference(startTime);
+    if (elapsed < _minSplashDuration) {
+      await Future<void>.delayed(_minSplashDuration - elapsed);
+    }
+    if (!mounted) return;
+  }
+
   Future<void> _resolve() async {
     if (!mounted) return;
+    final startTime = DateTime.now();
 
     final session = SessionService.instance.current;
 
+    // If cache says admin exists, verify with backend before trusting it.
     if (await AdminSetupApi.isCachedAdminExists()) {
-      if (!mounted) return;
-      _routeBasedOnSession(session);
-      return;
+      try {
+        final status = await AdminSetupApi().getStatus();
+        if (!mounted) return;
+
+        if (status.adminExists) {
+          await _ensureMinElapsed(startTime);
+          _routeBasedOnSession(session);
+          return;
+        }
+
+        // Admin was deleted — clear stale cache and continue to setup check below.
+        await AdminSetupApi.clearCache();
+      } on ApiException {
+        // Backend unreachable — trust the cached value.
+        await _ensureMinElapsed(startTime);
+        _routeBasedOnSession(session);
+        return;
+      } catch (_) {
+        await _ensureMinElapsed(startTime);
+        _routeBasedOnSession(session);
+        return;
+      }
     }
 
     try {
@@ -277,6 +308,7 @@ class _InitialRouterState extends State<_InitialRouter> {
 
       if (status.adminExists) {
         await AdminSetupApi.setAdminExists(true);
+        await _ensureMinElapsed(startTime);
         _routeBasedOnSession(session);
         return;
       }
@@ -285,6 +317,7 @@ class _InitialRouterState extends State<_InitialRouter> {
         if (session != null) {
           await SessionService.instance.clear();
         }
+        await _ensureMinElapsed(startTime);
         _go(AppRoutes.adminSetup);
         return;
       }
@@ -294,6 +327,7 @@ class _InitialRouterState extends State<_InitialRouter> {
       // Fall through
     }
 
+    await _ensureMinElapsed(startTime);
     _routeBasedOnSession(session);
   }
 
@@ -315,10 +349,78 @@ class _InitialRouterState extends State<_InitialRouter> {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: AppColors.backgroundDark,
-      body: Center(
-        child: CircularProgressIndicator(color: AppColors.primaryBlue),
+    return Scaffold(
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0.0, -0.3),
+            radius: 1.2,
+            colors: [AppColors.activeNavBg, AppColors.backgroundDark],
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 96,
+                height: 96,
+                padding: const EdgeInsets.all(1),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.cardBackground,
+                  border: Border.all(
+                    color: AppColors.primaryCyan.withOpacity(0.45),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primaryBlue.withOpacity(0.4),
+                      blurRadius: 20,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: ClipOval(
+                  child: Image.asset(
+                    'assets/images/tourism_office_logo.jpg',
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'San Pablo City',
+                style: TextStyle(
+                  color: AppColors.textWhite,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Tourism Record Management System',
+                style: TextStyle(
+                  color: AppColors.primaryCyan,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const SizedBox(height: 36),
+              const SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(
+                  color: AppColors.primaryBlue,
+                  strokeWidth: 3,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
