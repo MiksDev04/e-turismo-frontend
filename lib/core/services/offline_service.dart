@@ -70,7 +70,6 @@ class OfflineAuthService {
           'permit_number': business['permit_number'],
           'registration_number': business['registration_number'],
           'street': business['street'],
-          'total_rooms': business['total_rooms'],
           'region': business['region'],
           'city_municipality': business['city_municipality'],
           'province': business['province'],
@@ -471,7 +470,7 @@ class SyncService {
 
         // Build payload and include the local UUID so the backend stores the
         // same ID — keeps SQLite and MySQL in sync without a remapping step.
-        final payload = _toApiPayload(record, roomIds);
+        final payload = _toApiPayload(record, roomIds, isCreate: true);
         payload['id'] = recordId;
 
         final response = await http
@@ -591,7 +590,7 @@ class SyncService {
         );
         final roomIds = roomLinks.map((r) => r['room_id'] as String).toList();
 
-        final payload = _toApiPayload(record, roomIds);
+        final payload = _toApiPayload(record, roomIds, isCreate: false);
 
         final response = await http
             .put(
@@ -1225,7 +1224,6 @@ class SyncService {
             'permit_number': biz['permit_number'],
             'registration_number': biz['registration_number'],
             'street': biz['street'],
-            'total_rooms': biz['total_rooms'],
             'status': biz['status'],
             'region': biz['region'],
             'city_municipality': biz['city_municipality'],
@@ -1322,8 +1320,9 @@ class SyncService {
   /// both POST /api/business/guest-entries and PUT /api/business/guest-records/:id.
   Map<String, dynamic> _toApiPayload(
     Map<String, dynamic> record,
-    List<String> roomIds,
-  ) {
+    List<String> roomIds, {
+    bool isCreate = false,
+  }) {
     final actualCheckOut = record['actual_checkout'];
     final isCheckout = actualCheckOut != null &&
         (actualCheckOut as String).isNotEmpty;
@@ -1347,11 +1346,11 @@ class SyncService {
       'leadSex':               record['lead_sex'],
     };
 
-    // For checkouts, omit roomIds so the backend enters the checkout-only
-    // branch that properly frees rooms and marks junction rows as completed.
-    if (!isCheckout) {
-      payload['roomIds'] = roomIds;
-    }
+    // Always include roomIds so the backend has them for both:
+    // - Upsert branch: creates junction rows when the record doesn't exist yet
+    //   (e.g. PUT arrives before the offline create's POST was pushed)
+    // - Checkout branch: ignores roomIds and works from existing junction rows
+    payload['roomIds'] = roomIds;
 
     return payload;
   }

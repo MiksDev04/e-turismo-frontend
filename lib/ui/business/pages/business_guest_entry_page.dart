@@ -956,7 +956,7 @@ class _StayInfoCard extends StatelessWidget {
 
           // ── Room Selection ─────────────────────────────────────────────
           _FieldCol(
-            label: 'Rooms (leave empty for day-tour guests)',
+            label: 'Rooms (optional)',
             errorText: errors['rooms'],
             child: _RoomSelector(
               vacantRooms: vacantRooms,

@@ -84,7 +84,6 @@ class BusinessProfileApi extends BaseApi {
     String? ownerLastName,
     required BusinessType businessType,
     required List<BusinessLine> businessLine,
-    required int totalRooms,
     String? street,
     String? barangay,
     String? cityMunicipality,
@@ -102,7 +101,6 @@ class BusinessProfileApi extends BaseApi {
         'owner_last_name': ownerLastName,
         'business_type': businessType.dbValue,
         'business_line': businessLine.map((e) => e.dbValue).toList(),
-        'total_rooms': totalRooms,
         'street': street,
         'barangay': barangay,
         'city_municipality': cityMunicipality,
@@ -327,14 +325,13 @@ class BusinessModel {
     required this.id, required this.userId, required this.businessName,
     this.tradename, this.permitNumber, this.registrationNumber,
     this.street, this.barangay, this.cityMunicipality, this.province, this.region,
-    required this.totalRooms, this.permitFileUrl, this.validIdUrl,
+    this.permitFileUrl, this.validIdUrl,
     required this.status, this.remarks, required this.businessLine,
     this.ownerFirstName, this.ownerMiddleName, this.ownerLastName,
     required this.businessType,
   });
   final String id, userId, businessName;
   final String? tradename, permitNumber, registrationNumber, street, barangay, cityMunicipality, province, region;
-  final int totalRooms;
   final String? permitFileUrl, validIdUrl, remarks, ownerFirstName, ownerMiddleName, ownerLastName;
   final BusinessStatus status;
   final List<BusinessLine> businessLine;
@@ -351,7 +348,7 @@ class BusinessModel {
       registrationNumber: map['registration_number'], street: map['street'],
       barangay: map['barangay'], cityMunicipality: map['city_municipality'],
       province: map['province'], region: map['region'],
-      totalRooms: map['total_rooms'] ?? 0, permitFileUrl: map['permit_file_url'],
+      permitFileUrl: map['permit_file_url'],
       validIdUrl: map['valid_id_url'], status: BusinessStatus.fromDb(map['status'] ?? 'pending'),
       remarks: map['remarks'],
       businessLine: lineRaw.map((e) => BusinessLine.fromDb(e.trim().replaceAll('"', ''))).toList(),

@@ -503,16 +503,7 @@ class BusinessRoomApi extends BaseApi {
   }
 
   Future<void> _incrementLocalTotalRooms(String businessId) async {
-    if (kIsWeb) return;
-    try {
-      final db = await LocalDatabase.instance.database;
-      await db.rawUpdate(
-        'UPDATE ${LocalDatabase.tableLocalBusinesses} SET total_rooms = COALESCE(total_rooms, 0) + 1 WHERE id = ?',
-        [businessId],
-      );
-    } catch (e) {
-      debugPrint('⚠️ _incrementLocalTotalRooms: $e');
-    }
+    // No-op: total_rooms is now computed from rooms table count.
   }
 
   // ---------------------------------------------------------------------------

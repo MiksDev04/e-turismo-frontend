@@ -136,7 +136,6 @@ class RegisterApi {
     required String ownerFirstName,
     required String ownerMiddleName,
     required String ownerLastName,
-    required int totalRooms,
     required List<Map<String, String>> rooms,
     required String permitNumber,
     required String registrationNumber,
@@ -160,7 +159,6 @@ class RegisterApi {
         ownerFirstName: ownerFirstName,
         ownerLastName: ownerLastName,
         businessLine: businessLine,
-        totalRooms: totalRooms,
         rooms: rooms,
         permitNumber: permitNumber,
         registrationNumber: registrationNumber,
@@ -190,7 +188,6 @@ class RegisterApi {
       request.fields['ownerFirstName'] = ownerFirstName;
       request.fields['ownerMiddleName'] = ownerMiddleName;
       request.fields['ownerLastName'] = ownerLastName;
-      request.fields['totalRooms'] = totalRooms.toString();
       request.fields['rooms'] = jsonEncode(rooms);
       request.fields['permitNumber'] = permitNumber;
       request.fields['registrationNumber'] = registrationNumber;
@@ -287,7 +284,6 @@ class RegisterApi {
     required String ownerFirstName,
     required String ownerLastName,
     required List<String> businessLine,
-    required int totalRooms,
     required List<Map<String, String>> rooms,
     required String permitNumber,
     required String registrationNumber,
@@ -339,7 +335,6 @@ class RegisterApi {
     }
     if (ownerFirstName.trim().isEmpty) return 'Owner first name is required.';
     if (ownerLastName.trim().isEmpty) return 'Owner last name is required.';
-    if (totalRooms <= 0) return 'Total rooms must be at least 1.';
     if (permitNumber.trim().isEmpty) return 'Permit number is required.';
     if (registrationNumber.trim().isEmpty) {
       return 'Registration number is required.';

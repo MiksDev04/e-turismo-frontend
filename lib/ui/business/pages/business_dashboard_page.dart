@@ -209,7 +209,6 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
       _businessName = session?.businessName ?? '';
       _businessLine = session?.businessLine ?? const [];
       _address      = '${session?.street ?? ''}, ${session?.barangay ?? ''}';
-      _totalRooms   = session?.totalRooms ?? _totalRooms;
     });
 
     if (_businessId != null) {

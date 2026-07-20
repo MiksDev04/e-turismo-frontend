@@ -255,6 +255,21 @@ class BusinessGuestEntryApi extends BaseApi {
           where:     'id = ?',
           whereArgs: [guestRecordId],
         );
+
+        // Also mark assigned rooms as synced — the backend already set them
+        // to occupied via POST /guest-entries, so no pending push is needed.
+        if (data.roomIds != null && data.roomIds!.isNotEmpty) {
+          for (final roomId in data.roomIds!) {
+            await db.update(
+              LocalDatabase.tableLocalRooms,
+              {
+                'sync_status': LocalDatabase.syncSynced,
+              },
+              where:     'id = ? AND sync_status = ?',
+              whereArgs: [roomId, LocalDatabase.syncPendingUpdate],
+            );
+          }
+        }
       }
 
       return GuestEntryResult.ok(syncedToCloud: true);

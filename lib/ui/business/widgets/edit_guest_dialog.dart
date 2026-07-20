@@ -771,7 +771,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                             _FieldCol(
                               label: _isPostCheckout
                                   ? 'Rooms (locked after check-out)'
-                                  : 'Rooms (leave empty for day-tour guests)',
+                                  : 'Rooms (optional)',
                               errorText: _isPostCheckout ? null : _errors['rooms'],
                               child: _EditRoomSelector(
                                 vacantRooms: _vacantRooms,

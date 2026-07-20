@@ -26,7 +26,7 @@ class LocalDatabase {
   static const String _kDbName = 'tourism_local.db';
 
   // ── schema version ─────────────────────────────────────────────────────────
-  static const int _kDbVersion = 8;
+  static const int _kDbVersion = 9;
 
   // ── table names ────────────────────────────────────────────────────────────
   static const String tableLocalProfiles   = 'local_profiles';
@@ -280,6 +280,18 @@ class LocalDatabase {
         await db.execute("ALTER TABLE $tableGuestRecordRooms ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
       }
     }
+
+    // v8 → v9: Drop total_rooms from local_businesses (computed from rooms table).
+    if (oldVersion < 8) {
+      // intentional skip — no-op for v8
+    }
+    if (oldVersion < 9) {
+      final bizInfo = await db.rawQuery("PRAGMA table_info($tableLocalBusinesses)");
+      final bizCols = bizInfo.map((c) => c['name'] as String).toSet();
+      if (bizCols.contains('total_rooms')) {
+        await db.execute("ALTER TABLE $tableLocalBusinesses DROP COLUMN total_rooms");
+      }
+    }
   }
 
   // ── helper: close (mainly for tests) ──────────────────────────────────────
@@ -331,7 +343,6 @@ class LocalDatabase {
       permit_number       TEXT,
       registration_number TEXT,
       street              TEXT,
-      total_rooms         INTEGER,
       region              TEXT,
       city_municipality   TEXT,
       province            TEXT,

@@ -166,7 +166,6 @@ class LoginApi extends BaseApi {
           permitNumber: biz?['permit_number'] as String?,
           registrationNumber: biz?['registration_number'] as String?,
           street: biz?['street'] as String?,
-          totalRooms: biz?['total_rooms'] as int?,
           status: biz?['status'] as String?,
           region: biz?['region'] as String?,
           cityMunicipality: biz?['city_municipality'] as String?,
@@ -223,9 +222,6 @@ class LoginApi extends BaseApi {
         permitNumber: biz?['permit_number'],
         registrationNumber: biz?['registration_number'],
         street: biz?['street'],
-        totalRooms: biz?['total_rooms'] != null
-            ? int.tryParse(biz!['total_rooms'].toString())
-            : null,
         permitFileUrl: biz?['permit_file_url'],
         validIdUrl: biz?['valid_id_url'],
         businessType: biz?['business_type'],

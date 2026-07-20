@@ -22,7 +22,6 @@ class SessionData {
   final String? permitNumber;
   final String? registrationNumber;
   final String? street;
-  final int? totalRooms;
   final String? permitFileUrl;
   final String? validIdUrl;
   final String? businessType;
@@ -53,7 +52,6 @@ class SessionData {
     this.permitNumber,
     this.registrationNumber,
     this.street,
-    this.totalRooms,
     this.permitFileUrl,
     this.validIdUrl,
     this.businessType,
@@ -85,7 +83,6 @@ class SessionData {
     String? permitNumber,
     String? registrationNumber,
     String? street,
-    int? totalRooms,
     String? permitFileUrl,
     String? validIdUrl,
     String? businessType,
@@ -116,7 +113,6 @@ class SessionData {
       permitNumber: permitNumber ?? this.permitNumber,
       registrationNumber: registrationNumber ?? this.registrationNumber,
       street: street ?? this.street,
-      totalRooms: totalRooms ?? this.totalRooms,
       permitFileUrl: permitFileUrl ?? this.permitFileUrl,
       validIdUrl: validIdUrl ?? this.validIdUrl,
       businessType: businessType ?? this.businessType,
@@ -172,7 +168,6 @@ class SessionService extends ChangeNotifier {
   static const _kPermitNumber       = 'session_permit_number';
   static const _kRegistrationNumber = 'session_registration_number';
   static const _kStreet             = 'session_street';
-  static const _kTotalRooms         = 'session_total_rooms';
   static const _kPermitFileUrl      = 'session_permit_file_url';
   static const _kValidIdUrl         = 'session_valid_id_url';
   static const _kBusinessType       = 'session_business_type';
@@ -237,9 +232,6 @@ class SessionService extends ChangeNotifier {
 
     final String? str = data.street;
     if (str != null) await prefs.setString(_kStreet, str); else await prefs.remove(_kStreet);
-
-    final int? tRooms = data.totalRooms;
-    if (tRooms != null) await prefs.setInt(_kTotalRooms, tRooms); else await prefs.remove(_kTotalRooms);
 
     final String? pUrl = data.permitFileUrl;
     if (pUrl != null) await prefs.setString(_kPermitFileUrl, pUrl); else await prefs.remove(_kPermitFileUrl);
@@ -308,7 +300,6 @@ class SessionService extends ChangeNotifier {
       permitNumber:       prefs.getString(_kPermitNumber),
       registrationNumber: prefs.getString(_kRegistrationNumber),
       street:             prefs.getString(_kStreet),
-      totalRooms:         prefs.getInt(_kTotalRooms),
       permitFileUrl:      prefs.getString(_kPermitFileUrl),
       validIdUrl:         prefs.getString(_kValidIdUrl),
       businessType:       prefs.getString(_kBusinessType),
@@ -336,7 +327,7 @@ class SessionService extends ChangeNotifier {
       _kUserId, _kFullName, _kUsername, _kEmail, _kPhone, _kRole, _kToken,
       _kIsOfflineSession,
       _kBusinessId, _kBusinessName, _kPermitNumber, _kRegistrationNumber,
-      _kStreet, _kTotalRooms, _kPermitFileUrl, _kValidIdUrl, _kBusinessType,
+      _kStreet, _kPermitFileUrl, _kValidIdUrl, _kBusinessType,
       _kStatus, _kRemarks, _kRegion, _kCityMunicipality, _kProvince,
       _kBarangay, _kTradename, _kBusinessLine, _kOwnerFirstName,
       _kOwnerLastName, _kOwnerMiddleName,

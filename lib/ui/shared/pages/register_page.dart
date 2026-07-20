@@ -109,13 +109,6 @@ class _V {
   static String? ownerLastName(String v) =>
       v.trim().isEmpty ? 'Last name is required' : null;
 
-  static String? totalRooms(String v) {
-    final n = int.tryParse(v.trim());
-    if (n == null) return 'Enter a valid number';
-    if (n <= 0) return 'Must be at least 1';
-    return null;
-  }
-
   static String? roomName(String v) =>
       v.trim().isEmpty ? 'Room name is required' : null;
 
@@ -304,7 +297,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _ownerFirstNameCtrl = TextEditingController();
   final _ownerMiddleNameCtrl = TextEditingController();
   final _ownerLastNameCtrl = TextEditingController();
-  final _totalRoomsCtrl = TextEditingController();
   final _permitNumberCtrl = TextEditingController();
   final _registrationCtrl = TextEditingController();
   final _aeIdCtrl = TextEditingController();
@@ -355,7 +347,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _ownerFirstNameCtrl,
       _ownerMiddleNameCtrl,
       _ownerLastNameCtrl,
-      _totalRoomsCtrl,
       _permitNumberCtrl,
       _registrationCtrl,
       _aeIdCtrl,
@@ -510,14 +501,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _initRooms() {
-    final count = int.tryParse(_totalRoomsCtrl.text.trim()) ?? 0;
-    _rooms = List.generate(
-      count,
-      (i) => {
-        'name': i < _rooms.length ? _rooms[i]['name']! : '',
-        'capacity': i < _rooms.length ? _rooms[i]['capacity']! : '1',
-      },
-    );
+    if (_rooms.isEmpty) {
+      _rooms = [
+        {'name': '', 'capacity': '1'},
+      ];
+    }
   }
 
   bool get _step3Valid => _rooms.every((r) {
@@ -533,7 +521,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _V.ownerFirstName(_ownerFirstNameCtrl.text) == null &&
       _V.ownerLastName(_ownerLastNameCtrl.text) == null &&
       _V.businessLine(_businessLine) == null &&
-      _V.totalRooms(_totalRoomsCtrl.text) == null &&
       _V.permitNumber(_permitNumberCtrl.text) == null &&
       _V.registrationNumber(_registrationCtrl.text) == null &&
       _V.aeId(_aeIdCtrl.text) == null &&
@@ -600,7 +587,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ownerFirstName: _ownerFirstNameCtrl.text.trim(),
       ownerMiddleName: _ownerMiddleNameCtrl.text.trim(),
       ownerLastName: _ownerLastNameCtrl.text.trim(),
-      totalRooms: int.parse(_totalRoomsCtrl.text.trim()),
       rooms: _rooms,
       permitNumber: _permitNumberCtrl.text.trim(),
       registrationNumber: _registrationCtrl.text.trim(),
@@ -718,7 +704,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ownerFirstNameCtrl: _ownerFirstNameCtrl,
                           ownerMiddleNameCtrl: _ownerMiddleNameCtrl,
                           ownerLastNameCtrl: _ownerLastNameCtrl,
-                          totalRoomsCtrl: _totalRoomsCtrl,
                           permitNumberCtrl: _permitNumberCtrl,
                            registrationCtrl: _registrationCtrl,
                            aeIdCtrl: _aeIdCtrl,
@@ -924,7 +909,6 @@ class _FormCard extends StatelessWidget {
     required this.ownerFirstNameCtrl,
     required this.ownerMiddleNameCtrl,
     required this.ownerLastNameCtrl,
-    required this.totalRoomsCtrl,
     required this.permitNumberCtrl,
     required this.registrationCtrl,
     required this.aeIdCtrl,
@@ -972,7 +956,6 @@ class _FormCard extends StatelessWidget {
   final TextEditingController ownerFirstNameCtrl;
   final TextEditingController ownerMiddleNameCtrl;
   final TextEditingController ownerLastNameCtrl;
-  final TextEditingController totalRoomsCtrl;
   final TextEditingController permitNumberCtrl;
   final TextEditingController registrationCtrl;
   final TextEditingController aeIdCtrl;
@@ -1039,7 +1022,6 @@ class _FormCard extends StatelessWidget {
               ownerFirstNameCtrl: ownerFirstNameCtrl,
               ownerMiddleNameCtrl: ownerMiddleNameCtrl,
               ownerLastNameCtrl: ownerLastNameCtrl,
-              totalRoomsCtrl: totalRoomsCtrl,
               permitNumberCtrl: permitNumberCtrl,
               registrationCtrl: registrationCtrl,
               aeIdCtrl: aeIdCtrl,
@@ -1478,7 +1460,6 @@ class _Step2Form extends StatefulWidget {
     required this.ownerFirstNameCtrl,
     required this.ownerMiddleNameCtrl,
     required this.ownerLastNameCtrl,
-    required this.totalRoomsCtrl,
     required this.permitNumberCtrl,
     required this.registrationCtrl,
     required this.aeIdCtrl,
@@ -1505,7 +1486,6 @@ class _Step2Form extends StatefulWidget {
   final TextEditingController ownerFirstNameCtrl;
   final TextEditingController ownerMiddleNameCtrl;
   final TextEditingController ownerLastNameCtrl;
-  final TextEditingController totalRoomsCtrl;
   final TextEditingController permitNumberCtrl;
   final TextEditingController registrationCtrl;
   final TextEditingController aeIdCtrl;
@@ -1628,30 +1608,13 @@ class _Step2FormState extends State<_Step2Form> {
         ),
         const SizedBox(height: 12),
 
-        // ── Owner Middle Name + Total Rooms ────────────────────────────────
-        _ResponsiveFieldPair(
-          first: _LabeledField(
-            label: 'Middle Name (Optional)',
-            child: _Input(
-              controller: widget.ownerMiddleNameCtrl,
-              hint: 'Middle name',
-              onChanged: (_) {},
-            ),
-          ),
-          second: _LabeledField(
-            label: 'Total Rooms / Units',
-            error: _show('totalRooms')
-                ? _V.totalRooms(widget.totalRoomsCtrl.text)
-                : null,
-            child: _Input(
-              controller: widget.totalRoomsCtrl,
-              hint: 'e.g. 30',
-              keyboardType: TextInputType.number,
-              hasError:
-                  _show('totalRooms') &&
-                  _V.totalRooms(widget.totalRoomsCtrl.text) != null,
-              onChanged: (_) => _touch('totalRooms'),
-            ),
+        // ── Owner Middle Name ───────────────────────────────────────────────
+        _LabeledField(
+          label: 'Middle Name (Optional)',
+          child: _Input(
+            controller: widget.ownerMiddleNameCtrl,
+            hint: 'Middle name',
+            onChanged: (_) {},
           ),
         ),
         const SizedBox(height: 16),
@@ -1910,6 +1873,28 @@ class _Step3FormState extends State<_Step3Form> {
         ),
         const SizedBox(height: 16),
         ...List.generate(widget.rooms.length, (i) => _roomRow(i)),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: () {
+            final updated = List<Map<String, String>>.from(widget.rooms);
+            updated.add({'name': '', 'capacity': '1'});
+            widget.onRoomsChanged(updated);
+          },
+          child: Row(
+            children: const [
+              Icon(Icons.add_circle_outline, color: AppColors.primaryCyan, size: 18),
+              SizedBox(width: 6),
+              Text(
+                'Add Room',
+                style: TextStyle(
+                  color: AppColors.primaryCyan,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 16),
         if (widget.errorMessage != null) ...[
           Container(
@@ -2017,6 +2002,17 @@ class _Step3FormState extends State<_Step3Form> {
               },
             ),
           ),
+          if (widget.rooms.length > 1) ...[
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: () {
+                final updated = List<Map<String, String>>.from(widget.rooms);
+                updated.removeAt(index);
+                widget.onRoomsChanged(updated);
+              },
+              child: const Icon(Icons.remove_circle_outline, color: RegisterColors.textRed, size: 22),
+            ),
+          ],
         ],
       ),
     );

@@ -1899,7 +1899,7 @@ class _StayInfoGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final roomsDisplay = record.roomDetails.isNotEmpty
-        ? '${record.rooms} (${record.roomDetails.map((r) => '${r.roomNumber}${r.status == 'completed' ? ' (used)' : ''}').join(', ')})'
+        ? '${record.rooms} (${record.roomDetails.map((r) => '${'Room '}${r.roomNumber}${r.status == 'completed' ? ' (used)' : ''}').join(', ')})'
         : '${record.rooms}';
 
     final items = [

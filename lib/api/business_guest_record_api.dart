@@ -527,6 +527,21 @@ class BusinessGuestRecordApi extends BaseApi {
 
       if (!kIsWeb) {
         final db = await LocalDatabase.instance.database;
+
+        // If the record was originally pending_create (e.g. POST failed),
+        // keep it that way so the create is pushed on the next sync cycle
+        // with proper room associations. Marking it synced here would skip
+        // the create and leave the backend without junction rows.
+        final currentState = await db.query(
+          LocalDatabase.tableGuestRecords,
+          columns: ['sync_status'],
+          where: 'id = ?',
+          whereArgs: [recordId],
+          limit: 1,
+        );
+        final preserveCreate = currentState.isNotEmpty &&
+            currentState.first['sync_status'] == LocalDatabase.syncPendingCreate;
+
         await db.update(
           LocalDatabase.tableGuestRecords,
           {
@@ -545,7 +560,9 @@ class BusinessGuestRecordApi extends BaseApi {
             'lead_birthdate':          leadBirthdate,
             'lead_sex':                leadSex?.toLowerCase(),
             'updated_at':              DateTime.now().toUtc().toIso8601String(),
-            'sync_status':             LocalDatabase.syncSynced,
+            'sync_status':             preserveCreate
+                ? LocalDatabase.syncPendingCreate
+                : LocalDatabase.syncSynced,
             'local_updated_at':        DateTime.now().toUtc().toIso8601String(),
           },
           where:     'id = ?',
@@ -590,6 +607,20 @@ class BusinessGuestRecordApi extends BaseApi {
       final now = DateTime.now().toUtc().toIso8601String();
       final db  = await LocalDatabase.instance.database;
 
+      // Preserve pending_create so the initial POST (with room associations)
+      // is pushed first. Overwriting to pending_update would skip the create
+      // and the subsequent PUT checkout would upsert the record without
+      // junction rows, losing room data.
+      final currentState = await db.query(
+        LocalDatabase.tableGuestRecords,
+        columns: ['sync_status'],
+        where: 'id = ?',
+        whereArgs: [recordId],
+        limit: 1,
+      );
+      final preserveCreate = currentState.isNotEmpty &&
+          currentState.first['sync_status'] == LocalDatabase.syncPendingCreate;
+
       await db.update(
         LocalDatabase.tableGuestRecords,
         {
@@ -608,7 +639,9 @@ class BusinessGuestRecordApi extends BaseApi {
           'lead_birthdate':          leadBirthdate,
           'lead_sex':                leadSex?.toLowerCase(),
           'updated_at':              now,
-          'sync_status':             LocalDatabase.syncPendingUpdate,
+          'sync_status':             preserveCreate
+              ? LocalDatabase.syncPendingCreate
+              : LocalDatabase.syncPendingUpdate,
           'local_updated_at':        now,
         },
         where:     'id = ?',
@@ -858,12 +891,15 @@ class BusinessGuestRecordApi extends BaseApi {
     }
 
     // Mark newly assigned rooms as occupied locally
+    final roomSyncStatus = isOnline
+        ? LocalDatabase.syncSynced
+        : LocalDatabase.syncPendingUpdate;
     for (final roomId in roomIds) {
       await db.update(
         LocalDatabase.tableLocalRooms,
         {
           'room_status':      'occupied',
-          'sync_status':      LocalDatabase.syncPendingUpdate,
+          'sync_status':      roomSyncStatus,
           'local_updated_at': now,
         },
         where:     'id = ? AND room_status != ?',
@@ -887,7 +923,7 @@ class BusinessGuestRecordApi extends BaseApi {
           LocalDatabase.tableLocalRooms,
           {
             'room_status':      'vacant',
-            'sync_status':      LocalDatabase.syncPendingUpdate,
+            'sync_status':      roomSyncStatus,
             'local_updated_at': now,
           },
           where:     'id = ?',

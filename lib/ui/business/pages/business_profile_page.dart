@@ -148,7 +148,6 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
   final _ownerFirstCtrl      = TextEditingController();
   final _ownerMiddleCtrl     = TextEditingController();
   final _ownerLastCtrl       = TextEditingController();
-  final _totalRoomsCtrl      = TextEditingController(text: '0');
   final _streetCtrl          = TextEditingController();
   final _barangayCtrl        = TextEditingController();
   final _cityCtrl            = TextEditingController();
@@ -195,7 +194,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
     for (final c in [
       _fullNameCtrl, _usernameCtrl, _emailCtrl, _phoneCtrl,
       _businessNameCtrl, _tradenameCtrl, _ownerFirstCtrl, _ownerMiddleCtrl,
-      _ownerLastCtrl, _totalRoomsCtrl, _streetCtrl, _barangayCtrl,
+      _ownerLastCtrl, _streetCtrl, _barangayCtrl,
       _cityCtrl, _provinceCtrl, _regionCtrl, _permitNumberCtrl,
       _registrationCtrl,
     ]) { c.dispose(); }
@@ -316,7 +315,6 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
     _ownerFirstCtrl.text   = b.ownerFirstName ?? '';
     _ownerMiddleCtrl.text  = b.ownerMiddleName ?? '';
     _ownerLastCtrl.text    = b.ownerLastName ?? '';
-    _totalRoomsCtrl.text   = b.totalRooms.toString();
     _streetCtrl.text       = b.street ?? '';
     
     // Fixed location values
@@ -387,7 +385,6 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
         ownerLastName:      _ownerLastCtrl.text,
         businessType:       _selectedBusinessType,
         businessLine:       _selectedLines,
-        totalRooms:         int.parse(_totalRoomsCtrl.text.trim()),
         street:             _streetCtrl.text,
         barangay:           _selectedBarangay ?? _barangayCtrl.text,
         cityMunicipality:   _fixedCityMunicipality,
@@ -461,7 +458,6 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
           cityMunicipality: b.cityMunicipality,
           province: b.province,
           region: b.region,
-          totalRooms: b.totalRooms,
           permitFileUrl: (urls['permit_file_url'] ?? '').isNotEmpty
               ? urls['permit_file_url'] : b.permitFileUrl,
           validIdUrl: (urls['valid_id_url'] ?? '').isNotEmpty
@@ -585,7 +581,6 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                 ownerFirstCtrl:     _ownerFirstCtrl,
                                 ownerMiddleCtrl:    _ownerMiddleCtrl,
                                 ownerLastCtrl:      _ownerLastCtrl,
-                                totalRoomsCtrl:     _totalRoomsCtrl,
                                 streetCtrl:         _streetCtrl,
                                 barangayCtrl:       _barangayCtrl,
                                 cityCtrl:           _cityCtrl,
@@ -955,7 +950,6 @@ class _BusinessInfoCard extends StatelessWidget {
     required this.ownerFirstCtrl,
     required this.ownerMiddleCtrl,
     required this.ownerLastCtrl,
-    required this.totalRoomsCtrl,
     required this.streetCtrl,
     required this.barangayCtrl,
     required this.cityCtrl,
@@ -977,7 +971,6 @@ class _BusinessInfoCard extends StatelessWidget {
 
   final TextEditingController businessNameCtrl, tradenameCtrl;
   final TextEditingController ownerFirstCtrl, ownerMiddleCtrl, ownerLastCtrl;
-  final TextEditingController totalRoomsCtrl;
   final TextEditingController streetCtrl, barangayCtrl, cityCtrl;
   final TextEditingController provinceCtrl, regionCtrl;
   final TextEditingController permitNumberCtrl, registrationCtrl;
@@ -1031,14 +1024,6 @@ class _BusinessInfoCard extends StatelessWidget {
                 onChanged: onBusinessTypeChanged,
               ),
             ),
-            const SizedBox(height: 14),
-            _LabeledField(
-              label: 'Total Rooms / Units',
-              icon: Icons.bed_outlined,
-              child: _ReadonlyField(
-                  controller: totalRoomsCtrl,
-                  tooltip: 'Total room count is automatically synced from your room listings.'),
-            ),
           ] else
             Row(children: [
               Expanded(child: _LabeledField(
@@ -1049,14 +1034,6 @@ class _BusinessInfoCard extends StatelessWidget {
                   labelOf: (e) => e.label,
                   onChanged: onBusinessTypeChanged,
                 ),
-              )),
-              const SizedBox(width: 14),
-              Expanded(child: _LabeledField(
-                label: 'Total Rooms / Units',
-                icon: Icons.bed_outlined,
-                child: _ReadonlyField(
-                    controller: totalRoomsCtrl,
-                    tooltip: 'Total room count is automatically synced from your room listings.'),
               )),
             ]),
           const SizedBox(height: 14),
