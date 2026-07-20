@@ -391,6 +391,21 @@ class BusinessGuestEntryApi extends BaseApi {
           ],
         );
       }
+      // Mark assigned rooms as occupied locally so the vacant-room list
+      // stays accurate during the same offline session. The
+      // sync_pending_update marker lets SyncService push the change later.
+      for (final roomId in roomIds) {
+        await db.update(
+          LocalDatabase.tableLocalRooms,
+          {
+            'room_status':      'occupied',
+            'sync_status':      LocalDatabase.syncPendingUpdate,
+            'local_updated_at': createdAt,
+          },
+          where:     'id = ? AND room_status != ?',
+          whereArgs: [roomId, 'occupied'],
+        );
+      }
     }
 
     await db.insert(

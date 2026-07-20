@@ -801,6 +801,18 @@ class BusinessGuestRecordApi extends BaseApi {
         ? LocalDatabase.syncSynced
         : LocalDatabase.syncPendingUpdate;
 
+    // Capture old room IDs before clearing so we can diff later
+    final oldRoomIds = <String>[];
+    final oldRows = await db.query(
+      LocalDatabase.tableGuestRecordRooms,
+      columns: ['room_id'],
+      where: 'guest_record_id = ?',
+      whereArgs: [recordId],
+    );
+    for (final row in oldRows) {
+      oldRoomIds.add(row['room_id'] as String);
+    }
+
     // Clear old links
     await db.delete(
       LocalDatabase.tableGuestRecordRooms,
@@ -843,6 +855,45 @@ class BusinessGuestRecordApi extends BaseApi {
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
+    }
+
+    // Mark newly assigned rooms as occupied locally
+    for (final roomId in roomIds) {
+      await db.update(
+        LocalDatabase.tableLocalRooms,
+        {
+          'room_status':      'occupied',
+          'sync_status':      LocalDatabase.syncPendingUpdate,
+          'local_updated_at': now,
+        },
+        where:     'id = ? AND room_status != ?',
+        whereArgs: [roomId, 'occupied'],
+      );
+    }
+
+    // Free rooms no longer referenced by any active guest record
+    final removedRoomIds = oldRoomIds.where((id) => !roomIds.contains(id));
+    for (final roomId in removedRoomIds) {
+      final result = await db.rawQuery(
+        'SELECT COUNT(*) as cnt FROM ${LocalDatabase.tableGuestRecordRooms} grr '
+        'JOIN ${LocalDatabase.tableGuestRecords} gr ON gr.id = grr.guest_record_id '
+        'WHERE grr.room_id = ? AND grr.guest_record_id != ? '
+        'AND gr.status = ? AND gr.is_deleted = 0',
+        [roomId, recordId, 'active'],
+      );
+      final refCount = (result.first['cnt'] as int?) ?? 0;
+      if (refCount == 0) {
+        await db.update(
+          LocalDatabase.tableLocalRooms,
+          {
+            'room_status':      'vacant',
+            'sync_status':      LocalDatabase.syncPendingUpdate,
+            'local_updated_at': now,
+          },
+          where:     'id = ?',
+          whereArgs: [roomId],
+        );
+      }
     }
   }
 

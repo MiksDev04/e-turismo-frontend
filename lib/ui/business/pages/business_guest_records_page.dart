@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/database/local_database.dart';
 import '../../../core/services/offline_service.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../shared/widgets/paginator.dart';
@@ -476,6 +478,30 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       );
       if (!result.success) {
         allSuccess = false;
+      }
+    }
+
+    // Mark junction table rows as completed during offline checkout
+    if (!kIsWeb && allSuccess) {
+      try {
+        final db = await LocalDatabase.instance.database;
+        final now = DateTime.now().toUtc().toIso8601String();
+        for (final roomId in roomIds) {
+          await db.update(
+            LocalDatabase.tableGuestRecordRooms,
+            {
+              'status':           'completed',
+              'updated_at':       now,
+              'sync_status':      LocalDatabase.syncPendingUpdate,
+              'local_updated_at': now,
+            },
+            where:
+                'guest_record_id = ? AND room_id = ? AND status = ?',
+            whereArgs: [record.id, roomId, 'active'],
+          );
+        }
+      } catch (e) {
+        debugPrint('⚠️ Failed to update junction table during checkout: $e');
       }
     }
 

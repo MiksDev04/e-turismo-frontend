@@ -1324,13 +1324,16 @@ class SyncService {
     Map<String, dynamic> record,
     List<String> roomIds,
   ) {
-    return {
+    final actualCheckOut = record['actual_checkout'];
+    final isCheckout = actualCheckOut != null &&
+        (actualCheckOut as String).isNotEmpty;
+
+    final payload = <String, dynamic>{
       'businessId':            record['business_id'],
       'checkIn':               record['check_in'],
       'checkOut':              record['check_out'],
-      'actualCheckOut':        record['actual_checkout'],
+      'actualCheckOut':        actualCheckOut,
       'totalGuests':           record['total_guests'],
-      'roomIds':               roomIds,
       'purposeOfVisit':        record['purpose_of_visit'],
       'transportationMode':    record['transportation_mode'],
       'status':                record['status'],
@@ -1343,6 +1346,14 @@ class SyncService {
       'leadBirthdate':         record['lead_birthdate'],
       'leadSex':               record['lead_sex'],
     };
+
+    // For checkouts, omit roomIds so the backend enters the checkout-only
+    // branch that properly frees rooms and marks junction rows as completed.
+    if (!isCheckout) {
+      payload['roomIds'] = roomIds;
+    }
+
+    return payload;
   }
 
   Map<String, dynamic> _fromApiRecord(Map<String, dynamic> row) {
