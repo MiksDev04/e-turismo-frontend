@@ -528,7 +528,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
   Widget build(BuildContext context) {
     return BusinessLayout(
       title: 'Profile',
-      selectedIndex: 5,
+      selectedIndex: 6,
       onNavSelected: (_) {},
       child: _errorCode != null
           ? ErrorPage(statusCode: _errorCode!, onRetry: _loadData)

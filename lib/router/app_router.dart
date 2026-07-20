@@ -18,6 +18,7 @@ import 'package:app/ui/admin/pages/admin_profile_page.dart';
 import 'package:app/ui/business/pages/business_dashboard_page.dart';
 import 'package:app/ui/business/pages/business_guest_entry_page.dart';
 import 'package:app/ui/business/pages/business_guest_records_page.dart';
+import 'package:app/ui/business/pages/business_rooms_page.dart';
 import 'package:app/ui/business/pages/business_messages_page.dart';
 import 'package:app/ui/business/pages/business_profile_page.dart';
 
@@ -33,6 +34,7 @@ const _offlineAllowedRoutes = {
   AppRoutes.businessDashboard,
   AppRoutes.businessGuestEntry,
   AppRoutes.businessGuestRecord,
+  AppRoutes.businessRooms,
 };
 
 // ─── Route Metadata ───────────────────────────────────────────────────────────
@@ -56,8 +58,9 @@ const _businessRouteMeta = {
   AppRoutes.businessDashboard: _RouteMeta('Dashboard', 0),
   AppRoutes.businessGuestEntry: _RouteMeta('Guest Entry', 1),
   AppRoutes.businessGuestRecord: _RouteMeta('Guest Records', 2),
-  AppRoutes.businessMessages: _RouteMeta('Messages', 4),
-  AppRoutes.businessProfile: _RouteMeta('Profile', 5),
+  AppRoutes.businessRooms: _RouteMeta('Rooms', 3),
+  AppRoutes.businessMessages: _RouteMeta('Messages', 5),
+  AppRoutes.businessProfile: _RouteMeta('Profile', 6),
 };
 
 // ─── Route Permissions ────────────────────────────────────────────────────────
@@ -76,6 +79,7 @@ abstract final class _RoutePermissions {
     AppRoutes.businessDashboard: {'business'},
     AppRoutes.businessGuestEntry: {'business'},
     AppRoutes.businessGuestRecord: {'business'},
+    AppRoutes.businessRooms: {'business'},
     AppRoutes.businessMessages: {'business'},
     AppRoutes.businessProfile: {'business'},
   };
@@ -185,6 +189,10 @@ abstract final class AppRouter {
       ),
       AppRoutes.businessGuestRecord => _fade(
         const BusinessGuestRecordsPage(),
+        settings,
+      ),
+      AppRoutes.businessRooms => _fade(
+        const BusinessRoomsPage(),
         settings,
       ),
       AppRoutes.businessMessages => _fade(

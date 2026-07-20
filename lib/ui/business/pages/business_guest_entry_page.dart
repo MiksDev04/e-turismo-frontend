@@ -1151,14 +1151,41 @@ class _RoomSelector extends StatelessWidget {
                     visualDensity: VisualDensity.compact,
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  title: Text(
-                    room.roomNumber,
-                    style: TextStyle(
-                      color: _kInputText,
-                      fontSize: 13.5,
-                      fontWeight:
-                          isSelected ? FontWeight.w600 : FontWeight.normal,
-                    ),
+                  title: Row(
+                    children: [
+                      Text(
+                        room.roomNumber,
+                        style: TextStyle(
+                          color: _kInputText,
+                          fontSize: 13.5,
+                          fontWeight:
+                              isSelected ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                      ),
+                      if (room.isReserved) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.accentPurple.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: AppColors.accentPurple.withOpacity(0.4),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: const Text(
+                            'Reserved',
+                            style: TextStyle(
+                              color: AppColors.accentPurple,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   subtitle: Text(
                     '${room.capacity} pax',

@@ -31,11 +31,15 @@ class RoomInfo {
     required this.id,
     required this.roomNumber,
     required this.capacity,
+    this.status = 'vacant',
   });
 
   final String id;
   final String roomNumber;
   final int capacity;
+  final String status;
+
+  bool get isReserved => status == 'reserved';
 }
 
 class GuestEntryData {
@@ -99,6 +103,7 @@ class BusinessGuestEntryApi extends BaseApi {
                   id: r['id'] as String,
                   roomNumber: r['roomNumber'] as String,
                   capacity: r['capacity'] as int,
+                  status: r['status'] as String? ?? 'vacant',
                 ))
             .toList();
 
@@ -117,8 +122,8 @@ class BusinessGuestEntryApi extends BaseApi {
     final db = await LocalDatabase.instance.database;
     final rows = await db.query(
       LocalDatabase.tableLocalRooms,
-      where: 'business_id = ? AND room_status = ?',
-      whereArgs: [businessId, 'vacant'],
+      where: 'business_id = ? AND room_status IN (?, ?)',
+      whereArgs: [businessId, 'vacant', 'reserved'],
       orderBy: 'room_number',
     );
     return rows
@@ -126,6 +131,7 @@ class BusinessGuestEntryApi extends BaseApi {
               id: r['id'] as String,
               roomNumber: r['room_number'] as String,
               capacity: r['capacity'] as int,
+              status: r['room_status'] as String? ?? 'vacant',
             ))
         .toList();
   }
@@ -364,23 +370,25 @@ class BusinessGuestEntryApi extends BaseApi {
     }
 
     // Ensure local_rooms entries exist for the room IDs being assigned,
-    // so the junction table foreign key won't fail.
+    // so the junction table foreign key won't fail. If the room already
+    // exists locally (from a prior sync pull) the INSERT OR IGNORE is a no-op
+    // and preserves the real room_number/capacity/status.
     if (roomIds != null) {
       for (final roomId in roomIds) {
-        await db.insert(
-          LocalDatabase.tableLocalRooms,
-          {
-            'id':               roomId,
-            'business_id':      businessId,
-            'room_number':      roomId.substring(0, 8),
-            'capacity':         1,
-            'room_status':      'occupied',
-            'created_at':       createdAt,
-            'updated_at':       createdAt,
-            'sync_status':      syncStatus,
-            'local_updated_at': localUpdatedAt,
-          },
-          conflictAlgorithm: ConflictAlgorithm.ignore,
+        await db.rawInsert(
+          'INSERT OR IGNORE INTO ${LocalDatabase.tableLocalRooms} '
+          '(id, business_id, room_number, capacity, room_status, sync_status, created_at, updated_at) '
+          'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [
+            roomId,
+            businessId,
+            'Room ${roomId.substring(0, 8)}',
+            1,
+            'occupied',
+            LocalDatabase.syncSynced,
+            createdAt,
+            createdAt,
+          ],
         );
       }
     }

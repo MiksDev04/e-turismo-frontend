@@ -134,9 +134,15 @@ class _BusinessBottomNavBarState extends State<BusinessBottomNavBar> {
       route: AppRoutes.businessGuestRecord,
     ),
     BizNavItem(
+      icon: Icons.meeting_room_outlined,
+      label: 'Rooms',
+      index: 3,
+      route: AppRoutes.businessRooms,
+    ),
+    BizNavItem(
       icon: Icons.chat_bubble_outline_rounded,
       label: 'Messages',
-      index: 4,
+      index: 5,
       badge: unreadCount > 0 ? unreadCount : null,
       route: AppRoutes.businessMessages,
     ),

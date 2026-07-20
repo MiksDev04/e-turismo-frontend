@@ -239,7 +239,7 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
   Widget build(BuildContext context) {
     return BusinessLayout(
       title:         'Messages',
-      selectedIndex: 4,
+      selectedIndex: 5,
       onNavSelected: (_) {},
       child: LayoutBuilder(
         builder: (context, constraints) {

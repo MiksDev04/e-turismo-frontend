@@ -702,7 +702,7 @@ class SyncService {
 
       try {
         final response = await http.get(
-          Uri.parse('$_baseUrl/api/business/rooms?businessId=$bizId'),
+          Uri.parse('$_baseUrl/api/business/rooms?businessId=$bizId&fetchAll=true'),
           headers: _headers,
         );
 
@@ -718,6 +718,22 @@ class SyncService {
         for (final r in data) {
           final roomId = r['id'] as String;
           remoteIds.add(roomId);
+
+          // Skip rooms that have local pending changes (user edited them offline)
+          final existing = await db.query(
+            LocalDatabase.tableLocalRooms,
+            columns: ['sync_status'],
+            where: 'id = ?',
+            whereArgs: [roomId],
+            limit: 1,
+          );
+          if (existing.isNotEmpty) {
+            final localSync = existing.first['sync_status'] as String?;
+            if (localSync != null && localSync != LocalDatabase.syncSynced) {
+              debugPrint('⏳ _pullRoomsFromBackend: skipping room $roomId (local pending: $localSync)');
+              continue;
+            }
+          }
 
           await _safeUpsertRoom(
             db,
@@ -908,7 +924,6 @@ class SyncService {
         final payload = {
           'roomNumber': record['room_number'],
           'capacity':   record['capacity'],
-          'roomStatus': record['room_status'],
         };
 
         final response = await http
@@ -925,6 +940,30 @@ class SyncService {
             );
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
+          // Also sync room_status via the dedicated status endpoint
+          try {
+            final statusPayload = {'roomStatus': record['room_status']};
+            final statusResponse = await http
+                .put(
+                  Uri.parse('$_baseUrl/api/business/rooms/$roomId/status'),
+                  headers: _headers,
+                  body: jsonEncode(statusPayload),
+                )
+                .timeout(
+                  const Duration(seconds: 15),
+                  onTimeout: () => throw TimeoutException(
+                    'PUT rooms/$roomId/status timed out',
+                  ),
+                );
+            if (statusResponse.statusCode >= 200 && statusResponse.statusCode < 300) {
+              debugPrint('✅ _pushPendingRoomUpdates: synced room status for $roomId');
+            } else {
+              debugPrint('⚠️ _pushPendingRoomUpdates: room status sync failed for $roomId — ${statusResponse.statusCode}');
+            }
+          } catch (e) {
+            debugPrint('⚠️ _pushPendingRoomUpdates: room status sync exception for $roomId — $e');
+          }
+
           await db.update(
             LocalDatabase.tableLocalRooms,
             {
@@ -1096,19 +1135,21 @@ class SyncService {
           final rooms = remote['rooms'] as List<dynamic>? ?? [];
           for (final r in rooms) {
             final roomId = r['id'] as String;
-            // Ensure the room exists locally for FK (use safe upsert to avoid
-            // triggering ON DELETE RESTRICT from local_guest_record_rooms)
-            await _safeUpsertRoom(
-              db,
-              id:               roomId,
-              businessId:       businessId,
-              roomNumber:       r['roomNumber'] ?? r['room_number'] ?? roomId.substring(0, 8),
-              capacity:         r['capacity'] ?? 1,
-              roomStatus:       'occupied',
-              syncStatus:       LocalDatabase.syncSynced,
-              createdAt:        null,
-              updatedAt:        null,
-              localUpdatedAt:   null,
+            // Ensure the room exists locally for FK — use INSERT OR IGNORE
+            // so we never overwrite room_status (already correct from
+            // _pullRoomsFromBackend which runs earlier in the sync cycle).
+            await db.rawInsert(
+              'INSERT OR IGNORE INTO ${LocalDatabase.tableLocalRooms} '
+              '(id, business_id, room_number, capacity, room_status, sync_status) '
+              'VALUES (?, ?, ?, ?, ?, ?)',
+              [
+                roomId,
+                businessId,
+                r['roomNumber'] ?? r['room_number'] ?? roomId.substring(0, 8),
+                r['capacity'] ?? 1,
+                'vacant',
+                LocalDatabase.syncSynced,
+              ],
             );
             await db.insert(
               LocalDatabase.tableGuestRecordRooms,

@@ -639,7 +639,7 @@ class BusinessGuestRecordApi extends BaseApi {
   Future<List<GuestRoom>> _fetchLocalRoomDetails(dynamic db, String recordId) async {
     try {
       final rows = await db.rawQuery(
-        'SELECT r.id, r.room_number, r.capacity, grr.status '
+        'SELECT r.id, r.room_number, r.capacity, r.room_status '
         'FROM local_guest_record_rooms grr '
         'JOIN local_rooms r ON r.id = grr.room_id '
         'WHERE grr.guest_record_id = ?',
@@ -649,7 +649,7 @@ class BusinessGuestRecordApi extends BaseApi {
         id: r['id'] as String? ?? '',
         roomNumber: r['room_number'] as String? ?? '',
         capacity: (r['capacity'] as int?) ?? 0,
-        status: r['status'] as String? ?? 'active',
+        status: r['room_status'] as String? ?? 'vacant',
       )).toList();
     } catch (e) {
       debugPrint('⚠️ _fetchLocalRoomDetails error: $e');
@@ -721,20 +721,22 @@ class BusinessGuestRecordApi extends BaseApi {
           final roomId = room['id'] as String?;
           if (roomId == null || roomId.isEmpty) continue;
           // Ensure room exists in local_rooms (FK requirement)
-          await db.insert(
-            LocalDatabase.tableLocalRooms,
-            {
-              'id':               roomId,
-              'business_id':      businessId,
-              'room_number':      room['roomNumber'] ?? '',
-              'capacity':         room['capacity'] ?? 1,
-              'room_status':      'occupied',
-              'created_at':       room['created_at'] ?? room['createdAt'],
-              'updated_at':       room['updated_at'] ?? room['updatedAt'],
-              'sync_status':      LocalDatabase.syncSynced,
-              'local_updated_at': null,
-            },
-            conflictAlgorithm: ConflictAlgorithm.ignore,
+          // INSERT OR IGNORE: if the room already exists (e.g. from
+          // _pullRoomsFromBackend), its real data is preserved.
+          await db.rawInsert(
+            'INSERT OR IGNORE INTO ${LocalDatabase.tableLocalRooms} '
+            '(id, business_id, room_number, capacity, room_status, sync_status, created_at, updated_at) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              roomId,
+              businessId,
+              room['roomNumber'] ?? '',
+              room['capacity'] ?? 1,
+              'vacant',
+              LocalDatabase.syncSynced,
+              room['created_at'] ?? room['createdAt'],
+              room['updated_at'] ?? room['updatedAt'],
+            ],
           );
           // Insert junction row
           final junctionId = '$recordId-$roomId';
@@ -806,21 +808,22 @@ class BusinessGuestRecordApi extends BaseApi {
       whereArgs: [recordId],
     );
     // Ensure each room exists in local_rooms (FK constraint requires it)
+    // INSERT OR IGNORE preserves real room data if the room already exists locally.
     for (final roomId in roomIds) {
-      await db.insert(
-        LocalDatabase.tableLocalRooms,
-        {
-          'id':               roomId,
-          'business_id':      businessId,
-          'room_number':      roomId.substring(0, 8),
-          'capacity':         1,
-          'room_status':      'occupied',
-          'created_at':       now,
-          'updated_at':       now,
-          'sync_status':      isOnline ? LocalDatabase.syncSynced : LocalDatabase.syncPendingUpdate,
-          'local_updated_at': isOnline ? null : now,
-        },
-        conflictAlgorithm: ConflictAlgorithm.ignore,
+      await db.rawInsert(
+        'INSERT OR IGNORE INTO ${LocalDatabase.tableLocalRooms} '
+        '(id, business_id, room_number, capacity, room_status, sync_status, created_at, updated_at) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          roomId,
+          businessId,
+          'Room ${roomId.substring(0, 8)}',
+          1,
+          'occupied',
+          LocalDatabase.syncSynced,
+          now,
+          now,
+        ],
       );
     }
     // Insert new links
