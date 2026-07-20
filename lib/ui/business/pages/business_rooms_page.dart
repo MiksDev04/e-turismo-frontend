@@ -33,6 +33,7 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
 
   bool _isOffline = false;
   StreamSubscription<bool>? _connectivitySub;
+  StreamSubscription<SyncState>? _syncSub;
 
   _Filter _activeFilter = _Filter.all;
   int _currentPage = 0;
@@ -49,11 +50,13 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
     super.initState();
     _isOffline = !ConnectivityService.instance.isOnline;
     _subscribeToConnectivity();
+    _subscribeToSync();
     _init();
   }
 
   @override
   void dispose() {
+    _syncSub?.cancel();
     _connectivitySub?.cancel();
     super.dispose();
   }
@@ -66,9 +69,19 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
       if (!mounted) return;
       if (isOnline && _isOffline) {
         setState(() => _isOffline = false);
-        _init();
       } else if (!isOnline && !_isOffline) {
         setState(() => _isOffline = true);
+      }
+    });
+  }
+
+  // ── Sync completion subscription ───────────────────────────────────────
+
+  void _subscribeToSync() {
+    _syncSub = SyncService.instance.syncStateStream.listen((state) {
+      if (!mounted) return;
+      if (state.status == SyncStatus.synced) {
+        _loadRooms();
       }
     });
   }

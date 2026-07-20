@@ -568,8 +568,8 @@ class BusinessGuestRecordApi extends BaseApi {
           where:     'id = ?',
           whereArgs: [recordId],
         );
-        // Update room assignments
-        if (roomIds != null) {
+        // Update room assignments (skip for post-checkout — rooms are locked)
+        if (roomIds != null && actualCheckOut == null) {
           await _updateLocalRoomAssignments(db, recordId, businessId ?? '', roomIds);
         }
       }
@@ -648,8 +648,8 @@ class BusinessGuestRecordApi extends BaseApi {
         whereArgs: [recordId],
       );
 
-      // Update room assignments locally
-      if (roomIds != null) {
+      // Update room assignments locally (skip for post-checkout — rooms are locked)
+      if (roomIds != null && actualCheckOut == null) {
         final businessId = SessionService.instance.current?.businessId ?? '';
         await _updateLocalRoomAssignments(db, recordId, businessId, roomIds);
       }

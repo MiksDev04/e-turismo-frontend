@@ -148,9 +148,10 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
   bool _isLoading = true;
   String? _loadError;
 
-  // ── Connectivity state ────────────────────────────────────────────────────
+  // ── Connectivity & sync state ───────────────────────────────────────────
   bool _isOffline       = false;
   StreamSubscription<bool>? _connectivitySub;
+  StreamSubscription<SyncState>? _syncSub;
 
   _Filter _activeFilter = _Filter.active;
   bool _showFilters = false;
@@ -180,11 +181,13 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
     super.initState();
     _isOffline = !ConnectivityService.instance.isOnline;
     _subscribeToConnectivity();
+    _subscribeToSync();
     _init();
   }
 
   @override
   void dispose() {
+    _syncSub?.cancel();
     _connectivitySub?.cancel();
     super.dispose();
   }
@@ -197,16 +200,25 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       if (!mounted) return;
 
       if (isOnline && _isOffline) {
-        // Just came back online — auto-refresh data immediately
         setState(() {
           _isOffline = false;
         });
-        _init(); // Re-run init to attempt online fetch
       } else if (!isOnline && !_isOffline) {
         // Just went offline — show the offline strip.
         setState(() {
           _isOffline = true;
         });
+      }
+    });
+  }
+
+  // ── Sync completion subscription ───────────────────────────────────────
+
+  void _subscribeToSync() {
+    _syncSub = SyncService.instance.syncStateStream.listen((state) {
+      if (!mounted) return;
+      if (state.status == SyncStatus.synced) {
+        _loadRecords();
       }
     });
   }
@@ -335,6 +347,7 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       leadIsOverseas:         updated.leadIsOverseas,
       leadBirthdate:          updated.leadBirthdate,
       leadSex:                updated.leadSex,
+      actualCheckOut:         updated.actualCheckOut,
     );
     if (!mounted) return;
 

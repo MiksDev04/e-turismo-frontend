@@ -491,6 +491,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       id: widget.record.id,
       checkIn: _isPostCheckout ? widget.record.checkIn : _checkInCtrl.text.trim(),
       checkOut: _isPostCheckout ? widget.record.checkOut : _checkOutCtrl.text.trim(),
+      actualCheckOut: widget.record.actualCheckOut,
       nights: _lengthOfStay,
       guests: _totalGuests,
       rooms: _isPostCheckout ? widget.record.rooms : _selectedRoomIds.length,
