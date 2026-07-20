@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:app/core/services/connectivity_service.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/admin_page_cache.dart';
 import '../../../core/services/session_service.dart';
 import '../../shared/layouts/admin_layout.dart';
 import '../../shared/pages/error_page.dart';
@@ -76,7 +77,19 @@ class _AdminCompliancePageState extends State<AdminCompliancePage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    final cache = AdminPageCacheService();
+    if (cache.hasData(AdminPageCacheKeys.compliance)) {
+      final cached = cache.get<Map<String, dynamic>>(AdminPageCacheKeys.compliance)!;
+      _records = cached['records'] as List<BusinessActivityRecord>;
+      _totalPages = cached['totalPages'] as int;
+      _totalItems = cached['totalItems'] as int;
+      _activeCount = cached['activeCount'] as int;
+      _atRiskCount = cached['atRiskCount'] as int;
+      _inactiveCount = cached['inactiveCount'] as int;
+      _isLoading = false;
+    } else {
+      _load();
+    }
   }
 
   @override
@@ -109,6 +122,14 @@ class _AdminCompliancePageState extends State<AdminCompliancePage> {
           _atRiskCount = result.summaryCounts.lowActivity;
           _inactiveCount = result.summaryCounts.inactive;
           _isLoading = false;
+        });
+        AdminPageCacheService().set(AdminPageCacheKeys.compliance, {
+          'records': _records,
+          'totalPages': _totalPages,
+          'totalItems': _totalItems,
+          'activeCount': _activeCount,
+          'atRiskCount': _atRiskCount,
+          'inactiveCount': _inactiveCount,
         });
       }
     } catch (e) {
@@ -174,6 +195,8 @@ class _AdminCompliancePageState extends State<AdminCompliancePage> {
       );
       if (mounted) {
         _load();
+        AdminPageCacheService().invalidate(AdminPageCacheKeys.dashboardDash);
+        AdminPageCacheService().invalidate(AdminPageCacheKeys.accommodations);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Business status updated successfully'),

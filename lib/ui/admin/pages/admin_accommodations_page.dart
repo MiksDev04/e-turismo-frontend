@@ -8,6 +8,7 @@ import 'package:app/core/services/connectivity_service.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/accommodation_export_service.dart';
+import '../../../core/services/admin_page_cache.dart';
 import '../../shared/layouts/admin_layout.dart';
 import '../../shared/widgets/paginator.dart';
 import '../widgets/business_details_modal.dart';
@@ -78,7 +79,17 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
   void initState() {
     super.initState();
     _loadSession();
-    _loadAccommodations();
+    final cache = AdminPageCacheService();
+    if (cache.hasData(AdminPageCacheKeys.accommodations)) {
+      final cached = cache.get<Map<String, dynamic>>(AdminPageCacheKeys.accommodations)!;
+      _accommodations = cached['accommodations'] as List<Accommodation>;
+      _statusCounts = cached['statusCounts'] as Map<String, int>?;
+      _totalPages = cached['totalPages'] as int;
+      _totalItems = cached['totalItems'] as int;
+      _isLoading = false;
+    } else {
+      _loadAccommodations();
+    }
   }
 
   Future<void> _loadSession() async {
@@ -143,6 +154,12 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
       }
       if (!mounted) return;
       setState(() => _statusCounts = statusCounts);
+      AdminPageCacheService().set(AdminPageCacheKeys.accommodations, {
+        'accommodations': _accommodations,
+        'statusCounts': _statusCounts,
+        'totalPages': _totalPages,
+        'totalItems': _totalItems,
+      });
     } catch (e) {
       final code = await classifyError(e);
       if (!mounted) return;
@@ -225,6 +242,8 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
     if (result.success) {
       await _sendDecisionLetter(item, newStatus, remarks: remarks);
       _loadAccommodations();
+      AdminPageCacheService().invalidate(AdminPageCacheKeys.dashboardDash);
+      AdminPageCacheService().invalidate(AdminPageCacheKeys.compliance);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${item.name} has been ${newStatus.name}.'),

@@ -8,6 +8,7 @@ import 'package:app/ui/shared/pages/error_page.dart';
 import 'package:app/ui/shared/pages/loading_page.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../api/messages_api.dart';
+import '../../../core/services/admin_page_cache.dart';
 import '../../../core/services/session_service.dart';
 import '../../shared/layouts/admin_layout.dart';
 import '../../shared/widgets/action_icon_button.dart';
@@ -70,7 +71,16 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
         await SessionService.instance.loadAndCache();
     if (!mounted) return;
     setState(() => _senderId = session?.userId);
-    _loadMessages();
+    final cache = AdminPageCacheService();
+    if (cache.hasData(AdminPageCacheKeys.messages)) {
+      final cached = cache.get<Map<String, dynamic>>(AdminPageCacheKeys.messages)!;
+      _messages = cached['messages'] as List<Message>;
+      _totalPages = cached['totalPages'] as int;
+      _totalItems = cached['totalItems'] as int;
+      _loading = false;
+    } else {
+      _loadMessages();
+    }
   }
 
   @override
@@ -102,6 +112,11 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
           _messages = result.data;
           _totalPages = result.pageCount;
           _totalItems = result.totalCount;
+        });
+        AdminPageCacheService().set(AdminPageCacheKeys.messages, {
+          'messages': _messages,
+          'totalPages': _totalPages,
+          'totalItems': _totalItems,
         });
       }
     } catch (e) {

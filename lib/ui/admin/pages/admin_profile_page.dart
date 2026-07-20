@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:app/core/services/connectivity_service.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/admin_page_cache.dart';
 import '../../../core/services/session_service.dart';
 import '../../shared/layouts/admin_layout.dart';
 import '../../../api/admin_profile_api.dart';
@@ -44,7 +45,17 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
   void initState() {
     super.initState();
     _phoneCtrl.addListener(_validatePhone);
-    _loadProfile();
+    final cache = AdminPageCacheService();
+    if (cache.hasData(AdminPageCacheKeys.profile)) {
+      final cached = cache.get<ProfileModel>(AdminPageCacheKeys.profile)!;
+      _profile = cached;
+      _fullNameCtrl.text = cached.fullName;
+      _usernameCtrl.text = cached.username;
+      _phoneCtrl.text = cached.phone;
+      _loadingProfile = false;
+    } else {
+      _loadProfile();
+    }
   }
 
   @override
@@ -76,6 +87,7 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
     try {
       final profile = await _api.fetchProfile();
       if (!mounted) return;
+      AdminPageCacheService().set(AdminPageCacheKeys.profile, profile);
       setState(() {
         _profile = profile;
         _fullNameCtrl.text = profile.fullName;
@@ -139,6 +151,7 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
 
       final updated = await _api.fetchProfile();
       if (!mounted) return;
+      AdminPageCacheService().set(AdminPageCacheKeys.profile, updated);
       setState(() => _profile = updated);
       _showSnackbar('Account information saved successfully!');
     } on ProfileApiException catch (e) {

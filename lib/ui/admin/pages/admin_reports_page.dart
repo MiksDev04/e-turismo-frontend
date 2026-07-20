@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:app/core/services/connectivity_service.dart';
+import 'package:app/core/services/admin_page_cache.dart';
 import 'package:app/core/services/file_saver.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -83,7 +84,16 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
   @override
   void initState() {
     super.initState();
-    _fetchReports();
+    final cache = AdminPageCacheService();
+    if (cache.hasData(AdminPageCacheKeys.reports)) {
+      final cached = cache.get<Map<String, dynamic>>(AdminPageCacheKeys.reports)!;
+      _reports = cached['reports'] as List<GeneratedReport>;
+      _totalPages = cached['totalPages'] as int;
+      _totalItems = cached['totalItems'] as int;
+      _loadingReports = false;
+    } else {
+      _fetchReports();
+    }
   }
 
   @override
@@ -112,6 +122,11 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
         _reports = result.data;
         _totalPages = result.pageCount;
         _totalItems = result.totalCount;
+      });
+      AdminPageCacheService().set(AdminPageCacheKeys.reports, {
+        'reports': _reports,
+        'totalPages': _totalPages,
+        'totalItems': _totalItems,
       });
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -158,6 +173,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       if (!mounted || _generationCancelled) return;
       if (mounted) Navigator.pop(context);
       await _fetchReports();
+      AdminPageCacheService().invalidate(AdminPageCacheKeys.dashboardDash);
       if (!mounted) return;
       _showSuccess('Report generated successfully');
     } catch (e) {
