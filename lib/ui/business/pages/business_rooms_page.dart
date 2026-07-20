@@ -264,6 +264,7 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
                         _PageHeader(
                           totalRooms: _totalItems,
                           onCreateRoom: _onAddRoom,
+                          isOffline: _isOffline,
                         ),
                         const SizedBox(height: 16),
                         _FilterTabBar(
@@ -470,9 +471,14 @@ class _ConfirmDialog extends StatelessWidget {
 // ─── Page Header ──────────────────────────────────────────────────────────────
 
 class _PageHeader extends StatelessWidget {
-  const _PageHeader({required this.totalRooms, required this.onCreateRoom});
+  const _PageHeader({
+    required this.totalRooms,
+    required this.onCreateRoom,
+    required this.isOffline,
+  });
   final int totalRooms;
   final VoidCallback onCreateRoom;
+  final bool isOffline;
 
   @override
   Widget build(BuildContext context) {
@@ -499,7 +505,7 @@ class _PageHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              _CreateRoomButton(onTap: onCreateRoom),
+              if (!isOffline) _CreateRoomButton(onTap: onCreateRoom),
             ],
           )
         : Row(
@@ -529,7 +535,7 @@ class _PageHeader extends StatelessWidget {
                   ],
                 ),
               ),
-              _CreateRoomButton(onTap: onCreateRoom),
+              if (!isOffline) _CreateRoomButton(onTap: onCreateRoom),
             ],
           );
   }

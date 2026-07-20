@@ -294,11 +294,7 @@ class BusinessRoomApi extends BaseApi {
         capacity: capacity,
       );
     }
-    return _createRoomOffline(
-      businessId: businessId,
-      roomNumber: roomNumber,
-      capacity: capacity,
-    );
+    return RoomResult.err('Room creation requires an internet connection.');
   }
 
   Future<RoomResult> _createRoomOnline({
@@ -332,6 +328,7 @@ class BusinessRoomApi extends BaseApi {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         if (!kIsWeb) {
           await _markRoomSynced(roomId);
+          await _incrementLocalTotalRooms(businessId);
         }
         return RoomResult.ok(syncedToCloud: true);
       }
@@ -342,31 +339,6 @@ class BusinessRoomApi extends BaseApi {
       }
       debugPrint('⚠️ _createRoomOnline: API failed, queued for sync — $e');
       return RoomResult.ok(syncedToCloud: false);
-    }
-  }
-
-  Future<RoomResult> _createRoomOffline({
-    required String businessId,
-    required String roomNumber,
-    required int capacity,
-  }) async {
-    try {
-      final roomId = _generateId();
-      final now = DateTime.now().toUtc().toIso8601String();
-
-      await _insertLocalRoom(
-        roomId: roomId,
-        businessId: businessId,
-        roomNumber: roomNumber,
-        capacity: capacity,
-        syncStatus: LocalDatabase.syncPendingCreate,
-        localUpdatedAt: now,
-      );
-
-      return RoomResult.ok();
-    } catch (e) {
-      debugPrint('❌ createRoom (offline) error: $e');
-      return RoomResult.err('Failed to save room locally.');
     }
   }
 
@@ -527,6 +499,19 @@ class BusinessRoomApi extends BaseApi {
     } catch (e) {
       debugPrint('❌ updateRoomStatus (offline) error: $e');
       return RoomResult.err('Failed to save room status locally.');
+    }
+  }
+
+  Future<void> _incrementLocalTotalRooms(String businessId) async {
+    if (kIsWeb) return;
+    try {
+      final db = await LocalDatabase.instance.database;
+      await db.rawUpdate(
+        'UPDATE ${LocalDatabase.tableLocalBusinesses} SET total_rooms = COALESCE(total_rooms, 0) + 1 WHERE id = ?',
+        [businessId],
+      );
+    } catch (e) {
+      debugPrint('⚠️ _incrementLocalTotalRooms: $e');
     }
   }
 

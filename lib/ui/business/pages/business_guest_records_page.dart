@@ -535,13 +535,13 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
         actualCheckOut:         actualCheckOut,
       );
       if (updateResult.isSuccess) {
-        _showSnack('Room(s) marked as vacant and check-out recorded.');
+        _showSnack('Guest checked out successfully.');
       } else {
-        _showSnack('Room(s) marked as vacant. Failed to record check-out time.');
+        _showSnack('Guest checked out but check-out time was not recorded.');
       }
       _loadRecords();
     } else {
-      _showSnack('Some rooms could not be updated. Please try again.', isError: true);
+      _showSnack('Failed to check out guest. Please try again.', isError: true);
     }
   }
 
