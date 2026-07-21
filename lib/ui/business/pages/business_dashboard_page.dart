@@ -13,6 +13,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path/path.dart' as p;
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/business_page_cache.dart';
 import '../../../core/services/offline_service.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../../api/business_dashboard_api.dart';
@@ -103,6 +104,18 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
     // frame — before initState's async work completes.
     _isOffline = !ConnectivityService.instance.isOnline;
     _subscribeToConnectivity();
+
+    // Sync cache check — renders immediately, no spinner.
+    final cache = BusinessPageCacheService();
+    if (cache.hasData(BusinessPageCacheKeys.dashboardDash)) {
+      _dashData = cache.get(BusinessPageCacheKeys.dashboardDash);
+      _loadingDash = false;
+    }
+    if (cache.hasData(BusinessPageCacheKeys.dashboardTrend)) {
+      _trendData = cache.get(BusinessPageCacheKeys.dashboardTrend);
+      _loadingTrend = false;
+    }
+
     _initBusinessFromSession();
   }
 
@@ -185,13 +198,13 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
     await _refreshBusinessContext(preferOnline: ConnectivityService.instance.isOnline);
 
     if (!mounted) return;
-    // Run both fetches concurrently — they are independent.
-    // When online, prefer API data over potentially stale SQLite.
+
+    // Only fetch what wasn't already populated from cache in initState.
     final preferOnline = ConnectivityService.instance.isOnline;
-    await Future.wait([
-      _loadDashboard(preferOnline: preferOnline),
-      _loadTrend(preferOnline: preferOnline),
-    ]);
+    final futures = <Future>[];
+    if (_loadingDash) futures.add(_loadDashboard(preferOnline: preferOnline));
+    if (_loadingTrend) futures.add(_loadTrend(preferOnline: preferOnline));
+    if (futures.isNotEmpty) await Future.wait(futures);
   }
 
   Future<void> _refreshBusinessContext({bool preferOnline = false}) async {
@@ -246,7 +259,10 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
         year:       _selectedYear,
         preferOnline: preferOnline,
       );
-      if (mounted) setState(() => _dashData = data);
+      if (mounted) {
+        setState(() => _dashData = data);
+        BusinessPageCacheService().set(BusinessPageCacheKeys.dashboardDash, data);
+      }
     } catch (e) {
       if (mounted) setState(() => _dashError = e.toString());
     } finally {
@@ -264,7 +280,10 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
         years:      [_trendYear1, _trendYear2],
         preferOnline: preferOnline,
       );
-      if (mounted) setState(() => _trendData = data);
+      if (mounted) {
+        setState(() => _trendData = data);
+        BusinessPageCacheService().set(BusinessPageCacheKeys.dashboardTrend, data);
+      }
     } catch (_) {
       // Non-critical; silently fail.
     } finally {

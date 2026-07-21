@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/database/local_database.dart';
+import '../../../core/services/business_page_cache.dart';
 import '../../../core/services/offline_service.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../shared/widgets/paginator.dart';
@@ -182,6 +183,25 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
     _isOffline = !ConnectivityService.instance.isOnline;
     _subscribeToConnectivity();
     _subscribeToSync();
+
+    // Sync cache check — renders immediately, no spinner.
+    final cache = BusinessPageCacheService();
+    if (_activeFilter == _Filter.active &&
+        _currentPage == 0 &&
+        _checkInFrom == null &&
+        _checkOutTo == null &&
+        _selectedPurpose == null &&
+        _selectedTransport == null &&
+        cache.hasData(BusinessPageCacheKeys.guestRecords)) {
+      final cached = cache.get<Map<String, dynamic>>(BusinessPageCacheKeys.guestRecords);
+      if (cached != null) {
+        _records    = cached['records'];
+        _totalPages = cached['totalPages'];
+        _totalItems = cached['totalItems'];
+        _isLoading  = false;
+      }
+    }
+
     _init();
   }
 
@@ -239,7 +259,7 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
     }
 
     _businessId = id;
-    await _loadRecords();
+    if (_isLoading) await _loadRecords();
   }
 
   Future<void> _loadRecords() async {
@@ -267,6 +287,19 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
         _totalItems = data.totalCount;
         _isLoading = false;
       });
+      // Only cache the default filter state (active, page 0, no date/purpose/transport filters).
+      if (_activeFilter == _Filter.active &&
+          _currentPage == 0 &&
+          _checkInFrom == null &&
+          _checkOutTo == null &&
+          _selectedPurpose == null &&
+          _selectedTransport == null) {
+        BusinessPageCacheService().set(BusinessPageCacheKeys.guestRecords, {
+          'records':    data.data,
+          'totalPages': data.pageCount,
+          'totalItems': data.totalCount,
+        });
+      }
     } else {
       setState(() {
         _isLoading = false;
@@ -352,6 +385,8 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
     if (!mounted) return;
 
     if (result.isSuccess) {
+      // Invalidate dashboard cache — guest data may have changed.
+      BusinessPageCacheService().invalidate(BusinessPageCacheKeys.dashboardDash);
       _loadRecords();
     } else {
       _showSnack(result.error ?? 'Failed to update.', isError: true);
@@ -552,6 +587,10 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       } else {
         _showSnack('Guest checked out but check-out time was not recorded.');
       }
+      // Invalidate related caches — checkout affects room availability & dashboard stats.
+      BusinessPageCacheService()
+        ..invalidate(BusinessPageCacheKeys.dashboardDash)
+        ..invalidate(BusinessPageCacheKeys.rooms);
       _loadRecords();
     } else {
       _showSnack('Failed to check out guest. Please try again.', isError: true);

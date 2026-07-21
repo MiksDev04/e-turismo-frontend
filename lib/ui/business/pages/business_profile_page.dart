@@ -8,6 +8,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import '../widgets/business_document_preview_modal.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/business_page_cache.dart';
 import '../../../core/services/session_service.dart';
 import '../../../core/services/connectivity_service.dart';
 import '../../../core/services/document_service.dart';
@@ -261,6 +262,19 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
       }
     }
 
+    // ── Check cache — render immediately if available ──────────────────────
+    final cache = BusinessPageCacheService();
+    if (cache.hasData(BusinessPageCacheKeys.profile)) {
+      final cached = cache.get<Map<String, dynamic>>(BusinessPageCacheKeys.profile);
+      if (cached != null) {
+        _profile  = cached['profile'] as ProfileModel?;
+        _business = cached['business'] as BusinessModel?;
+        if (_profile != null) _populate();
+        setState(() => _isLoading = false);
+        return;
+      }
+    }
+
     // ── Fetch ──────────────────────────────────────────────────────────────
     try {
       final results = await Future.wait([
@@ -271,6 +285,11 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
       _profile  = results[0] as ProfileModel;
       _business = results[1] as BusinessModel?;
       _populate();
+      // Cache for instant load on next visit.
+      BusinessPageCacheService().set(BusinessPageCacheKeys.profile, {
+        'profile':  _profile,
+        'business': _business,
+      });
     } on ProfileApiException catch (e) {
       if (!mounted) return;
       final code = await classifyError(e);
@@ -361,6 +380,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
         username: _usernameCtrl.text.trim(),
         phone:    phone,
       );
+      // Invalidate cache so next load fetches fresh data.
+      BusinessPageCacheService().invalidate(BusinessPageCacheKeys.profile);
       _showSnack('Account information updated.', isError: false);
     } on ProfileApiException catch (e) {
       _showSnack(e.message);
@@ -393,6 +414,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
         permitNumber:       _permitNumberCtrl.text,
         registrationNumber: _registrationCtrl.text,
       );
+      // Invalidate cache so next load fetches fresh data.
+      BusinessPageCacheService().invalidate(BusinessPageCacheKeys.profile);
       _showSnack('Business information updated.', isError: false);
     } on ProfileApiException catch (e) {
       _showSnack(e.message);

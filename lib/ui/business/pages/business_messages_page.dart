@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/business_page_cache.dart';
 import '../../../api/messages_api.dart';
 import '../../../api/login_api.dart';
 import '../../../core/services/connectivity_service.dart';
@@ -139,6 +140,24 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
       return;
     }
 
+    // Check cache — render immediately if available (default filter state only).
+    final cache = BusinessPageCacheService();
+    if (_activeFilter == _Filter.all &&
+        _currentPage == 0 &&
+        cache.hasData(BusinessPageCacheKeys.messages)) {
+      final cached = cache.get<Map<String, dynamic>>(BusinessPageCacheKeys.messages);
+      if (cached != null) {
+        setState(() {
+          _messages    = cached['messages'];
+          _totalPages  = cached['totalPages'];
+          _totalItems  = cached['totalItems'];
+          _unreadCount = cached['unreadCount'];
+          _isLoading   = false;
+        });
+        return;
+      }
+    }
+
     setState(() {
       _isLoading = true;
       _error     = null;
@@ -194,6 +213,15 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
            _unreadCount = unreadCount;
            _isLoading  = false;
          });
+         // Only cache the default filter state (all, page 0).
+         if (_activeFilter == _Filter.all && _currentPage == 0) {
+           BusinessPageCacheService().set(BusinessPageCacheKeys.messages, {
+             'messages':    result.data,
+             'totalPages':  result.pageCount,
+             'totalItems':  result.totalCount,
+             'unreadCount': unreadCount,
+           });
+         }
        }
     } catch (e) {
       if (!mounted) return;
@@ -227,6 +255,8 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
          if (_unreadCount > 0) _unreadCount--;
        });
        _api.markAsRead(msg.recipientId).catchError((_) {});
+       // Invalidate messages cache so next load reflects the read status.
+       BusinessPageCacheService().invalidate(BusinessPageCacheKeys.messages);
      }
 
     if (!mounted) return;
