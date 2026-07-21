@@ -154,12 +154,14 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
       }
       if (!mounted) return;
       setState(() => _statusCounts = statusCounts);
-      AdminPageCacheService().set(AdminPageCacheKeys.accommodations, {
-        'accommodations': _accommodations,
-        'statusCounts': _statusCounts,
-        'totalPages': _totalPages,
-        'totalItems': _totalItems,
-      });
+      if (_activeStatus == 'all') {
+        AdminPageCacheService().set(AdminPageCacheKeys.accommodations, {
+          'accommodations': _accommodations,
+          'statusCounts': _statusCounts,
+          'totalPages': _totalPages,
+          'totalItems': _totalItems,
+        });
+      }
     } catch (e) {
       final code = await classifyError(e);
       if (!mounted) return;
@@ -1421,7 +1423,15 @@ class _FilterTabBar extends StatelessWidget {
   int _countFor(int i) {
     if (i == selectedTab) return totalCount;
     final status = tabs[i].status;
-    if (status == null || statusCounts == null) return 0;
+    if (status == null) {
+      if (statusCounts == null) return 0;
+      var total = 0;
+      for (final count in statusCounts!.values) {
+        total += count;
+      }
+      return total;
+    }
+    if (statusCounts == null) return 0;
     return statusCounts![status.name] ?? 0;
   }
 
