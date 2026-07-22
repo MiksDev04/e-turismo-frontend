@@ -807,7 +807,7 @@ class _ReportViewerModalState extends State<ReportViewerModal>
             child: Column(
               children: [
                 Text(
-                  'Region: ${est.region ?? '4-A'}',
+                  'Region: _4-A',
                   textAlign: TextAlign.center,
                   style: ts.copyWith(fontWeight: FontWeight.bold),
                 ),
