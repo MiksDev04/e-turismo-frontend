@@ -442,7 +442,7 @@ class ReportService extends BaseApi {
     final queryParams = params.toQueryParams();
     final uri = Uri.parse('/api/admin/reports/view')
         .replace(queryParameters: queryParams);
-    final response = await get(uri.toString());
+    final response = await get(uri.toString(), timeout: const Duration(seconds: 120));
     final body = handleResponse(response) as Map<String, dynamic>;
     return ReportViewResponse.fromJson(body);
   }

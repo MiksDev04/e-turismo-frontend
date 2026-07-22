@@ -72,11 +72,12 @@ class BaseApi {
     return false;
   }
 
-  Future<http.Response> get(String endpoint) async {
-    var response = await http.get(Uri.parse('$baseUrl$endpoint'), headers: headers).timeout(_timeout);
+  Future<http.Response> get(String endpoint, {Duration? timeout}) async {
+    final t = timeout ?? _timeout;
+    var response = await http.get(Uri.parse('$baseUrl$endpoint'), headers: headers).timeout(t);
     if (response.statusCode == 401 && endpoint != '/api/auth/login') {
       if (await _attemptReauth()) {
-        response = await http.get(Uri.parse('$baseUrl$endpoint'), headers: headers).timeout(_timeout);
+        response = await http.get(Uri.parse('$baseUrl$endpoint'), headers: headers).timeout(t);
       }
     }
     return response;

@@ -378,6 +378,7 @@ class _ReportTable extends StatelessWidget {
     required this.showTotalColumn,
     this.labelColWidth,
     this.dataColWidth,
+    this.totalColWidth,
   });
 
   final EstablishmentReport est;
@@ -385,6 +386,7 @@ class _ReportTable extends StatelessWidget {
   final bool showTotalColumn;
   final double? labelColWidth;
   final double? dataColWidth;
+  final double? totalColWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -392,6 +394,7 @@ class _ReportTable extends StatelessWidget {
 
     final effectiveLabelWidth = labelColWidth ?? _labelColWidth;
     final effectiveDataWidth = dataColWidth ?? _dayColWidth;
+    final effectiveTotalWidth = totalColWidth ?? _totalColWidth;
 
     final columnWidths = <int, TableColumnWidth>{
       0: FixedColumnWidth(effectiveLabelWidth),
@@ -400,7 +403,7 @@ class _ReportTable extends StatelessWidget {
       columnWidths[i + 1] = FixedColumnWidth(effectiveDataWidth);
     }
     if (showTotalColumn) {
-      columnWidths[columns.length + 1] = const FixedColumnWidth(_totalColWidth);
+      columnWidths[columns.length + 1] = FixedColumnWidth(effectiveTotalWidth);
     }
 
     final tableRows = <TableRow>[];
@@ -627,6 +630,7 @@ class _ReportViewerModalState extends State<ReportViewerModal>
         });
       }
     } catch (e) {
+      debugPrint('❌ Report view error: $e');
       if (!mounted) return;
       final code = await classifyError(e);
       setState(() {
@@ -1011,6 +1015,9 @@ class _ReportViewerModalState extends State<ReportViewerModal>
       case 'series':
         dayColCount = est.seriesData?.length ?? 0;
         showTotal = true;
+        final seriesMonthWidth = _dayColWidth;
+        final seriesTotalWidth = seriesMonthWidth * 0.9;
+        return _labelColWidth + dayColCount * seriesMonthWidth + seriesTotalWidth;
       default:
         dayColCount = 0;
         showTotal = false;
@@ -1089,7 +1096,7 @@ class _ReportViewerModalState extends State<ReportViewerModal>
 
   Widget _buildReportTable(EstablishmentReport est) {
     final md = est.monthData;
-    if (md == null) {
+    if (md == null && widget.batch.reportVariant != 'series') {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
@@ -1106,11 +1113,11 @@ class _ReportViewerModalState extends State<ReportViewerModal>
         final year = widget.batch.periodYear;
         final month = widget.batch.periodMonths.first;
         final daysInMonth = DateTime(year, month + 1, 0).day;
-        final cols = [for (int d = 1; d <= daysInMonth; d++) _ColumnSpec('$d', md, '$d')];
+        final cols = [for (int d = 1; d <= daysInMonth; d++) _ColumnSpec('$d', md!, '$d')];
         return _ReportTable(est: est, columns: cols, showTotalColumn: true);
 
       case 'summary':
-        final cols = [_ColumnSpec('TOTAL', md, '0')];
+        final cols = [_ColumnSpec('TOTAL', md!, '0')];
         return _ReportTable(
           est: est,
           columns: cols,
@@ -1126,7 +1133,15 @@ class _ReportViewerModalState extends State<ReportViewerModal>
         ];
         final series = est.seriesData ?? const <MonthSeriesEntry>[];
         final cols = [for (final s in series) _ColumnSpec(monthNames[s.month], s.data, '0')];
-        return _ReportTable(est: est, columns: cols, showTotalColumn: true);
+        final seriesMonthWidth = _dayColWidth * 1.5;
+        final seriesTotalWidth = seriesMonthWidth * 0.9;
+        return _ReportTable(
+          est: est,
+          columns: cols,
+          showTotalColumn: true,
+          dataColWidth: seriesMonthWidth,
+          totalColWidth: seriesTotalWidth,
+        );
 
       default:
         return const Center(
