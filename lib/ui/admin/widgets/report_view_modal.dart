@@ -977,23 +977,32 @@ class _ReportViewerModalState extends State<ReportViewerModal>
           height: 14,
           child: Container(
             color: AppColors.cardBackground,
-            child: RawScrollbar(
-              controller: _hScrollCtrlBottom,
-              thumbVisibility: true,
-              trackVisibility: true,
-              thumbColor: Colors.blue,
-              trackColor: Colors.blue.withOpacity(0.12),
-              trackBorderColor: Colors.blue.withOpacity(0.3),
-              radius: const Radius.circular(6),
-              thickness: 10,
-              child: SingleChildScrollView(
-                controller: _hScrollCtrlBottom,
-                scrollDirection: Axis.horizontal,
-                child: SizedBox(
-                  width: (tableWidth + 20) * _zoomLevel,
-                  height: 1,
-                ),
-              ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final viewportWidth = constraints.maxWidth;
+                final contentWidth = (tableWidth + 20) * _zoomLevel + 20;
+                final minWidth = contentWidth > viewportWidth
+                    ? contentWidth
+                    : viewportWidth + 1;
+                return RawScrollbar(
+                  controller: _hScrollCtrlBottom,
+                  thumbVisibility: true,
+                  trackVisibility: true,
+                  thumbColor: Colors.blue,
+                  trackColor: Colors.blue.withOpacity(0.12),
+                  trackBorderColor: Colors.blue.withOpacity(0.3),
+                  radius: const Radius.circular(6),
+                  thickness: 10,
+                  child: SingleChildScrollView(
+                    controller: _hScrollCtrlBottom,
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(
+                      width: minWidth,
+                      height: 1,
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ),
@@ -1015,7 +1024,7 @@ class _ReportViewerModalState extends State<ReportViewerModal>
       case 'series':
         dayColCount = est.seriesData?.length ?? 0;
         showTotal = true;
-        final seriesMonthWidth = _dayColWidth;
+        final seriesMonthWidth = _dayColWidth * 1.5;
         final seriesTotalWidth = seriesMonthWidth * 0.9;
         return _labelColWidth + dayColCount * seriesMonthWidth + seriesTotalWidth;
       default:
