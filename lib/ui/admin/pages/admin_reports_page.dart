@@ -146,7 +146,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     required List<int> months,
   }) async {
     try {
-      await _reportService.createBatch(CreateBatchParams(
+      final result = await _reportService.createBatch(CreateBatchParams(
         reportVariant: variant,
         periodYear: year,
         periodMonths: months,
@@ -154,16 +154,14 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       await _fetchBatches();
       AdminPageCacheService().invalidate(AdminPageCacheKeys.dashboardDash);
       if (!mounted) return;
-      _showSuccess('Report batch created successfully');
+      if (result.alreadyExisted) {
+        _showWarning('Report already exists');
+      } else {
+        _showSuccess('Report batch created successfully');
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
-      if (e.statusCode == 200) {
-        // Existing batch returned — just refresh
-        await _fetchBatches();
-        _showSuccess('Using existing report batch');
-      } else {
-        _showError(e.message);
-      }
+      _showError(e.message);
     } catch (e) {
       if (!mounted) return;
       _showError('Error creating report batch: $e');
@@ -233,6 +231,17 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       SnackBar(
         content: Text(msg),
         backgroundColor: const Color(0xFFFF4D6A),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showWarning(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: const Color(0xFFFFCA28),
         duration: const Duration(seconds: 3),
       ),
     );
@@ -470,9 +479,8 @@ class _TableHeader extends StatelessWidget {
         padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
-            Expanded(flex: 2, child: _HeaderCell('Variant')),
-            Expanded(flex: 2, child: _HeaderCell('Period')),
-            SizedBox(width: 72),
+            Expanded(child: _HeaderCell('Report')),
+            SizedBox(width: 72, child: _HeaderCell('Actions')),
           ],
         ),
       );
@@ -520,42 +528,106 @@ class _TableRow extends StatelessWidget {
     if (isNarrow) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              flex: 2,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
+            Row(
+              children: [
+                _TypeBadge(type: batch.reportType),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
                     batch.variantLabel,
                     style: const TextStyle(
                       color: AppColors.textWhite,
-                      fontSize: 12,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    batch.displayPeriod,
-                    style: const TextStyle(
-                      color: AppColors.textGray,
-                      fontSize: 11,
-                    ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Period',
+                        style: TextStyle(
+                          color: AppColors.textSubtle,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        batch.displayPeriod,
+                        style: const TextStyle(
+                          color: AppColors.textGray,
+                          fontSize: 12,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Created',
+                        style: TextStyle(
+                          color: AppColors.textSubtle,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        createdStr,
+                        style: const TextStyle(
+                          color: AppColors.textGray,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Last Viewed',
+                        style: TextStyle(
+                          color: AppColors.textSubtle,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        viewedStr,
+                        style: TextStyle(
+                          color: viewedStr == 'Never'
+                              ? AppColors.textSubtle
+                              : AppColors.textGray,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            Expanded(
-              flex: 2,
-              child: Text(
-                batch.displayPeriod,
-                style: const TextStyle(color: AppColors.textGray, fontSize: 13),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            SizedBox(
-              width: 72,
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
               child: _ViewButton(onTap: onView),
             ),
           ],

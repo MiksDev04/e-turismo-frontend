@@ -152,10 +152,18 @@ int _grandTotal(EstablishmentReport est, MonthData md, String day) =>
 int _roomsOccupied(EstablishmentReport est, MonthData md, String day) =>
     day == '0' ? md.totalRoomsOccupied : (md.roomsOccupied?[day] ?? 0);
 
-// Matches this app's existing "rooms available" approximation (totalRooms *
-// 30 for a full-period aggregate); a single day simply has totalRooms open.
-int _roomsAvailable(EstablishmentReport est, MonthData md, String day) =>
-    day == '0' ? est.totalRooms * 30 : est.totalRooms;
+// Rooms available = totalRooms − roomsOccupied that day.
+// For the aggregate (day '0'), multiply totalRooms by daysInMonth then
+// subtract total rooms occupied for the month.
+int _roomsAvailable(EstablishmentReport est, MonthData md, String day) {
+  final occupied = _roomsOccupied(est, md, day);
+  if (day == '0') {
+    final year = md.year ?? 2025;
+    final daysInMonth = DateTime(year, md.month + 1, 0).day;
+    return est.totalRooms * daysInMonth - occupied;
+  }
+  return est.totalRooms - occupied;
+}
 
 int _guestNights(EstablishmentReport est, MonthData md, String day) =>
     day == '0' ? (md.guestNights ?? 0) : (md.guestNightsByDay?[day] ?? 0);
@@ -172,23 +180,23 @@ double _avgLengthOfStay(EstablishmentReport est, MonthData md, String day) {
   return _guestNights(est, md, day) / guests;
 }
 
-// NOTE: assumes md.sexByDay[day][sex] is keyed the same way as the
-// residency categories above ('philippine_residents' / 'foreign_residents'
-// / 'overseas_filipinos' / 'unspecified_guest'). Adjust these keys if the
-// API uses different names for the per-sex breakdown.
 int _sexCategory(MonthData md, String day, String sex, String category) =>
     md.sexByDay?[day]?[sex]?[category] ?? 0;
 
 int _maleTotal(EstablishmentReport est, MonthData md, String day) =>
-    _sexCategory(md, day, 'male', 'philippine_residents') +
-    _sexCategory(md, day, 'male', 'foreign_residents') +
-    _sexCategory(md, day, 'male', 'overseas_filipinos') +
+    _sexCategory(md, day, 'male', 'philippine_resident_filipino') +
+    _sexCategory(md, day, 'male', 'philippine_resident_foreign') +
+    _sexCategory(md, day, 'male', 'listed_foreign_resident') +
+    _sexCategory(md, day, 'male', 'unlisted_foreign_resident') +
+    _sexCategory(md, day, 'male', 'overseas_filipino') +
     _sexCategory(md, day, 'male', 'unspecified_guest');
 
 int _femaleTotal(EstablishmentReport est, MonthData md, String day) =>
-    _sexCategory(md, day, 'female', 'philippine_residents') +
-    _sexCategory(md, day, 'female', 'foreign_residents') +
-    _sexCategory(md, day, 'female', 'overseas_filipinos') +
+    _sexCategory(md, day, 'female', 'philippine_resident_filipino') +
+    _sexCategory(md, day, 'female', 'philippine_resident_foreign') +
+    _sexCategory(md, day, 'female', 'listed_foreign_resident') +
+    _sexCategory(md, day, 'female', 'unlisted_foreign_resident') +
+    _sexCategory(md, day, 'female', 'overseas_filipino') +
     _sexCategory(md, day, 'female', 'unspecified_guest');
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -264,23 +272,31 @@ List<_RRow> _buildIndicatorRows() {
     _RRow('B. VOLUME PER SEX', _RKind.subsectionTitle),
     _RRow('1. Male', _RKind.indicatorBold),
     _RRow('a. Philippine Residents', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'male', 'philippine_residents')),
+        value: (est, md, day) => _sexCategory(md, day, 'male', 'philippine_resident_filipino') +
+            _sexCategory(md, day, 'male', 'philippine_resident_foreign')),
     _RRow('b. Non-Philippine/Foreign Residents (including unspecified)', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'male', 'foreign_residents')),
+        value: (est, md, day) => _sexCategory(md, day, 'male', 'listed_foreign_resident') +
+            _sexCategory(md, day, 'male', 'unlisted_foreign_resident') +
+            _sexCategory(md, day, 'male', 'unspecified_guest')),
     _RRow('c. Overseas Filipinos', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'male', 'overseas_filipinos')),
+        value: (est, md, day) => _sexCategory(md, day, 'male', 'overseas_filipino')),
     _RRow('d. Others/Unspecified Guest', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'male', 'unspecified_guest')),
+        value: (est, md, day) => _sexCategory(md, day, 'male', 'unlisted_foreign_resident') +
+            _sexCategory(md, day, 'male', 'unspecified_guest')),
     _RRow('x. Total', _RKind.indicator, indent: 1, value: _maleTotal),
     _RRow('2. Female', _RKind.indicatorBold),
     _RRow('a. Philippine Residents', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'female', 'philippine_residents')),
+        value: (est, md, day) => _sexCategory(md, day, 'female', 'philippine_resident_filipino') +
+            _sexCategory(md, day, 'female', 'philippine_resident_foreign')),
     _RRow('b. Non-Philippine/Foreign Residents (including unspecified)', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'female', 'foreign_residents')),
+        value: (est, md, day) => _sexCategory(md, day, 'female', 'listed_foreign_resident') +
+            _sexCategory(md, day, 'female', 'unlisted_foreign_resident') +
+            _sexCategory(md, day, 'female', 'unspecified_guest')),
     _RRow('c. Overseas Filipinos', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'female', 'overseas_filipinos')),
+        value: (est, md, day) => _sexCategory(md, day, 'female', 'overseas_filipino')),
     _RRow('d. Others/Unspecified Guest', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'female', 'unspecified_guest')),
+        value: (est, md, day) => _sexCategory(md, day, 'female', 'unlisted_foreign_resident') +
+            _sexCategory(md, day, 'female', 'unspecified_guest')),
     _RRow('x. Total', _RKind.indicator, indent: 1, value: _femaleTotal),
     _RRow('', _RKind.spacer),
     _RRow(

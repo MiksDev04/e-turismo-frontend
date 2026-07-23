@@ -210,6 +210,7 @@ class MonthSeriesEntry {
 class MonthData {
   const MonthData({
     required this.month,
+    this.year,
     this.countryByDay,
     this.residentsByDay,
     this.sexByDay,
@@ -219,6 +220,7 @@ class MonthData {
   });
 
   final int month;
+  final int? year;
   final Map<String, Map<String, int>>? countryByDay;
   final Map<String, Map<String, int>>? residentsByDay;
   final Map<String, Map<String, Map<String, int>>>? sexByDay;
@@ -245,6 +247,7 @@ class MonthData {
   static MonthData fromJson(Map<String, dynamic> json) {
     return MonthData(
       month: json['month'] as int,
+      year: json['year'] as int?,
       countryByDay: _parseNestedMap(json['countryByDay']),
       residentsByDay: _parseNestedMap(json['residentsByDay']),
       sexByDay: _parseSexByDay(json['sexByDay']),
@@ -429,12 +432,15 @@ class ReportService extends BaseApi {
   }
 
   /// Creates a new report batch (no file generation).
-  /// Returns the batchId. If a matching batch already exists, returns the existing one.
-  Future<String> createBatch(CreateBatchParams params) async {
+  /// Returns the batchId and whether the batch already existed.
+  Future<({String batchId, bool alreadyExisted})> createBatch(CreateBatchParams params) async {
     final body = params.toJson();
     final response = await post('/api/admin/reports', body);
     final result = handleResponse(response) as Map<String, dynamic>;
-    return result['batchId'] as String;
+    return (
+      batchId: result['batchId'] as String,
+      alreadyExisted: result['existing'] as bool? ?? false,
+    );
   }
 
   /// Fetches live report data as JSON for viewing in the UI.
