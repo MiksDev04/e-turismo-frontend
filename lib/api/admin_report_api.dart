@@ -44,7 +44,9 @@ class ReportBatch {
       case 'summary':
         return 'Country Summary';
       case 'series':
-        return 'Series';
+        return 'Monthly Series';
+      case 'total':
+        return 'VAR Report';
       default:
         return reportVariant;
     }
@@ -54,10 +56,11 @@ class ReportBatch {
 
   String _computePeriodLabel() {
     final sorted = [...periodMonths]..sort();
-    if (sorted.length == 12) return '$periodYear';
-    if (sorted.length == 1) return '${_monthName(sorted[0])} $periodYear';
-    final abbr = sorted.map((m) => _monthAbbr(m)).join('-');
-    return '$abbr $periodYear';
+    if (sorted.length == 12) return 'Jan-Dec, $periodYear';
+    if (sorted.length == 1) return '${_monthAbbr(sorted[0])}, $periodYear';
+    final first = _monthAbbr(sorted.first);
+    final last = _monthAbbr(sorted.last);
+    return '$first-$last, $periodYear';
   }
 
   static String _monthName(int m) {
@@ -90,7 +93,7 @@ class ReportBatch {
         ? DateTime.parse(json['last_generated_at'] as String)
         : null,
     requestedByName: json['requested_by_name'] as String?,
-    periodLabel: json['period_label'] as String?,
+    periodLabel: null,
   );
 }
 

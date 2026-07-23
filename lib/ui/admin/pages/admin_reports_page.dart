@@ -129,24 +129,27 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
         months: _months.where((m) => m != 'All Months').toList(),
         years: _years.where((y) => y != 'All Years').toList(),
         onCreate: ({
+          required String reportType,
           required String variant,
           required int year,
           required List<int> months,
         }) {
           Navigator.pop(context);
-          _onCreateBatch(variant: variant, year: year, months: months);
+          _onCreateBatch(reportType: reportType, variant: variant, year: year, months: months);
         },
       ),
     );
   }
 
   Future<void> _onCreateBatch({
+    required String reportType,
     required String variant,
     required int year,
     required List<int> months,
   }) async {
     try {
       final result = await _reportService.createBatch(CreateBatchParams(
+        reportType: reportType,
         reportVariant: variant,
         periodYear: year,
         periodMonths: months,
@@ -183,13 +186,16 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     try {
       _showSuccess('Downloading $format...');
       final bytes = await _reportService.downloadReport(DownloadReportParams(
+        reportType: batch.reportType,
         reportVariant: batch.reportVariant,
         periodYear: batch.periodYear,
         periodMonths: batch.periodMonths,
         format: format,
       ));
 
-      final fileName = 'DAE_${batch.reportVariant}_${batch.periodYear}_${batch.periodMonths.join("-")}.$format';
+      final typePrefix = batch.reportType.toUpperCase();
+      final periodSlug = batch.displayPeriod.replaceAll(', ', '_').replaceAll(' ', '');
+      final fileName = '${typePrefix}_${batch.reportVariant}_${periodSlug}.$format';
       await _saveFile(fileName, bytes);
       if (!mounted) return;
       _showSuccess('File downloaded: $fileName');
@@ -815,6 +821,7 @@ class _CreateBatchDialog extends StatefulWidget {
   final List<String> months;
   final List<String> years;
   final void Function({
+    required String reportType,
     required String variant,
     required int year,
     required List<int> months,
@@ -825,17 +832,32 @@ class _CreateBatchDialog extends StatefulWidget {
 }
 
 class _CreateBatchDialogState extends State<_CreateBatchDialog> {
+  String _reportType = 'dae';
   String _variant = 'daily';
   String? _selectedYear;
   String? _selectedMonth;
-  final Set<int> _selectedMonths = {};
+  int? _rangeStart;
+  int? _rangeEnd;
+
+  bool get _isDae => _reportType == 'dae';
+  bool get _isVar => _reportType == 'var';
+  bool get _needsSingleMonth => _isDae && (_variant == 'daily' || _variant == 'summary');
+  bool get _needsMultiMonth => (_isDae && _variant == 'series') || _isVar;
 
   bool get _canCreate {
     if (_selectedYear == null) return false;
-    if (_variant == 'daily' || _variant == 'summary') {
-      return _selectedMonth != null;
-    }
-    return _selectedMonths.isNotEmpty;
+    if (_needsSingleMonth) return _selectedMonth != null;
+    if (_needsMultiMonth) return _rangeStart != null && _rangeEnd != null;
+    return false;
+  }
+
+  List<int> get _selectedRange {
+    if (_rangeStart == null || _rangeEnd == null) return [];
+    final s = _rangeStart!;
+    final e = _rangeEnd!;
+    final lo = s <= e ? s : e;
+    final hi = s <= e ? e : s;
+    return List.generate(hi - lo + 1, (i) => lo + i);
   }
 
   static int _monthIndex(String name) {
@@ -846,15 +868,35 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
     return names.indexOf(name) + 1;
   }
 
-  void _toggleMonth(int month) {
+  void _onRangeTap(int month) {
     setState(() {
-      if (_selectedMonths.contains(month)) {
-        _selectedMonths.remove(month);
+      if (_rangeStart == null || _rangeEnd != null) {
+        _rangeStart = month;
+        _rangeEnd = null;
       } else {
-        _selectedMonths.add(month);
+        _rangeEnd = month;
       }
     });
   }
+
+  void _resetRange() {
+    setState(() {
+      _rangeStart = null;
+      _rangeEnd = null;
+    });
+  }
+
+  String get _dialogTitle {
+    if (_isVar) return 'Create VAR Report';
+    return 'Create DAE Report';
+  }
+
+  String get _dialogSubtitle {
+    if (_isVar) return 'Select the period for the VAR report';
+    return 'View live data \u2014 no file generated until you download';
+  }
+
+  String get _effectiveVariant => _isVar ? 'total' : _variant;
 
   @override
   Widget build(BuildContext context) {
@@ -873,112 +915,99 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _DialogHeader(
+                title: _dialogTitle,
+                subtitle: _dialogSubtitle,
+                onClose: () => Navigator.pop(context),
+              ),
+              const SizedBox(height: 24),
+              const _DialogLabel('Report Type'),
+              const SizedBox(height: 6),
               Row(
                 children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryCyan.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(
-                      Icons.description_rounded,
-                      color: AppColors.primaryCyan,
-                      size: 18,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Create DAE Report',
-                          style: TextStyle(
-                            color: AppColors.textWhite,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        Text(
-                          'View live data \u2014 no file generated until you download',
-                          style: TextStyle(
-                            color: AppColors.textGray,
-                            fontSize: 11.5,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                  Expanded(
+                    child: _TypeCard(
+                      icon: Icons.description_rounded,
+                      label: 'DAE',
+                      subtitle: 'DAE-1B Form',
+                      selected: _isDae,
+                      onTap: () => setState(() {
+                        _reportType = 'dae';
+                        _rangeStart = null;
+                        _rangeEnd = null;
+                        _selectedMonth = null;
+                        _variant = 'daily';
+                      }),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: AppColors.backgroundDark,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppColors.cardBorder),
-                      ),
-                      child: const Icon(
-                        Icons.close_rounded,
-                        color: AppColors.textGray,
-                        size: 18,
-                      ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _TypeCard(
+                      icon: Icons.summarize_rounded,
+                      label: 'VAR',
+                      subtitle: 'VAR Report',
+                      selected: _isVar,
+                      onTap: () => setState(() {
+                        _reportType = 'var';
+                        _rangeStart = null;
+                        _rangeEnd = null;
+                        _selectedMonth = null;
+                      }),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
-              const _DialogLabel('Report Variant'),
-              const SizedBox(height: 6),
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.backgroundDark,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.cardBorder),
+              if (_isDae) ...[
+                const SizedBox(height: 14),
+                const _DialogLabel('Report Variant'),
+                const SizedBox(height: 6),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.backgroundDark,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.cardBorder),
+                  ),
+                  child: Column(
+                    children: [
+                      _VariantOption(
+                        label: 'Daily Breakdown',
+                        subtitle: 'Sheet 1 \u2014 Per-day columns for one month',
+                        selected: _variant == 'daily',
+                        onTap: () => setState(() {
+                          _variant = 'daily';
+                          _rangeStart = null;
+                          _rangeEnd = null;
+                          _selectedMonth = null;
+                        }),
+                        isFirst: true,
+                      ),
+                      const Divider(color: AppColors.cardBorder, height: 1),
+                      _VariantOption(
+                        label: 'Country Summary',
+                        subtitle: 'Sheet 2 \u2014 Monthly totals by country',
+                        selected: _variant == 'summary',
+                        onTap: () => setState(() {
+                          _variant = 'summary';
+                          _rangeStart = null;
+                          _rangeEnd = null;
+                          _selectedMonth = null;
+                        }),
+                      ),
+                      const Divider(color: AppColors.cardBorder, height: 1),
+                      _VariantOption(
+                        label: 'Monthly Series',
+                        subtitle: 'Sheet 3 \u2014 Month-by-month totals',
+                        selected: _variant == 'series',
+                        onTap: () => setState(() {
+                          _variant = 'series';
+                          _selectedMonth = null;
+                        }),
+                        isLast: true,
+                      ),
+                    ],
+                  ),
                 ),
-                child: Column(
-                  children: [
-                    _VariantOption(
-                      label: 'Daily Breakdown',
-                      subtitle: 'Per-day columns for one month',
-                      selected: _variant == 'daily',
-                      onTap: () => setState(() {
-                        _variant = 'daily';
-                        _selectedMonths.clear();
-                        _selectedMonth = null;
-                      }),
-                      isFirst: true,
-                    ),
-                    const Divider(color: AppColors.cardBorder, height: 1),
-                    _VariantOption(
-                      label: 'Country Summary',
-                      subtitle: 'Monthly totals by country for one month',
-                      selected: _variant == 'summary',
-                      onTap: () => setState(() {
-                        _variant = 'summary';
-                        _selectedMonths.clear();
-                        _selectedMonth = null;
-                      }),
-                    ),
-                    const Divider(color: AppColors.cardBorder, height: 1),
-                    _VariantOption(
-                      label: 'Series',
-                      subtitle: 'Month-by-month totals (multiple months)',
-                      selected: _variant == 'series',
-                      onTap: () => setState(() {
-                        _variant = 'series';
-                        _selectedMonth = null;
-                      }),
-                      isLast: true,
-                    ),
-                  ],
-                ),
-              ),
+              ],
               const SizedBox(height: 14),
               const _DialogLabel('Year'),
               const SizedBox(height: 6),
@@ -990,7 +1019,7 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
                 onChanged: (v) => setState(() => _selectedYear = v),
               ),
               const SizedBox(height: 14),
-              if (_variant == 'daily' || _variant == 'summary') ...[
+              if (_needsSingleMonth) ...[
                 const _DialogLabel('Month'),
                 const SizedBox(height: 6),
                 _DropdownField<String>(
@@ -1000,13 +1029,15 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
                   itemLabel: (m) => m,
                   onChanged: (v) => setState(() => _selectedMonth = v),
                 ),
-              ] else ...[
-                const _DialogLabel('Months (select one or more)'),
+              ] else if (_needsMultiMonth) ...[
+                const _DialogLabel('Month Range'),
                 const SizedBox(height: 6),
-                _MonthCheckboxGrid(
+                _MonthRangeGrid(
                   months: widget.months,
-                  selectedMonths: _selectedMonths,
-                  onToggle: _toggleMonth,
+                  rangeStart: _rangeStart,
+                  rangeEnd: _rangeEnd,
+                  onMonthTap: _onRangeTap,
+                  onReset: _resetRange,
                 ),
               ],
               const SizedBox(height: 20),
@@ -1020,56 +1051,229 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
                       style: TextStyle(color: AppColors.textGray, fontSize: 13),
                     ),
                   ),
-                  GestureDetector(
-                    onTap: _canCreate
-                        ? () {
-                            final months = (_variant == 'daily' || _variant == 'summary')
-                                ? [_monthIndex(_selectedMonth!)]
-                                : _selectedMonths.toList()..sort();
-                            widget.onCreate(
-                              variant: _variant,
-                              year: int.parse(_selectedYear!),
-                              months: months,
-                            );
-                          }
-                        : null,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _canCreate
-                            ? AppColors.primaryCyan
-                            : AppColors.primaryCyan.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.visibility_rounded,
-                            size: 15,
-                            color: _canCreate ? Colors.black : Colors.black45,
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            'View Report',
-                            style: TextStyle(
-                              color: _canCreate ? Colors.black : Colors.black45,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  _CreateButton(
+                    enabled: _canCreate,
+                    onPressed: () {
+                      final months = _needsSingleMonth
+                          ? [_monthIndex(_selectedMonth!)]
+                          : _selectedRange;
+                      widget.onCreate(
+                        reportType: _reportType,
+                        variant: _effectiveVariant,
+                        year: int.parse(_selectedYear!),
+                        months: months,
+                      );
+                    },
                   ),
                 ],
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Dialog Header ─────────────────────────────────────────────────────────
+
+class _DialogHeader extends StatelessWidget {
+  const _DialogHeader({
+    required this.title,
+    required this.subtitle,
+    required this.onClose,
+  });
+
+  final String title;
+  final String subtitle;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: AppColors.primaryCyan.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(
+            Icons.description_rounded,
+            color: AppColors.primaryCyan,
+            size: 18,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.textWhite,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  color: AppColors.textGray,
+                  fontSize: 11.5,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: onClose,
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: AppColors.backgroundDark,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.cardBorder),
+            ),
+            child: const Icon(
+              Icons.close_rounded,
+              color: AppColors.textGray,
+              size: 18,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Report Type Card ──────────────────────────────────────────────────────
+
+class _TypeCard extends StatelessWidget {
+  const _TypeCard({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primaryCyan.withOpacity(0.1)
+              : AppColors.backgroundDark,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected
+                ? AppColors.primaryCyan.withOpacity(0.6)
+                : AppColors.cardBorder,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              color: selected ? AppColors.primaryCyan : AppColors.textGray,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: selected ? AppColors.primaryCyan : AppColors.textWhite,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: selected ? AppColors.textGray : AppColors.textSubtle,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (selected)
+              Icon(
+                Icons.check_circle_rounded,
+                color: AppColors.primaryCyan,
+                size: 18,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Create Button ─────────────────────────────────────────────────────────
+
+class _CreateButton extends StatelessWidget {
+  const _CreateButton({
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onPressed : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: enabled
+              ? AppColors.primaryCyan
+              : AppColors.primaryCyan.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.visibility_rounded,
+              size: 15,
+              color: enabled ? Colors.black : Colors.black45,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              'Generate',
+              style: TextStyle(
+                color: enabled ? Colors.black : Colors.black45,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1145,18 +1349,44 @@ class _VariantOption extends StatelessWidget {
   }
 }
 
-// ─── Month Checkbox Grid ─────────────────────────────────────────────────────
+// ─── Month Range Grid ─────────────────────────────────────────────────────
 
-class _MonthCheckboxGrid extends StatelessWidget {
-  const _MonthCheckboxGrid({
+class _MonthRangeGrid extends StatelessWidget {
+  const _MonthRangeGrid({
     required this.months,
-    required this.selectedMonths,
-    required this.onToggle,
+    required this.rangeStart,
+    required this.rangeEnd,
+    required this.onMonthTap,
+    required this.onReset,
   });
 
   final List<String> months;
-  final Set<int> selectedMonths;
-  final void Function(int) onToggle;
+  final int? rangeStart;
+  final int? rangeEnd;
+  final void Function(int) onMonthTap;
+  final VoidCallback onReset;
+
+  bool _inRange(int month) {
+    if (rangeStart == null) return false;
+    if (rangeEnd != null) {
+      final lo = rangeStart! <= rangeEnd! ? rangeStart! : rangeEnd!;
+      final hi = rangeStart! <= rangeEnd! ? rangeEnd! : rangeStart!;
+      return month >= lo && month <= hi;
+    }
+    return month == rangeStart;
+  }
+
+  bool _isStart(int month) => rangeStart == month;
+  bool _isEnd(int month) => rangeEnd != null && rangeEnd == month;
+
+  String get _rangeLabel {
+    if (rangeStart == null) return 'Tap a month to start';
+    if (rangeEnd == null) return '${months[rangeStart! - 1]} \u2014 tap end month';
+    final lo = rangeStart! <= rangeEnd! ? rangeStart! : rangeEnd!;
+    final hi = rangeStart! <= rangeEnd! ? rangeEnd! : rangeStart!;
+    if (lo == hi) return months[lo - 1];
+    return '${months[lo - 1]} \u2013 ${months[hi - 1]}  (${hi - lo + 1} months)';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1167,39 +1397,85 @@ class _MonthCheckboxGrid extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppColors.cardBorder),
       ),
-      child: Wrap(
-        spacing: 4,
-        runSpacing: 4,
-        children: List.generate(months.length, (i) {
-          final monthNum = i + 1;
-          final isSelected = selectedMonths.contains(monthNum);
-          return GestureDetector(
-            onTap: () => onToggle(monthNum),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? AppColors.primaryCyan.withOpacity(0.15)
-                    : AppColors.cardBackground,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: isSelected
-                      ? AppColors.primaryCyan.withOpacity(0.6)
-                      : AppColors.cardBorder,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: List.generate(months.length, (i) {
+              final monthNum = i + 1;
+              final inRange = _inRange(monthNum);
+              final isStart = _isStart(monthNum);
+              final isEnd = _isEnd(monthNum);
+              final isEdge = isStart || isEnd;
+
+              return GestureDetector(
+                onTap: () => onMonthTap(monthNum),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: inRange
+                        ? AppColors.primaryCyan.withOpacity(isEdge ? 0.25 : 0.12)
+                        : AppColors.cardBackground,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: inRange
+                          ? AppColors.primaryCyan.withOpacity(isEdge ? 0.8 : 0.4)
+                          : AppColors.cardBorder,
+                    ),
+                  ),
+                  child: Text(
+                    months[i].substring(0, 3),
+                    style: TextStyle(
+                      color: inRange ? AppColors.primaryCyan : AppColors.textGray,
+                      fontSize: 12,
+                      fontWeight: isEdge ? FontWeight.w700 : (inRange ? FontWeight.w600 : FontWeight.w400),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(
+                rangeEnd != null ? Icons.check_circle_rounded : Icons.touch_app_rounded,
+                color: rangeEnd != null ? AppColors.primaryCyan : AppColors.textSubtle,
+                size: 14,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  _rangeLabel,
+                  style: TextStyle(
+                    color: rangeEnd != null ? AppColors.primaryCyan : AppColors.textSubtle,
+                    fontSize: 12,
+                    fontWeight: rangeEnd != null ? FontWeight.w600 : FontWeight.w400,
+                  ),
                 ),
               ),
-              child: Text(
-                months[i].substring(0, 3),
-                style: TextStyle(
-                  color: isSelected ? AppColors.primaryCyan : AppColors.textGray,
-                  fontSize: 12,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+              if (rangeStart != null)
+                GestureDetector(
+                  onTap: onReset,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardBackground,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: AppColors.cardBorder),
+                    ),
+                    child: const Text(
+                      'Clear',
+                      style: TextStyle(color: AppColors.textGray, fontSize: 10),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          );
-        }),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1446,7 +1722,7 @@ class _PageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final generateBtn = _HeaderButton(
       icon: Icons.add_rounded,
-      label: isNarrow ? 'Create' : 'Create Report',
+      label: isNarrow ? 'Generate' : 'Generate Report',
       isPrimary: true,
       onTap: onGenerateTap,
     );
@@ -1466,13 +1742,18 @@ class _PageHeader extends StatelessWidget {
         Text(
           'View live data or download as Excel/PDF',
           style: TextStyle(color: AppColors.textGray, fontSize: 13),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
         ),
       ],
     );
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [titleBlock, generateBtn],
+      children: [
+        Expanded(child: titleBlock),
+        generateBtn,
+      ],
     );
   }
 }
