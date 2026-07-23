@@ -238,7 +238,7 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
     _syncSub = SyncService.instance.syncStateStream.listen((state) {
       if (!mounted) return;
       if (state.status == SyncStatus.synced) {
-        _loadRecords();
+        _loadRecords(showLoading: false);
       }
     });
   }
@@ -262,12 +262,16 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
     if (_isLoading) await _loadRecords();
   }
 
-  Future<void> _loadRecords() async {
+  Future<void> _loadRecords({bool showLoading = true}) async {
     if (_businessId == null) return;
-    setState(() {
-      _isLoading = true;
+    if (showLoading) {
+      setState(() {
+        _isLoading = true;
+        _loadError = null;
+      });
+    } else {
       _loadError = null;
-    });
+    }
     final result = await _api.fetchGuestRecords(
       _businessId!,
       page: _currentPage + 1,

@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../database/local_database.dart';
 import 'session_service.dart';
@@ -205,6 +206,9 @@ class SyncService {
 
   static const _syncDelay = Duration(milliseconds: 500);
   static const _minRetryInterval = Duration(seconds: 30);
+  static const _fullSyncInterval = Duration(hours: 24);
+  static const _prefKeyLastSync = 'sync_lastSyncTimestamp';
+  static const _prefKeyLastFullSync = 'sync_lastFullSyncTimestamp';
   DateTime? _lastSyncEnd;
 
   void listenForConnectivity() {
@@ -275,8 +279,8 @@ class SyncService {
       }
 
       if (businessId != null) {
-        await _pullRoomsFromBackend(businessId: businessId);
-        await _pullFromBackend(businessId: businessId);
+        await _pullRoomsFromBackend(businessId: businessId, forceFullSync: true);
+        await _pullFromBackend(businessId: businessId, forceFullSync: true);
       }
     } catch (e) {
       debugPrint('⚠️ _handleOnlineTransition: initial pulls failed: $e');
@@ -676,12 +680,11 @@ class SyncService {
   }
 
   // ---------------------------------------------------------------------------
-  // PULL ROOMS FROM BACKEND
-  // Fetches ALL rooms for the business (vacant + occupied) and upserts them
-  // into local_rooms with sync_status = 'synced'. This ensures the local
-  // room cache exactly matches the cloud when going online.
+  // PULL ROOMS FROM BACKEND (Delta Sync)
+  // Fetches rooms for the business and upserts them into local_rooms.
+  // Uses delta sync: only rooms modified since lastSync are returned.
   // ---------------------------------------------------------------------------
-  Future<void> _pullRoomsFromBackend({String? businessId}) async {
+  Future<void> _pullRoomsFromBackend({String? businessId, bool forceFullSync = false}) async {
     if (!await _canReachBackend()) {
       debugPrint('⏭ _pullRoomsFromBackend: skipped — Backend unreachable');
       return;
@@ -696,14 +699,19 @@ class SyncService {
             columns: ['id'],
           );
 
+    // Determine if this should be a full sync or delta sync
+    final needsFull = forceFullSync || await _needsFullSync();
+    final lastSync = needsFull ? null : await _getLastSyncTimestamp();
+
     for (final business in businesses) {
       final bizId = business['id'] as String;
 
       try {
-        final response = await http.get(
-          Uri.parse('$_baseUrl/api/business/rooms?businessId=$bizId&fetchAll=true'),
-          headers: _headers,
-        );
+        final url = lastSync != null
+            ? '$_baseUrl/api/business/rooms?businessId=$bizId&lastSync=$lastSync'
+            : '$_baseUrl/api/business/rooms?businessId=$bizId&fetchAll=true';
+
+        final response = await http.get(Uri.parse(url), headers: _headers);
 
         if (response.statusCode < 200 || response.statusCode >= 300) {
           debugPrint('⚠️ _pullRoomsFromBackend: HTTP ${response.statusCode} for $bizId');
@@ -748,33 +756,35 @@ class SyncService {
           );
         }
 
-        // Prune local synced rooms that no longer exist on the cloud
-        final localSynced = await db.query(
-          LocalDatabase.tableLocalRooms,
-          columns: ['id'],
-          where: 'business_id = ? AND sync_status = ?',
-          whereArgs: [bizId, LocalDatabase.syncSynced],
-        );
+        // Only prune local rooms during full sync (delta only returns
+        // changed rooms, so absence doesn't mean deletion).
+        if (lastSync == null) {
+          final localSynced = await db.query(
+            LocalDatabase.tableLocalRooms,
+            columns: ['id'],
+            where: 'business_id = ? AND sync_status = ?',
+            whereArgs: [bizId, LocalDatabase.syncSynced],
+          );
 
-        for (final local in localSynced) {
-          final id = local['id'] as String;
-          if (!remoteIds.contains(id)) {
-            // Check if any guest record references this room — don't delete if so
-            final refs = await db.query(
-              LocalDatabase.tableGuestRecordRooms,
-              columns: ['id'],
-              where: 'room_id = ?',
-              whereArgs: [id],
-              limit: 1,
-            );
-            if (refs.isNotEmpty) continue;
+          for (final local in localSynced) {
+            final id = local['id'] as String;
+            if (!remoteIds.contains(id)) {
+              final refs = await db.query(
+                LocalDatabase.tableGuestRecordRooms,
+                columns: ['id'],
+                where: 'room_id = ?',
+                whereArgs: [id],
+                limit: 1,
+              );
+              if (refs.isNotEmpty) continue;
 
-            debugPrint('🧹 _pullRoomsFromBackend: pruning local room $id (not on cloud)');
-            await db.delete(
-              LocalDatabase.tableLocalRooms,
-              where: 'id = ?',
-              whereArgs: [id],
-            );
+              debugPrint('🧹 _pullRoomsFromBackend: pruning local room $id (not on cloud)');
+              await db.delete(
+                LocalDatabase.tableLocalRooms,
+                where: 'id = ?',
+                whereArgs: [id],
+              );
+            }
           }
         }
 
@@ -998,9 +1008,9 @@ class SyncService {
   }
 
   // ---------------------------------------------------------------------------
-  // PULL FROM BACKEND
+  // PULL FROM BACKEND (Delta Sync)
   // ---------------------------------------------------------------------------
-  Future<void> _pullFromBackend({String? businessId}) async {
+  Future<void> _pullFromBackend({String? businessId, bool forceFullSync = false}) async {
     if (!await _canReachBackend()) {
       debugPrint('⏭ _pullFromBackend: skipped — Backend unreachable');
       return;
@@ -1015,32 +1025,39 @@ class SyncService {
             columns: ['id'],
           );
 
+    // Determine if this should be a full sync or delta sync
+    final needsFull = forceFullSync || await _needsFullSync();
+    final lastSync = needsFull ? null : await _getLastSyncTimestamp();
+
+    if (needsFull) {
+      debugPrint('📥 _pullFromBackend: FULL sync (no lastSync)');
+    } else {
+      debugPrint('📥 _pullFromBackend: DELTA sync (lastSync=$lastSync)');
+    }
+
+    // Capture the sync timestamp BEFORE the requests so we don't miss records
+    // modified between the request and the response.
+    final syncTimestamp = DateTime.now().toUtc().toIso8601String();
+
     for (final business in businesses) {
       final businessId = business['id'] as String;
 
       try {
-        // ── Fetch both active and archived records ─────────────────────────
-        // The online dashboard API returns ALL statuses; the offline sync must
-        // mirror that so dashboard stats are complete in offline mode.
-        final baseUrl =
-            '$_baseUrl/api/business/guest-records'
-            '?businessId=$businessId'
-            '&fetchAll=true'
-            '&checkInFrom=2020-01-01'
-            '&checkOutTo=2030-12-31';
-        final urls = [
-          baseUrl,                              // active (default)
-          '$baseUrl&status=archived',           // archived
-        ];
-
+        // ── Build URL ───────────────────────────────────────────────────
+        // When lastSync is present, the backend returns ALL statuses
+        // (active + archived) AND is_deleted records so we can detect changes.
+        // When doing a full sync, fetch active and archived separately as before.
         final allRemoteRecords = <Map<String, dynamic>>[];
         final seenIds = <String>{};
 
-        for (final url in urls) {
-          final response = await http.get(
-            Uri.parse(url),
-            headers: _headers,
-          );
+        if (lastSync != null) {
+          // Delta sync: single request, server returns only changed records
+          final url =
+              '$_baseUrl/api/business/guest-records'
+              '?businessId=$businessId'
+              '&fetchAll=true'
+              '&lastSync=$lastSync';
+          final response = await http.get(Uri.parse(url), headers: _headers);
           if (response.statusCode >= 200 && response.statusCode < 300) {
             final decoded = jsonDecode(response.body);
             final records = decoded is List<dynamic>
@@ -1053,58 +1070,113 @@ class SyncService {
               }
             }
           }
+        } else {
+          // Full sync: fetch both active and archived (existing behavior)
+          final baseUrl =
+              '$_baseUrl/api/business/guest-records'
+              '?businessId=$businessId'
+              '&fetchAll=true'
+              '&checkInFrom=2020-01-01'
+              '&checkOutTo=2030-12-31';
+          final urls = [
+            baseUrl,
+            '$baseUrl&status=archived',
+          ];
+
+          for (final url in urls) {
+            final response = await http.get(Uri.parse(url), headers: _headers);
+            if (response.statusCode >= 200 && response.statusCode < 300) {
+              final decoded = jsonDecode(response.body);
+              final records = decoded is List<dynamic>
+                  ? decoded
+                  : (decoded is Map ? (decoded['data'] as List? ?? []) : []);
+              for (final r in records) {
+                final id = r['id'] as String;
+                if (seenIds.add(id)) {
+                  allRemoteRecords.add(Map<String, dynamic>.from(r));
+                }
+              }
+            }
+          }
         }
 
-        if (allRemoteRecords.isEmpty) continue;
+        if (allRemoteRecords.isEmpty && lastSync != null) {
+          // Delta sync with no changes — nothing to do
+          debugPrint('📥 _pullFromBackend: no changes for $businessId');
+          continue;
+        }
 
         final remoteRecords = allRemoteRecords;
         final remoteIds = seenIds;
 
-        // 1. Prune local synced records that no longer exist on the cloud.
-        final localSynced = await db.query(
-          LocalDatabase.tableGuestRecords,
-          columns: ['id', 'local_updated_at'],
-          where: 'business_id = ? AND sync_status = ?',
-          whereArgs: [businessId, LocalDatabase.syncSynced],
-        );
+        // ── Handle deletions from delta response ────────────────────────
+        // Records with isDeleted=true should be removed from local DB.
+        final remoteDeletedIds = <String>{};
+        for (final remote in remoteRecords) {
+          if (remote['isDeleted'] == true) {
+            remoteDeletedIds.add(remote['id'] as String);
+          }
+        }
 
-        final now = DateTime.now().toUtc();
-        for (final local in localSynced) {
-          final id = local['id'] as String;
-          if (!remoteIds.contains(id)) {
-            // Grace period: skip recently-synced records to avoid a race
-            // where the POST just succeeded but the GET hasn't caught up yet.
-            final localUpdatedAtStr = local['local_updated_at'] as String?;
-            if (localUpdatedAtStr != null) {
-              final updatedAt = DateTime.tryParse(localUpdatedAtStr);
-              if (updatedAt != null &&
-                  now.difference(updatedAt).inSeconds < 60) {
-                debugPrint(
-                  '⏳ Skipping pruning for just-synced record $id (grace period)',
-                );
-                continue;
+        // 1. Prune local synced records that no longer exist on the cloud
+        //    (only during full sync — delta sync only returns changed records
+        //     so we can't infer absence means deletion).
+        if (lastSync == null) {
+          final localSynced = await db.query(
+            LocalDatabase.tableGuestRecords,
+            columns: ['id', 'local_updated_at'],
+            where: 'business_id = ? AND sync_status = ?',
+            whereArgs: [businessId, LocalDatabase.syncSynced],
+          );
+
+          final now = DateTime.now().toUtc();
+          for (final local in localSynced) {
+            final id = local['id'] as String;
+            if (!remoteIds.contains(id)) {
+              final localUpdatedAtStr = local['local_updated_at'] as String?;
+              if (localUpdatedAtStr != null) {
+                final updatedAt = DateTime.tryParse(localUpdatedAtStr);
+                if (updatedAt != null &&
+                    now.difference(updatedAt).inSeconds < 60) {
+                  debugPrint('⏳ Skipping pruning for just-synced record $id (grace period)');
+                  continue;
+                }
               }
-            }
 
-            debugPrint(
-              '🧹 Pruning local synced record $id (not found on cloud)',
-            );
-            await db.delete(
-              LocalDatabase.tableGuestRecords,
-              where: 'id = ?',
-              whereArgs: [id],
-            );
-            await db.delete(
-              LocalDatabase.tableGuestRecordRooms,
-              where: 'guest_record_id = ?',
-              whereArgs: [id],
-            );
+              debugPrint('🧹 _pullFromBackend: pruning local synced record $id (not found on cloud)');
+              await db.delete(
+                LocalDatabase.tableGuestRecords,
+                where: 'id = ?',
+                whereArgs: [id],
+              );
+              await db.delete(
+                LocalDatabase.tableGuestRecordRooms,
+                where: 'guest_record_id = ?',
+                whereArgs: [id],
+              );
+            }
           }
         }
 
         // 2. Insert / Update records from cloud (skip any with pending changes).
         for (final remote in remoteRecords) {
           final recordId = remote['id'] as String;
+
+          // If the server says this record is deleted, remove it locally.
+          if (remoteDeletedIds.contains(recordId)) {
+            debugPrint('🗑️ _pullFromBackend: deleting soft-deleted record $recordId');
+            await db.delete(
+              LocalDatabase.tableGuestRecords,
+              where: 'id = ?',
+              whereArgs: [recordId],
+            );
+            await db.delete(
+              LocalDatabase.tableGuestRecordRooms,
+              where: 'guest_record_id = ?',
+              whereArgs: [recordId],
+            );
+            continue;
+          }
 
           final pending = await db.query(
             LocalDatabase.tableGuestRecords,
@@ -1134,9 +1206,6 @@ class SyncService {
           final rooms = remote['rooms'] as List<dynamic>? ?? [];
           for (final r in rooms) {
             final roomId = r['id'] as String;
-            // Ensure the room exists locally for FK — use INSERT OR IGNORE
-            // so we never overwrite room_status (already correct from
-            // _pullRoomsFromBackend which runs earlier in the sync cycle).
             await db.rawInsert(
               'INSERT OR IGNORE INTO ${LocalDatabase.tableLocalRooms} '
               '(id, business_id, room_number, capacity, room_status, sync_status) '
@@ -1166,14 +1235,21 @@ class SyncService {
             );
           }
         }
+
+        debugPrint('✅ _pullFromBackend: processed ${remoteRecords.length} record(s) for $businessId');
       } on SocketException catch (e) {
         debugPrint('🌐 _pullFromBackend: network lost — aborting ($e)');
         return;
       } catch (e) {
-        debugPrint(
-          '❌ _pullFromBackend: failed for business $businessId — $e',
-        );
+        debugPrint('❌ _pullFromBackend: failed for business $businessId — $e');
       }
+    }
+
+    // Persist the sync timestamp for the next delta cycle
+    await _setLastSyncTimestamp(syncTimestamp);
+    if (needsFull) {
+      await _setLastFullSyncTimestamp(syncTimestamp);
+      debugPrint('✅ _pullFromBackend: full sync timestamp saved');
     }
   }
 
@@ -1310,6 +1386,56 @@ class SyncService {
   void _emit(SyncState state) {
     _state = state;
     _controller.add(state);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Delta Sync Timestamp Helpers
+  // ---------------------------------------------------------------------------
+
+  /// Returns the stored [lastSync] ISO timestamp, or `null` on first sync.
+  Future<String?> _getLastSyncTimestamp() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_prefKeyLastSync);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Persists the [lastSync] ISO timestamp after a successful pull.
+  Future<void> _setLastSyncTimestamp(String isoTimestamp) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefKeyLastSync, isoTimestamp);
+    } catch (_) {}
+  }
+
+  /// Returns the stored [lastFullSync] ISO timestamp, or `null` if never.
+  Future<String?> _getLastFullSyncTimestamp() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_prefKeyLastFullSync);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Persists the [lastFullSync] ISO timestamp after a full pull.
+  Future<void> _setLastFullSyncTimestamp(String isoTimestamp) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefKeyLastFullSync, isoTimestamp);
+    } catch (_) {}
+  }
+
+  /// Determines whether a full (non-delta) pull is needed.
+  /// Returns `true` on first ever sync or if the last full sync was >24h ago.
+  Future<bool> _needsFullSync() async {
+    final lastFullSync = await _getLastFullSyncTimestamp();
+    if (lastFullSync == null) return true;
+    final parsed = DateTime.tryParse(lastFullSync);
+    if (parsed == null) return true;
+    return DateTime.now().toUtc().difference(parsed) >= _fullSyncInterval;
   }
 
   // ---------------------------------------------------------------------------

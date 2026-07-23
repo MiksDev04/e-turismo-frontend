@@ -97,7 +97,7 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
     _syncSub = SyncService.instance.syncStateStream.listen((state) {
       if (!mounted) return;
       if (state.status == SyncStatus.synced) {
-        _loadRooms();
+        _loadRooms(showLoading: false);
       }
     });
   }
@@ -129,12 +129,16 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
         _Filter.reserved => 'reserved',
       };
 
-  Future<void> _loadRooms() async {
+  Future<void> _loadRooms({bool showLoading = true}) async {
     if (_businessId == null) return;
-    setState(() {
-      _isLoading = true;
+    if (showLoading) {
+      setState(() {
+        _isLoading = true;
+        _loadError = null;
+      });
+    } else {
       _loadError = null;
-    });
+    }
     final result = await _api.fetchRoomsPaginated(
       _businessId!,
       page: _currentPage + 1,

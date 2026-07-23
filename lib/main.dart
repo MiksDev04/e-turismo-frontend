@@ -61,7 +61,7 @@ void main() async {
   // ── Step 3: Attach lifecycle observer + periodic sync BEFORE listeners ─────
   WidgetsBinding.instance.addObserver(_AppLifecycleSyncObserver());
 
-  Timer.periodic(const Duration(minutes: 5), (_) {
+  Timer.periodic(const Duration(minutes: 15), (_) {
     if (ConnectivityService.instance.isOnline) {
       SyncService.instance.sync();
     }
