@@ -608,7 +608,7 @@ Container _varHeaderCell(String text, {
       text,
       textAlign: textAlign,
       softWrap: wrap,
-      overflow: TextOverflow.visible,
+      overflow: TextOverflow.clip,
       style: TextStyle(
         fontFamily: _Var.font,
         fontSize: _Var.headerSize,
@@ -638,6 +638,7 @@ class _VarReportTable extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildHeader(),
         _buildDataSection(),
@@ -670,6 +671,7 @@ class _VarReportTable extends StatelessWidget {
       width: _hTotalW,
       height: _hTotalH,
       child: Stack(
+        clipBehavior: Clip.hardEdge,
         children: [
           // ── Row 1 (y=0) ──────────────────────────────────────────────
           // B12:C12 = "Visitor Attraction"
