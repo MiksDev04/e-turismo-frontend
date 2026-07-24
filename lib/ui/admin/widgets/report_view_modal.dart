@@ -77,7 +77,8 @@ enum _RKind {
   spacer, // blank divider row
 }
 
-typedef _Getter = num Function(EstablishmentReport est, MonthData md, String day);
+typedef _Getter =
+    num Function(EstablishmentReport est, MonthData md, String day);
 
 class _RRow {
   final String label;
@@ -93,41 +94,99 @@ class _RRow {
 // COUNTRY LISTS (exact order/grouping as the "COUNTRY OF RESIDENCE" column)
 // ─────────────────────────────────────────────────────────────────────────
 const List<String> _kAsean = [
-  'BRUNEI', 'CAMBODIA', 'INDONESIA', 'LAOS', 'MALAYSIA', 'MYANMAR',
-  'SINGAPORE', 'THAILAND', 'VIETNAM',
+  'BRUNEI',
+  'CAMBODIA',
+  'INDONESIA',
+  'LAOS',
+  'MALAYSIA',
+  'MYANMAR',
+  'SINGAPORE',
+  'THAILAND',
+  'VIETNAM',
 ];
-const List<String> _kEastAsia = ['CHINA', 'HONGKONG', 'JAPAN', 'KOREA', 'TAIWAN'];
+const List<String> _kEastAsia = [
+  'CHINA',
+  'HONGKONG',
+  'JAPAN',
+  'KOREA',
+  'TAIWAN',
+];
 const List<String> _kSouthAsia = [
-  'BANGLADESH', 'INDIA', 'IRAN', 'NEPAL', 'PAKISTAN', 'SRI LANKA',
+  'BANGLADESH',
+  'INDIA',
+  'IRAN',
+  'NEPAL',
+  'PAKISTAN',
+  'SRI LANKA',
 ];
 const List<String> _kMiddleEast = [
-  'BAHRAIN', 'EGYPT', 'ISRAEL', 'JORDAN', 'KUWAIT', 'SAUDI ARABIA',
+  'BAHRAIN',
+  'EGYPT',
+  'ISRAEL',
+  'JORDAN',
+  'KUWAIT',
+  'SAUDI ARABIA',
   'UNITED ARAB EMIRATES',
 ];
 const List<String> _kNorthAmerica = ['CANADA', 'MEXICO', 'USA'];
-const List<String> _kSouthAmerica = ['ARGENTINA', 'BRAZIL', 'COLOMBIA', 'PERU', 'VENEZUELA'];
+const List<String> _kSouthAmerica = [
+  'ARGENTINA',
+  'BRAZIL',
+  'COLOMBIA',
+  'PERU',
+  'VENEZUELA',
+];
 const List<String> _kWesternEurope = [
-  'AUSTRIA', 'BELGIUM', 'FRANCE', 'GERMANY', 'LUXEMBOURG', 'NETHERLANDS', 'SWITZERLAND',
+  'AUSTRIA',
+  'BELGIUM',
+  'FRANCE',
+  'GERMANY',
+  'LUXEMBOURG',
+  'NETHERLANDS',
+  'SWITZERLAND',
 ];
 const List<String> _kNorthernEurope = [
-  'DENMARK', 'FINLAND', 'IRELAND', 'NORWAY', 'SWEDEN', 'UNITED KINGDOM',
+  'DENMARK',
+  'FINLAND',
+  'IRELAND',
+  'NORWAY',
+  'SWEDEN',
+  'UNITED KINGDOM',
 ];
 const List<String> _kSouthernEurope = [
-  'GREECE', 'ITALY', 'PORTUGAL', 'SPAIN', 'UNION OF SERBIA AND MONTENEGRO',
+  'GREECE',
+  'ITALY',
+  'PORTUGAL',
+  'SPAIN',
+  'UNION OF SERBIA AND MONTENEGRO',
 ];
 const List<String> _kEasternEurope = [
-  'COMMONWEALTH OF INDEPENDENT STATES', 'POLAND', 'RUSSIA',
+  'COMMONWEALTH OF INDEPENDENT STATES',
+  'POLAND',
+  'RUSSIA',
 ];
 const List<String> _kAustralasia = [
-  'AUSTRALIA', 'GUAM', 'NAURU', 'NEW ZEALAND', 'PAPUA NEW GUINEA',
+  'AUSTRALIA',
+  'GUAM',
+  'NAURU',
+  'NEW ZEALAND',
+  'PAPUA NEW GUINEA',
 ];
 const List<String> _kAfrica = ['NIGERIA', 'SOUTH AFRICA'];
 
 const List<String> _kAllCountries = [
-  ..._kAsean, ..._kEastAsia, ..._kSouthAsia, ..._kMiddleEast,
-  ..._kNorthAmerica, ..._kSouthAmerica,
-  ..._kWesternEurope, ..._kNorthernEurope, ..._kSouthernEurope, ..._kEasternEurope,
-  ..._kAustralasia, ..._kAfrica,
+  ..._kAsean,
+  ..._kEastAsia,
+  ..._kSouthAsia,
+  ..._kMiddleEast,
+  ..._kNorthAmerica,
+  ..._kSouthAmerica,
+  ..._kWesternEurope,
+  ..._kNorthernEurope,
+  ..._kSouthernEurope,
+  ..._kEasternEurope,
+  ..._kAustralasia,
+  ..._kAfrica,
 ];
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -135,7 +194,8 @@ const List<String> _kAllCountries = [
 // day == '0' is treated as "the aggregate for this snapshot" (matches the
 // convention already used elsewhere in this app for residentsByDay/'0').
 // ─────────────────────────────────────────────────────────────────────────
-int _res(MonthData md, String day, String key) => md.residentsByDay?[day]?[key] ?? 0;
+int _res(MonthData md, String day, String key) =>
+    md.residentsByDay?[day]?[key] ?? 0;
 
 String _titleCase(String s) => s
     .split(' ')
@@ -145,7 +205,10 @@ String _titleCase(String s) => s
 int _country(MonthData md, String day, String name) {
   final byCountry = md.countryByDay;
   if (byCountry == null) return 0;
-  final dayMap = byCountry[name] ?? byCountry[name.toUpperCase()] ?? byCountry[_titleCase(name)];
+  final dayMap =
+      byCountry[name] ??
+      byCountry[name.toUpperCase()] ??
+      byCountry[_titleCase(name)];
   return dayMap?[day] ?? 0;
 }
 
@@ -153,7 +216,8 @@ int _sumCountries(MonthData md, String day, List<String> names) =>
     names.fold<int>(0, (sum, n) => sum + _country(md, day, n));
 
 int _totalPh(EstablishmentReport est, MonthData md, String day) =>
-    _res(md, day, 'philippine_resident_filipino') + _res(md, day, 'philippine_resident_foreign');
+    _res(md, day, 'philippine_resident_filipino') +
+    _res(md, day, 'philippine_resident_foreign');
 
 // The full country breakdown IS the "listed" foreign-resident total.
 int _listedForeign(EstablishmentReport est, MonthData md, String day) =>
@@ -172,7 +236,10 @@ int _unspecifiedGuest(EstablishmentReport est, MonthData md, String day) =>
     _res(md, day, 'unspecified_guest');
 
 int _grandTotal(EstablishmentReport est, MonthData md, String day) =>
-    _totalPh(est, md, day) + _totalNonPh(est, md, day) + _overseasFil(est, md, day) + _unspecifiedGuest(est, md, day);
+    _totalPh(est, md, day) +
+    _totalNonPh(est, md, day) +
+    _overseasFil(est, md, day) +
+    _unspecifiedGuest(est, md, day);
 
 int _roomsOccupied(EstablishmentReport est, MonthData md, String day) =>
     day == '0' ? md.totalRoomsOccupied : (md.roomsOccupied?[day] ?? 0);
@@ -205,7 +272,6 @@ double _avgLengthOfStay(EstablishmentReport est, MonthData md, String day) {
   return _guestNights(est, md, day) / guests;
 }
 
-
 int _sexCategory(MonthData md, String day, String sex, String category) =>
     md.sexByDay?[day]?[sex]?[category] ?? 0;
 
@@ -229,13 +295,31 @@ int _femaleTotal(EstablishmentReport est, MonthData md, String day) =>
 // ROW LIST — mirrors "COUNTRY OF RESIDENCE" rows 25-149, then Part II
 // rows 151-175 of the template, in exact order.
 // ─────────────────────────────────────────────────────────────────────────
-List<_RRow> _regionBlock(String name, List<String> countries, {bool asTopCategory = false}) {
+List<_RRow> _regionBlock(
+  String name,
+  List<String> countries, {
+  bool asTopCategory = false,
+}) {
   return [
-    _RRow(name, asTopCategory ? _RKind.topCategory : _RKind.subCategory, indent: asTopCategory ? 0 : 1),
-    ...countries.map(
-      (c) => _RRow(c, _RKind.dataLeaf, indent: 2, value: (est, md, day) => _country(md, day, c)),
+    _RRow(
+      name,
+      asTopCategory ? _RKind.topCategory : _RKind.subCategory,
+      indent: asTopCategory ? 0 : 1,
     ),
-    _RRow('SUB-TOTAL', _RKind.subtotal, indent: 2, value: (est, md, day) => _sumCountries(md, day, countries)),
+    ...countries.map(
+      (c) => _RRow(
+        c,
+        _RKind.dataLeaf,
+        indent: 2,
+        value: (est, md, day) => _country(md, day, c),
+      ),
+    ),
+    _RRow(
+      'SUB-TOTAL',
+      _RKind.subtotal,
+      indent: 2,
+      value: (est, md, day) => _sumCountries(md, day, countries),
+    ),
     _RRow('', _RKind.spacer),
   ];
 }
@@ -243,10 +327,18 @@ List<_RRow> _regionBlock(String name, List<String> countries, {bool asTopCategor
 List<_RRow> _buildHierarchyRows() {
   return [
     _RRow('PHILIPPINE RESIDENTS', _RKind.topCategory),
-    _RRow('FILIPINO NATIONALITY', _RKind.dataLeaf, indent: 1,
-        value: (est, md, day) => _res(md, day, 'philippine_resident_filipino')),
-    _RRow('FOREIGN NATIONALITY', _RKind.dataLeaf, indent: 1,
-        value: (est, md, day) => _res(md, day, 'philippine_resident_foreign')),
+    _RRow(
+      'FILIPINO NATIONALITY',
+      _RKind.dataLeaf,
+      indent: 1,
+      value: (est, md, day) => _res(md, day, 'philippine_resident_filipino'),
+    ),
+    _RRow(
+      'FOREIGN NATIONALITY',
+      _RKind.dataLeaf,
+      indent: 1,
+      value: (est, md, day) => _res(md, day, 'philippine_resident_foreign'),
+    ),
     _RRow('TOTAL PHILIPPINE RESIDENTS', _RKind.total, value: _totalPh),
     _RRow('', _RKind.spacer),
     _RRow('NON-PHILIPPINE RESIDENTS', _RKind.topCategory),
@@ -267,17 +359,41 @@ List<_RRow> _buildHierarchyRows() {
     ..._regionBlock('AUSTRALASIA/PACIFIC', _kAustralasia, asTopCategory: true),
     ..._regionBlock('AFRICA', _kAfrica, asTopCategory: true),
     _RRow('OTHERS AND UNSPECIFIED', _RKind.topCategory),
-    _RRow('NON-PHILIPPINE RESIDENCES', _RKind.valueCategory, value: _unlistedForeign),
+    _RRow(
+      'NON-PHILIPPINE RESIDENCES',
+      _RKind.valueCategory,
+      value: _unlistedForeign,
+    ),
     _RRow('', _RKind.spacer),
     _RRow('TOTAL NON-PHILIPPINE RESIDENTS', _RKind.total, value: _totalNonPh),
     _RRow('', _RKind.spacer),
     _RRow('OVERSEAS FILIPINOS*', _RKind.valueCategory, value: _overseasFil),
     _RRow('', _RKind.spacer),
     _RRow('GRAND TOTAL GUEST ARRIVALS', _RKind.grandTotal, value: _grandTotal),
-    _RRow('Total Philippine Residents', _RKind.total, indent: 1, value: _totalPh),
-    _RRow('Total Non-Philippine Residents', _RKind.total, indent: 1, value: _totalNonPh),
-    _RRow('Total Overseas Filipinos', _RKind.total, indent: 1, value: _overseasFil),
-    _RRow('Total Guest with Unspecified Residence', _RKind.total, indent: 1, value: _unspecifiedGuest),
+    _RRow(
+      'Total Philippine Residents',
+      _RKind.total,
+      indent: 1,
+      value: _totalPh,
+    ),
+    _RRow(
+      'Total Non-Philippine Residents',
+      _RKind.total,
+      indent: 1,
+      value: _totalNonPh,
+    ),
+    _RRow(
+      'Total Overseas Filipinos',
+      _RKind.total,
+      indent: 1,
+      value: _overseasFil,
+    ),
+    _RRow(
+      'Total Guest with Unspecified Residence',
+      _RKind.total,
+      indent: 1,
+      value: _unspecifiedGuest,
+    ),
   ];
 }
 
@@ -288,41 +404,93 @@ List<_RRow> _buildIndicatorRows() {
     _RRow('', _RKind.spacer),
     _RRow('A. DAE2:', _RKind.subsectionTitle),
     _RRow('1. Rooms Occupied', _RKind.indicator, value: _roomsOccupied),
-    _RRow('2. Rooms available for the month', _RKind.indicator, value: _roomsAvailable),
+    _RRow(
+      '2. Rooms available for the month',
+      _RKind.indicator,
+      value: _roomsAvailable,
+    ),
     _RRow('3. Total Guest nights', _RKind.indicator, value: _guestNights),
     _RRow('Alternative Submission', _RKind.plainNote),
-    _RRow('1. Average Monthly Occupancy Rate', _RKind.indicator,
-        value: _occupancyRate, format: (v) => '${v.toStringAsFixed(1)}%'),
-    _RRow('2. Average Length of Stay (in Nights)', _RKind.indicator,
-        value: _avgLengthOfStay, format: (v) => v.toStringAsFixed(1)),
+    _RRow(
+      '1. Average Monthly Occupancy Rate',
+      _RKind.indicator,
+      value: _occupancyRate,
+      format: (v) => '${v.toStringAsFixed(1)}%',
+    ),
+    _RRow(
+      '2. Average Length of Stay (in Nights)',
+      _RKind.indicator,
+      value: _avgLengthOfStay,
+      format: (v) => v.toStringAsFixed(1),
+    ),
     _RRow('B. VOLUME PER SEX', _RKind.subsectionTitle),
     _RRow('1. Male', _RKind.indicatorBold),
-    _RRow('a. Philippine Residents', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'male', 'philippine_resident_filipino') +
-            _sexCategory(md, day, 'male', 'philippine_resident_foreign')),
-    _RRow('b. Non-Philippine/Foreign Residents (including unspecified)', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'male', 'listed_foreign_resident') +
-            _sexCategory(md, day, 'male', 'unlisted_foreign_resident') +
-            _sexCategory(md, day, 'male', 'unspecified_guest')),
-    _RRow('c. Overseas Filipinos', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'male', 'overseas_filipino')),
-    _RRow('d. Others/Unspecified Guest', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'male', 'unlisted_foreign_resident') +
-            _sexCategory(md, day, 'male', 'unspecified_guest')),
+    _RRow(
+      'a. Philippine Residents',
+      _RKind.indicator,
+      indent: 1,
+      value: (est, md, day) =>
+          _sexCategory(md, day, 'male', 'philippine_resident_filipino') +
+          _sexCategory(md, day, 'male', 'philippine_resident_foreign'),
+    ),
+    _RRow(
+      'b. Non-Philippine/Foreign Residents (including unspecified)',
+      _RKind.indicator,
+      indent: 1,
+      value: (est, md, day) =>
+          _sexCategory(md, day, 'male', 'listed_foreign_resident') +
+          _sexCategory(md, day, 'male', 'unlisted_foreign_resident') +
+          _sexCategory(md, day, 'male', 'unspecified_guest'),
+    ),
+    _RRow(
+      'c. Overseas Filipinos',
+      _RKind.indicator,
+      indent: 1,
+      value: (est, md, day) =>
+          _sexCategory(md, day, 'male', 'overseas_filipino'),
+    ),
+    _RRow(
+      'd. Others/Unspecified Guest',
+      _RKind.indicator,
+      indent: 1,
+      value: (est, md, day) =>
+          _sexCategory(md, day, 'male', 'unlisted_foreign_resident') +
+          _sexCategory(md, day, 'male', 'unspecified_guest'),
+    ),
     _RRow('x. Total', _RKind.indicator, indent: 1, value: _maleTotal),
     _RRow('2. Female', _RKind.indicatorBold),
-    _RRow('a. Philippine Residents', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'female', 'philippine_resident_filipino') +
-            _sexCategory(md, day, 'female', 'philippine_resident_foreign')),
-    _RRow('b. Non-Philippine/Foreign Residents (including unspecified)', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'female', 'listed_foreign_resident') +
-            _sexCategory(md, day, 'female', 'unlisted_foreign_resident') +
-            _sexCategory(md, day, 'female', 'unspecified_guest')),
-    _RRow('c. Overseas Filipinos', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'female', 'overseas_filipino')),
-    _RRow('d. Others/Unspecified Guest', _RKind.indicator, indent: 1,
-        value: (est, md, day) => _sexCategory(md, day, 'female', 'unlisted_foreign_resident') +
-            _sexCategory(md, day, 'female', 'unspecified_guest')),
+    _RRow(
+      'a. Philippine Residents',
+      _RKind.indicator,
+      indent: 1,
+      value: (est, md, day) =>
+          _sexCategory(md, day, 'female', 'philippine_resident_filipino') +
+          _sexCategory(md, day, 'female', 'philippine_resident_foreign'),
+    ),
+    _RRow(
+      'b. Non-Philippine/Foreign Residents (including unspecified)',
+      _RKind.indicator,
+      indent: 1,
+      value: (est, md, day) =>
+          _sexCategory(md, day, 'female', 'listed_foreign_resident') +
+          _sexCategory(md, day, 'female', 'unlisted_foreign_resident') +
+          _sexCategory(md, day, 'female', 'unspecified_guest'),
+    ),
+    _RRow(
+      'c. Overseas Filipinos',
+      _RKind.indicator,
+      indent: 1,
+      value: (est, md, day) =>
+          _sexCategory(md, day, 'female', 'overseas_filipino'),
+    ),
+    _RRow(
+      'd. Others/Unspecified Guest',
+      _RKind.indicator,
+      indent: 1,
+      value: (est, md, day) =>
+          _sexCategory(md, day, 'female', 'unlisted_foreign_resident') +
+          _sexCategory(md, day, 'female', 'unspecified_guest'),
+    ),
     _RRow('x. Total', _RKind.indicator, indent: 1, value: _femaleTotal),
     _RRow('', _RKind.spacer),
     _RRow(
@@ -354,7 +522,11 @@ Color _bgFor(_RKind k) {
 }
 
 TextStyle _styleFor(_RKind k) {
-  const base = TextStyle(fontFamily: _Dae.font, color: _Dae.ink, fontSize: _Dae.dataSize);
+  const base = TextStyle(
+    fontFamily: _Dae.font,
+    color: _Dae.ink,
+    fontSize: _Dae.dataSize,
+  );
   switch (k) {
     case _RKind.topCategory:
       return base.copyWith(fontWeight: FontWeight.bold);
@@ -362,22 +534,42 @@ TextStyle _styleFor(_RKind k) {
     case _RKind.valueCategory:
     case _RKind.dataLeaf:
     case _RKind.subtotal:
-      return base.copyWith(fontWeight: FontWeight.bold, fontStyle: FontStyle.italic);
+      return base.copyWith(
+        fontWeight: FontWeight.bold,
+        fontStyle: FontStyle.italic,
+      );
     case _RKind.total:
     case _RKind.grandTotal:
       return base.copyWith(fontWeight: FontWeight.bold);
     case _RKind.sectionTitle:
-      return base.copyWith(fontWeight: FontWeight.bold, fontSize: _Dae.titleSize);
+      return base.copyWith(
+        fontWeight: FontWeight.bold,
+        fontSize: _Dae.titleSize,
+      );
     case _RKind.subsectionTitle:
-      return base.copyWith(fontWeight: FontWeight.bold, fontSize: _Dae.titleSize);
+      return base.copyWith(
+        fontWeight: FontWeight.bold,
+        fontSize: _Dae.titleSize,
+      );
     case _RKind.plainNote:
-      return base.copyWith(fontWeight: FontWeight.bold, fontStyle: FontStyle.italic, fontSize: _Dae.titleSize);
+      return base.copyWith(
+        fontWeight: FontWeight.bold,
+        fontStyle: FontStyle.italic,
+        fontSize: _Dae.titleSize,
+      );
     case _RKind.indicator:
       return base.copyWith(fontSize: _Dae.indicatorSize);
     case _RKind.indicatorBold:
-      return base.copyWith(fontWeight: FontWeight.bold, fontSize: _Dae.indicatorSize);
+      return base.copyWith(
+        fontWeight: FontWeight.bold,
+        fontSize: _Dae.indicatorSize,
+      );
     case _RKind.footnote:
-      return base.copyWith(fontSize: _Dae.indicatorSize, fontStyle: FontStyle.italic, color: Colors.black54);
+      return base.copyWith(
+        fontSize: _Dae.indicatorSize,
+        fontStyle: FontStyle.italic,
+        color: Colors.black54,
+      );
     default:
       return base;
   }
@@ -463,29 +655,49 @@ class _ReportTable extends StatelessWidget {
 
   TableRow _buildHeaderRow() {
     final cells = <TableCell>[
-      _cell('COUNTRY OF RESIDENCE', TextStyle(
-        fontFamily: _Dae.font,
-        fontWeight: FontWeight.bold,
-        color: _Dae.ink,
-        fontSize: _Dae.dataSize,
-      ), _Dae.headerYellow, height: _headerRowHeight, alignLeft: true),
+      _cell(
+        'COUNTRY OF RESIDENCE',
+        TextStyle(
+          fontFamily: _Dae.font,
+          fontWeight: FontWeight.bold,
+          color: _Dae.ink,
+          fontSize: _Dae.dataSize,
+        ),
+        _Dae.headerYellow,
+        height: _headerRowHeight,
+        alignLeft: true,
+      ),
     ];
     for (final c in columns) {
-      cells.add(_cell(c.label, TextStyle(
-        fontFamily: _Dae.dayFont,
-        fontWeight: FontWeight.bold,
-        fontStyle: FontStyle.italic,
-        color: _Dae.ink,
-        fontSize: _Dae.dataSize,
-      ), _Dae.headerYellow, height: _headerRowHeight));
+      cells.add(
+        _cell(
+          c.label,
+          TextStyle(
+            fontFamily: _Dae.dayFont,
+            fontWeight: FontWeight.bold,
+            fontStyle: FontStyle.italic,
+            color: _Dae.ink,
+            fontSize: _Dae.dataSize,
+          ),
+          _Dae.headerYellow,
+          height: _headerRowHeight,
+        ),
+      );
     }
     if (showTotalColumn) {
-      cells.add(_cell('TOTAL', TextStyle(
-        fontFamily: _Dae.font,
-        fontWeight: FontWeight.bold,
-        color: _Dae.ink,
-        fontSize: _Dae.dataSize,
-      ), _Dae.headerYellow, height: _headerRowHeight));
+      cells.add(
+        _cell(
+          'TOTAL',
+          TextStyle(
+            fontFamily: _Dae.font,
+            fontWeight: FontWeight.bold,
+            color: _Dae.ink,
+            fontSize: _Dae.dataSize,
+          ),
+          _Dae.headerYellow,
+          height: _headerRowHeight,
+        ),
+      );
     }
     return TableRow(children: cells);
   }
@@ -494,8 +706,10 @@ class _ReportTable extends StatelessWidget {
     if (r.kind == _RKind.spacer) {
       final colCount = 1 + columns.length + (showTotalColumn ? 1 : 0);
       return TableRow(
-        children: List.generate(colCount, (_) =>
-          TableCell(child: SizedBox(height: _spacerRowHeight))),
+        children: List.generate(
+          colCount,
+          (_) => TableCell(child: SizedBox(height: _spacerRowHeight)),
+        ),
       );
     }
 
@@ -514,18 +728,32 @@ class _ReportTable extends StatelessWidget {
     ];
 
     num rowTotal = 0;
-    final isTotalRow = r.kind == _RKind.subtotal || r.kind == _RKind.total || r.kind == _RKind.grandTotal;
+    final isTotalRow =
+        r.kind == _RKind.subtotal ||
+        r.kind == _RKind.total ||
+        r.kind == _RKind.grandTotal;
     final forceZeroData = isTotalRow || !showTotalColumn;
     for (final c in columns) {
       final v = r.value?.call(est, c.md, c.day) ?? 0;
       rowTotal += v;
-      final text = (forceZeroData && v == 0 && r.value != null) ? '0' : _fmt(r, v);
+      final text = (forceZeroData && v == 0 && r.value != null)
+          ? '0'
+          : _fmt(r, v);
       cells.add(_cell(text, style, bg, height: _dataRowHeight));
     }
 
     if (showTotalColumn) {
-      final totalText = (rowTotal == 0 && r.value != null) ? '0' : _fmt(r, rowTotal);
-      cells.add(_cell(totalText, style.copyWith(fontWeight: FontWeight.bold), bg, height: _dataRowHeight));
+      final totalText = (rowTotal == 0 && r.value != null)
+          ? '0'
+          : _fmt(r, rowTotal);
+      cells.add(
+        _cell(
+          totalText,
+          style.copyWith(fontWeight: FontWeight.bold),
+          bg,
+          height: _dataRowHeight,
+        ),
+      );
     }
 
     return TableRow(children: cells);
@@ -557,7 +785,8 @@ class _ReportTable extends StatelessWidget {
 // VAR REPORT TABLE  (mirrors VAR-REPORT.xlsx exactly)
 // 4-level merged header, 41 data rows, green total row.
 // ─────────────────────────────────────────────────────────────────────────
-Container _varDataCell(String text, {
+Container _varDataCell(
+  String text, {
   required double width,
   Color bg = _Var.paper,
   bool bold = false,
@@ -587,7 +816,8 @@ Container _varDataCell(String text, {
   );
 }
 
-Container _varHeaderCell(String text, {
+Container _varHeaderCell(
+  String text, {
   required double width,
   bool bold = false,
   bool wrap = false,
@@ -639,10 +869,7 @@ class _VarReportTable extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildHeader(),
-        _buildDataSection(),
-      ],
+      children: [_buildHeader(), _buildDataSection()],
     );
   }
 
@@ -657,13 +884,29 @@ class _VarReportTable extends StatelessWidget {
     const double y2 = _hRowH * 2;
     const double y3 = _hRowH * 3;
 
-    Widget cell(String text, {
-      required double x, required double y, required double w, required double h,
-      bool bold = true, bool wrap = false, TextAlign align = TextAlign.center,
+    Widget cell(
+      String text, {
+      required double x,
+      required double y,
+      required double w,
+      required double h,
+      bool bold = true,
+      bool wrap = false,
+      TextAlign align = TextAlign.center,
     }) {
       return Positioned(
-        left: x, top: y, width: w, height: h,
-        child: _varHeaderCell(text, width: w, bold: bold, wrap: wrap, height: h, textAlign: align),
+        left: x,
+        top: y,
+        width: w,
+        height: h,
+        child: _varHeaderCell(
+          text,
+          width: w,
+          bold: bold,
+          wrap: wrap,
+          height: h,
+          textAlign: align,
+        ),
       );
     }
 
@@ -675,35 +918,117 @@ class _VarReportTable extends StatelessWidget {
         children: [
           // ── Row 1 (y=0) ──────────────────────────────────────────────
           // B12:C12 = "Visitor Attraction"
-          cell('Visitor Attraction', x: xName, y: y0, w: _varNameW + _varAttrW, h: _hRowH),
+          cell(
+            'Visitor Attraction',
+            x: xName,
+            y: y0,
+            w: _varNameW + _varAttrW,
+            h: _hRowH,
+          ),
           // D12:O12 = "*** Place of Residence"
-          cell('*** Place of Residence', x: xData, y: y0, w: _varDataW * 12, h: _hRowH),
+          cell(
+            '*** Place of Residence',
+            x: xData,
+            y: y0,
+            w: _varDataW * 12,
+            h: _hRowH,
+          ),
           // P12:R14 = "* Grand Total Number of Visitors" (spans 3 rows)
-          cell('* Grand Total\nNumber of\nVisitors', x: xData + _varDataW * 12, y: y0, w: _varDataW * 3, h: _hRowH * 3, wrap: true),
+          cell(
+            '* Grand Total\nNumber of\nVisitors',
+            x: xData + _varDataW * 12,
+            y: y0,
+            w: _varDataW * 3,
+            h: _hRowH * 3,
+            wrap: true,
+          ),
 
           // ── Row 2 (y=20) ────────────────────────────────────────────
           // B13:B15 = "Name" (spans 3 rows)
-          cell('Name', x: xName, y: y1, w: _varNameW, h: _hRowH * 3, wrap: true),
+          cell(
+            'Name',
+            x: xName,
+            y: y1,
+            w: _varNameW,
+            h: _hRowH * 3,
+            wrap: true,
+          ),
           // C13:C15 = "Attraction Code" (spans 3 rows)
-          cell('Attraction\nCode', x: xAttr, y: y1, w: _varAttrW, h: _hRowH * 3, wrap: true),
+          cell(
+            'Attraction\nCode',
+            x: xAttr,
+            y: y1,
+            w: _varAttrW,
+            h: _hRowH * 3,
+            wrap: true,
+          ),
           // D13:L13 = "Philippines"
           cell('Philippines', x: xData, y: y1, w: _varDataW * 9, h: _hRowH),
           // M13:O14 = "Foreign Country Residence" (spans 2 rows)
-          cell('Foreign Country\nResidence', x: xData + _varDataW * 9, y: y1, w: _varDataW * 3, h: _hRowH * 2, wrap: true),
+          cell(
+            'Foreign Country\nResidence',
+            x: xData + _varDataW * 9,
+            y: y1,
+            w: _varDataW * 3,
+            h: _hRowH * 2,
+            wrap: true,
+          ),
 
           // ── Row 3 (y=40) ────────────────────────────────────────────
           // D14:F14 = "This City/Municipality"
-          cell('This City/\nMunicipality', x: xData, y: y2, w: _varDataW * 3, h: _hRowH, wrap: true),
+          cell(
+            'This City/\nMunicipality',
+            x: xData,
+            y: y2,
+            w: _varDataW * 3,
+            h: _hRowH,
+            wrap: true,
+          ),
           // G14:I14 = "Other City/Municipality"
-          cell('Other City/\nMunicipality', x: xData + _varDataW * 3, y: y2, w: _varDataW * 3, h: _hRowH, wrap: true),
+          cell(
+            'Other City/\nMunicipality',
+            x: xData + _varDataW * 3,
+            y: y2,
+            w: _varDataW * 3,
+            h: _hRowH,
+            wrap: true,
+          ),
           // J14:L14 = "Other Province"
-          cell('Other\nProvince', x: xData + _varDataW * 6, y: y2, w: _varDataW * 3, h: _hRowH, wrap: true),
+          cell(
+            'Other\nProvince',
+            x: xData + _varDataW * 6,
+            y: y2,
+            w: _varDataW * 3,
+            h: _hRowH,
+            wrap: true,
+          ),
 
           // ── Row 4 (y=60) – M / F / T for each group ─────────────────
           for (int g = 0; g < 5; g++) ...[
-            cell('Male',   x: xData + _varDataW * (g * 3),     y: y3, w: _varDataW, h: _hRowH, bold: true),
-            cell('Female', x: xData + _varDataW * (g * 3 + 1), y: y3, w: _varDataW, h: _hRowH, bold: true),
-            cell('Total',  x: xData + _varDataW * (g * 3 + 2), y: y3, w: _varDataW, h: _hRowH, bold: true),
+            cell(
+              'Male',
+              x: xData + _varDataW * (g * 3),
+              y: y3,
+              w: _varDataW,
+              h: _hRowH,
+              bold: true,
+            ),
+            cell(
+              'Female',
+              x: xData + _varDataW * (g * 3 + 1),
+              y: y3,
+              w: _varDataW,
+              h: _hRowH,
+              bold: true,
+            ),
+            cell(
+              'Total',
+              x: xData + _varDataW * (g * 3 + 2),
+              y: y3,
+              w: _varDataW,
+              h: _hRowH,
+              bold: true,
+            ),
           ],
         ],
       ),
@@ -728,29 +1053,45 @@ class _VarReportTable extends StatelessWidget {
     String cellTotal(int val) => '$val';
 
     final name = est?.businessName ?? '';
-    final totalMale = (vd?.maleThisCity ?? 0) + (vd?.maleOtherCity ?? 0) + (vd?.maleOtherProvince ?? 0) + (vd?.maleForeign ?? 0);
-    final totalFemale = (vd?.femaleThisCity ?? 0) + (vd?.femaleOtherCity ?? 0) + (vd?.femaleOtherProvince ?? 0) + (vd?.femaleForeign ?? 0);
+    final totalMale =
+        (vd?.maleThisCity ?? 0) +
+        (vd?.maleOtherCity ?? 0) +
+        (vd?.maleOtherProvince ?? 0) +
+        (vd?.maleForeign ?? 0);
+    final totalFemale =
+        (vd?.femaleThisCity ?? 0) +
+        (vd?.femaleOtherCity ?? 0) +
+        (vd?.femaleOtherProvince ?? 0) +
+        (vd?.femaleForeign ?? 0);
     final grandTotal = totalMale + totalFemale;
 
-    return Row(children: [
-      _varDataCell(name, width: _varNameW),
-      _varDataCell('9-902', width: _varAttrW),
-      _varDataCell(cell(vd?.maleThisCity ?? 0), width: _varDataW),
-      _varDataCell(cell(vd?.femaleThisCity ?? 0), width: _varDataW),
-      _varDataCell(cellTotal((vd?.totalThisCity ?? 0)), width: _varDataW),
-      _varDataCell(cell(vd?.maleOtherCity ?? 0), width: _varDataW),
-      _varDataCell(cell(vd?.femaleOtherCity ?? 0), width: _varDataW),
-      _varDataCell(cellTotal((vd?.totalOtherCity ?? 0)), width: _varDataW),
-      _varDataCell(cell(vd?.maleOtherProvince ?? 0), width: _varDataW),
-      _varDataCell(cell(vd?.femaleOtherProvince ?? 0), width: _varDataW),
-      _varDataCell(cellTotal((vd?.totalOtherProvince ?? 0)), width: _varDataW),
-      _varDataCell(cell(vd?.maleForeign ?? 0), width: _varDataW),
-      _varDataCell(cell(vd?.femaleForeign ?? 0), width: _varDataW),
-      _varDataCell(cellTotal((vd?.totalForeign ?? 0)), width: _varDataW),
-      _varDataCell(cell(totalMale), width: _varDataW),
-      _varDataCell(cell(totalFemale), width: _varDataW),
-      _varDataCell(cellTotal(grandTotal), width: _varDataW),
-    ]);
+    return Row(
+      children: [
+        _varDataCell(name, width: _varNameW),
+        _varDataCell(
+          (est?.businessLine?.isNotEmpty ?? false) ? '9-902' : '',
+          width: _varAttrW,
+        ),
+        _varDataCell(cell(vd?.maleThisCity ?? 0), width: _varDataW),
+        _varDataCell(cell(vd?.femaleThisCity ?? 0), width: _varDataW),
+        _varDataCell(cellTotal((vd?.totalThisCity ?? 0)), width: _varDataW),
+        _varDataCell(cell(vd?.maleOtherCity ?? 0), width: _varDataW),
+        _varDataCell(cell(vd?.femaleOtherCity ?? 0), width: _varDataW),
+        _varDataCell(cellTotal((vd?.totalOtherCity ?? 0)), width: _varDataW),
+        _varDataCell(cell(vd?.maleOtherProvince ?? 0), width: _varDataW),
+        _varDataCell(cell(vd?.femaleOtherProvince ?? 0), width: _varDataW),
+        _varDataCell(
+          cellTotal((vd?.totalOtherProvince ?? 0)),
+          width: _varDataW,
+        ),
+        _varDataCell(cell(vd?.maleForeign ?? 0), width: _varDataW),
+        _varDataCell(cell(vd?.femaleForeign ?? 0), width: _varDataW),
+        _varDataCell(cellTotal((vd?.totalForeign ?? 0)), width: _varDataW),
+        _varDataCell(cell(totalMale), width: _varDataW),
+        _varDataCell(cell(totalFemale), width: _varDataW),
+        _varDataCell(cellTotal(grandTotal), width: _varDataW),
+      ],
+    );
   }
 
   Row _buildTotalRow() {
@@ -759,25 +1100,48 @@ class _VarReportTable extends StatelessWidget {
     final grandFemale = totals.grandFemale;
     final grandTotal = totals.grandTotal;
 
-    return Row(children: [
-      _varDataCell('Total of this Month ****', width: _varNameW, bold: true, isTotal: true),
-      _varDataCell('', width: _varAttrW, isTotal: true),
-      _varDataCell(v(totals.maleThisCity), width: _varDataW, isTotal: true),
-      _varDataCell(v(totals.femaleThisCity), width: _varDataW, isTotal: true),
-      _varDataCell(v(totals.totalThisCity), width: _varDataW, isTotal: true),
-      _varDataCell(v(totals.maleOtherCity), width: _varDataW, isTotal: true),
-      _varDataCell(v(totals.femaleOtherCity), width: _varDataW, isTotal: true),
-      _varDataCell(v(totals.totalOtherCity), width: _varDataW, isTotal: true),
-      _varDataCell(v(totals.maleOtherProvince), width: _varDataW, isTotal: true),
-      _varDataCell(v(totals.femaleOtherProvince), width: _varDataW, isTotal: true),
-      _varDataCell(v(totals.totalOtherProvince), width: _varDataW, isTotal: true),
-      _varDataCell(v(totals.maleForeign), width: _varDataW, isTotal: true),
-      _varDataCell(v(totals.femaleForeign), width: _varDataW, isTotal: true),
-      _varDataCell(v(totals.totalForeign), width: _varDataW, isTotal: true),
-      _varDataCell(v(grandMale), width: _varDataW, isTotal: true),
-      _varDataCell(v(grandFemale), width: _varDataW, isTotal: true),
-      _varDataCell(v(grandTotal), width: _varDataW, isTotal: true),
-    ]);
+    return Row(
+      children: [
+        _varDataCell(
+          'Total of this Month ****',
+          width: _varNameW,
+          bold: true,
+          isTotal: true,
+        ),
+        _varDataCell('', width: _varAttrW, isTotal: true),
+        _varDataCell(v(totals.maleThisCity), width: _varDataW, isTotal: true),
+        _varDataCell(v(totals.femaleThisCity), width: _varDataW, isTotal: true),
+        _varDataCell(v(totals.totalThisCity), width: _varDataW, isTotal: true),
+        _varDataCell(v(totals.maleOtherCity), width: _varDataW, isTotal: true),
+        _varDataCell(
+          v(totals.femaleOtherCity),
+          width: _varDataW,
+          isTotal: true,
+        ),
+        _varDataCell(v(totals.totalOtherCity), width: _varDataW, isTotal: true),
+        _varDataCell(
+          v(totals.maleOtherProvince),
+          width: _varDataW,
+          isTotal: true,
+        ),
+        _varDataCell(
+          v(totals.femaleOtherProvince),
+          width: _varDataW,
+          isTotal: true,
+        ),
+        _varDataCell(
+          v(totals.totalOtherProvince),
+          width: _varDataW,
+          isTotal: true,
+        ),
+        _varDataCell(v(totals.maleForeign), width: _varDataW, isTotal: true),
+        _varDataCell(v(totals.femaleForeign), width: _varDataW, isTotal: true),
+        _varDataCell(v(totals.totalForeign), width: _varDataW, isTotal: true),
+        _varDataCell(v(grandMale), width: _varDataW, isTotal: true),
+        _varDataCell(v(grandFemale), width: _varDataW, isTotal: true),
+        _varDataCell(v(grandTotal), width: _varDataW, isTotal: true),
+      ],
+    );
   }
 }
 
@@ -816,8 +1180,12 @@ class _ReportViewerModalState extends State<ReportViewerModal>
   static const double _zoomMax = 2.0;
   double _unscaledContentHeight = 0;
 
-  void _zoomIn() => setState(() => _zoomLevel = (_zoomLevel + _zoomStep).clamp(_zoomMin, _zoomMax));
-  void _zoomOut() => setState(() => _zoomLevel = (_zoomLevel - _zoomStep).clamp(_zoomMin, _zoomMax));
+  void _zoomIn() => setState(
+    () => _zoomLevel = (_zoomLevel + _zoomStep).clamp(_zoomMin, _zoomMax),
+  );
+  void _zoomOut() => setState(
+    () => _zoomLevel = (_zoomLevel - _zoomStep).clamp(_zoomMin, _zoomMax),
+  );
   void _resetZoom() => setState(() => _zoomLevel = 1.0);
 
   void _measureContent() {
@@ -838,7 +1206,8 @@ class _ReportViewerModalState extends State<ReportViewerModal>
   void _syncFromContent() {
     if (_syncingScroll) return;
     _syncingScroll = true;
-    if (_hScrollCtrlBottom.hasClients && _hScrollCtrlBottom.offset != _hScrollCtrl.offset) {
+    if (_hScrollCtrlBottom.hasClients &&
+        _hScrollCtrlBottom.offset != _hScrollCtrl.offset) {
       _hScrollCtrlBottom.jumpTo(_hScrollCtrl.offset);
     }
     _syncingScroll = false;
@@ -847,7 +1216,8 @@ class _ReportViewerModalState extends State<ReportViewerModal>
   void _syncFromBottom() {
     if (_syncingScroll) return;
     _syncingScroll = true;
-    if (_hScrollCtrl.hasClients && _hScrollCtrl.offset != _hScrollCtrlBottom.offset) {
+    if (_hScrollCtrl.hasClients &&
+        _hScrollCtrl.offset != _hScrollCtrlBottom.offset) {
       _hScrollCtrl.jumpTo(_hScrollCtrlBottom.offset);
     }
     _syncingScroll = false;
@@ -906,7 +1276,8 @@ class _ReportViewerModalState extends State<ReportViewerModal>
       final code = await classifyError(e);
       setState(() {
         if (code == 503) {
-          _error = 'No internet connection. Please check your network and try again.';
+          _error =
+              'No internet connection. Please check your network and try again.';
         } else if (code == 408) {
           _error = 'Request timed out. Please try again.';
         } else {
@@ -929,13 +1300,15 @@ class _ReportViewerModalState extends State<ReportViewerModal>
   Future<void> _handlePrint() async {
     setState(() => _printing = true);
     try {
-      final pdfBytes = await _reportService.downloadReport(DownloadReportParams(
-        reportType: widget.batch.reportType,
-        reportVariant: widget.batch.reportVariant,
-        periodYear: widget.batch.periodYear,
-        periodMonths: widget.batch.periodMonths,
-        format: 'pdf',
-      ));
+      final pdfBytes = await _reportService.downloadReport(
+        DownloadReportParams(
+          reportType: widget.batch.reportType,
+          reportVariant: widget.batch.reportVariant,
+          periodYear: widget.batch.periodYear,
+          periodMonths: widget.batch.periodMonths,
+          format: 'pdf',
+        ),
+      );
       if (!mounted) return;
 
       await Printing.layoutPdf(
@@ -958,17 +1331,19 @@ class _ReportViewerModalState extends State<ReportViewerModal>
             final scale = (availW / imgW < availH / imgH)
                 ? availW / imgW
                 : availH / imgH;
-            doc.addPage(pw.Page(
-              pageFormat: format,
-              margin: pw.EdgeInsets.all(marginPt),
-              build: (_) => pw.Center(
-                child: pw.Image(
-                  pw.MemoryImage(image),
-                  width: imgW * scale,
-                  height: imgH * scale,
+            doc.addPage(
+              pw.Page(
+                pageFormat: format,
+                margin: pw.EdgeInsets.all(marginPt),
+                build: (_) => pw.Center(
+                  child: pw.Image(
+                    pw.MemoryImage(image),
+                    width: imgW * scale,
+                    height: imgH * scale,
+                  ),
                 ),
               ),
-            ));
+            );
           }
           return doc.save();
         },
@@ -1013,7 +1388,9 @@ class _ReportViewerModalState extends State<ReportViewerModal>
             _ModalHeader(
               batch: widget.batch,
               onClose: () => Navigator.pop(context),
-              onDownloadExcel: _downloading ? null : () => _handleDownload('xlsx'),
+              onDownloadExcel: _downloading
+                  ? null
+                  : () => _handleDownload('xlsx'),
               onDownloadPdf: _downloading ? null : () => _handleDownload('pdf'),
               onPrint: (_viewData == null || _printing) ? null : _handlePrint,
               downloading: _downloading,
@@ -1028,17 +1405,17 @@ class _ReportViewerModalState extends State<ReportViewerModal>
               child: _loading
                   ? const _LoadingView()
                   : _error != null
-                      ? _ErrorView(
-                          error: _error!,
-                          onRetry: () {
-                            setState(() {
-                              _error = null;
-                              _loading = true;
-                            });
-                            _loadReport();
-                          },
-                        )
-                      : _buildContent(),
+                  ? _ErrorView(
+                      error: _error!,
+                      onRetry: () {
+                        setState(() {
+                          _error = null;
+                          _loading = true;
+                        });
+                        _loadReport();
+                      },
+                    )
+                  : _buildContent(),
             ),
           ],
         ),
@@ -1084,12 +1461,13 @@ class _ReportViewerModalState extends State<ReportViewerModal>
             unselectedLabelColor: AppColors.textGray,
             indicatorColor: AppColors.primaryCyan,
             indicatorSize: TabBarIndicatorSize.label,
-            labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            labelStyle: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
             unselectedLabelStyle: const TextStyle(fontSize: 12),
             tabAlignment: TabAlignment.start,
-            tabs: establishments
-                .map((e) => Tab(text: e.businessName))
-                .toList(),
+            tabs: establishments.map((e) => Tab(text: e.businessName)).toList(),
           ),
         ),
         Expanded(
@@ -1144,10 +1522,21 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                   style: ts.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  widget.batch.displayPeriod,
-                  textAlign: TextAlign.center,
-                  style: ts.copyWith(fontStyle: FontStyle.italic, decoration: TextDecoration.underline)
+                Container(
+                  width: 50,
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: _Var.ink, width: 1),
+                    ),
+                  ),
+                  child: Text(
+                    widget.batch.displayPeriod,
+                    textAlign: TextAlign.center,
+                    style: ts.copyWith(
+                      fontStyle: FontStyle.italic,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -1159,14 +1548,20 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                 Text(
                   'REPORT ON THE REGIONAL DISTRIBUTION OF TRAVELERS',
                   textAlign: TextAlign.center,
-                  style: ts.copyWith(fontWeight: FontWeight.bold, fontSize: _Dae.titleSize),
+                  style: ts.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: _Dae.titleSize,
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 14),
           // Type of Accommodation — LEFT
-          Text('Type of Accommodation', style: ts.copyWith(fontWeight: FontWeight.bold)),
+          Text(
+            'Type of Accommodation',
+            style: ts.copyWith(fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 2),
           for (final entry in accomTypes)
             Padding(
@@ -1239,15 +1634,23 @@ class _ReportViewerModalState extends State<ReportViewerModal>
               if (event is PointerScrollEvent &&
                   HardwareKeyboard.instance.isControlPressed) {
                 final delta = event.scrollDelta.dy > 0 ? -_zoomStep : _zoomStep;
-                setState(() =>
-                    _zoomLevel = (_zoomLevel + delta).clamp(_zoomMin, _zoomMax));
+                setState(
+                  () => _zoomLevel = (_zoomLevel + delta).clamp(
+                    _zoomMin,
+                    _zoomMax,
+                  ),
+                );
               }
             },
             child: GestureDetector(
               onScaleUpdate: (details) {
                 if (details.pointerCount > 1) {
-                  setState(() => _zoomLevel =
-                      (_zoomLevel * details.scale).clamp(_zoomMin, _zoomMax));
+                  setState(
+                    () => _zoomLevel = (_zoomLevel * details.scale).clamp(
+                      _zoomMin,
+                      _zoomMax,
+                    ),
+                  );
                 }
               },
               child: RawScrollbar(
@@ -1282,12 +1685,14 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   SizedBox(
-                                      width: tableWidth,
-                                      child: _buildFormHeader(est)),
+                                    width: tableWidth,
+                                    child: _buildFormHeader(est),
+                                  ),
                                   _buildReportTable(est),
                                   SizedBox(
-                                      width: tableWidth,
-                                      child: _buildFooter()),
+                                    width: tableWidth,
+                                    child: _buildFooter(),
+                                  ),
                                 ],
                               ),
                             ),
@@ -1328,10 +1733,7 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                   child: SingleChildScrollView(
                     controller: _hScrollCtrlBottom,
                     scrollDirection: Axis.horizontal,
-                    child: SizedBox(
-                      width: minWidth,
-                      height: 1,
-                    ),
+                    child: SizedBox(width: minWidth, height: 1),
                   ),
                 );
               },
@@ -1357,15 +1759,23 @@ class _ReportViewerModalState extends State<ReportViewerModal>
               if (event is PointerScrollEvent &&
                   HardwareKeyboard.instance.isControlPressed) {
                 final delta = event.scrollDelta.dy > 0 ? -_zoomStep : _zoomStep;
-                setState(() =>
-                    _zoomLevel = (_zoomLevel + delta).clamp(_zoomMin, _zoomMax));
+                setState(
+                  () => _zoomLevel = (_zoomLevel + delta).clamp(
+                    _zoomMin,
+                    _zoomMax,
+                  ),
+                );
               }
             },
             child: GestureDetector(
               onScaleUpdate: (details) {
                 if (details.pointerCount > 1) {
-                  setState(() => _zoomLevel =
-                      (_zoomLevel * details.scale).clamp(_zoomMin, _zoomMax));
+                  setState(
+                    () => _zoomLevel = (_zoomLevel * details.scale).clamp(
+                      _zoomMin,
+                      _zoomMax,
+                    ),
+                  );
                 }
               },
               child: RawScrollbar(
@@ -1402,7 +1812,8 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                                   _buildVarFormHeader(),
                                   _VarReportTable(
                                     establishments: data.establishments,
-                                    totals: data.totals.varData ?? const VarData(),
+                                    totals:
+                                        data.totals.varData ?? const VarData(),
                                   ),
                                   _buildVarFooter(),
                                 ],
@@ -1444,10 +1855,7 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                   child: SingleChildScrollView(
                     controller: _hScrollCtrlBottom,
                     scrollDirection: Axis.horizontal,
-                    child: SizedBox(
-                      width: minWidth,
-                      height: 1,
-                    ),
+                    child: SizedBox(width: minWidth, height: 1),
                   ),
                 );
               },
@@ -1475,12 +1883,34 @@ class _ReportViewerModalState extends State<ReportViewerModal>
         ? widget.batch.periodMonths.first
         : 1;
     const monthNames = [
-      '', 'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
+      '',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     const monthAbbr = [
-      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     final year = widget.batch.periodYear;
     final monthLabel = widget.batch.periodMonths.length == 1
@@ -1496,12 +1926,18 @@ class _ReportViewerModalState extends State<ReportViewerModal>
         children: [
           // Row 1: Republic of the Philippines
           Center(
-            child: Text('Republic of the Philippines', style: ts.copyWith(fontSize: 12)),
+            child: Text(
+              'Republic of the Philippines',
+              style: ts.copyWith(fontSize: 12),
+            ),
           ),
           const SizedBox(height: 2),
           // Row 2: City Government
           Center(
-            child: Text('City Government of San Pablo', style: ts.copyWith(fontSize: 12)),
+            child: Text(
+              'City Government of San Pablo',
+              style: ts.copyWith(fontSize: 12),
+            ),
           ),
           const SizedBox(height: 2),
           // Row 3: Address
@@ -1530,7 +1966,10 @@ class _ReportViewerModalState extends State<ReportViewerModal>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Tourism Attraction Visitor Record', style: ts.copyWith(fontWeight: FontWeight.bold)),
+              Text(
+                'Tourism Attraction Visitor Record',
+                style: ts.copyWith(fontWeight: FontWeight.bold),
+              ),
               Text('VAR 2', style: ts),
             ],
           ),
@@ -1546,16 +1985,16 @@ class _ReportViewerModalState extends State<ReportViewerModal>
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               Text('Month/Year:', style: ts),
-              const SizedBox(width: 8),
+              const SizedBox(width: 20),
               Container(
-                width: 180,
+                width: 650,
                 decoration: const BoxDecoration(
                   border: Border(bottom: BorderSide(color: _Var.ink, width: 1)),
                 ),
                 child: Text(
                   monthLabel,
                   style: ts.copyWith(fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
+                  textAlign: TextAlign.start,
                 ),
               ),
             ],
@@ -1566,19 +2005,16 @@ class _ReportViewerModalState extends State<ReportViewerModal>
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               Text('Name of Municipality:', style: ts),
-              const SizedBox(width: 8),
+              const SizedBox(width: 20),
               Container(
-                width: 180,
+                width: 650,
                 decoration: const BoxDecoration(
-                  border: Border(
-                    top: BorderSide(color: _Var.ink, width: 1),
-                    bottom: BorderSide(color: _Var.ink, width: 1),
-                  ),
+                  border: Border(bottom: BorderSide(color: _Var.ink, width: 1)),
                 ),
                 child: Text(
                   'SAN PABLO CITY',
                   style: ts.copyWith(fontSize: 10, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
+                  textAlign: TextAlign.start,
                 ),
               ),
             ],
@@ -1592,7 +2028,11 @@ class _ReportViewerModalState extends State<ReportViewerModal>
   // ── VAR Footer (rows 58-65 of VAR-REPORT.xlsx) ───────────────────────────
 
   Widget _buildVarFooter() {
-    final ts = const TextStyle(fontFamily: _Var.font, fontSize: 10, color: _Var.ink);
+    final ts = const TextStyle(
+      fontFamily: _Var.font,
+      fontSize: 10,
+      color: _Var.ink,
+    );
 
     return Container(
       color: _Var.paper,
@@ -1616,8 +2056,21 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                     Text('Prepared by:', style: ts),
                     const SizedBox(height: 30),
                     Text('________________________', style: ts),
-                    Text('MIZPAH A. LENESES', style: ts.copyWith(fontWeight: FontWeight.bold, fontSize: 11, decoration: TextDecoration.underline)),
-                    Text('ADMINISTRATIVE AIDE 1', style: ts.copyWith(fontWeight: FontWeight.bold, fontSize: 8)),
+                    Text(
+                      'MIZPAH A. LENESES',
+                      style: ts.copyWith(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                    Text(
+                      'ADMINISTRATIVE AIDE 1',
+                      style: ts.copyWith(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 8,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1627,8 +2080,21 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                     Text('Check and Submitted by:', style: ts),
                     const SizedBox(height: 30),
                     Text('________________________', style: ts),
-                    Text('ROLDAN B. AQUINO', style: ts.copyWith(fontWeight: FontWeight.bold, fontSize: 11, decoration: TextDecoration.underline)),
-                    Text('LOCAL REGISTRY COLLECTION OFFICER I', style: ts.copyWith(fontWeight: FontWeight.bold, fontSize: 8)),
+                    Text(
+                      'ROLDAN B. AQUINO',
+                      style: ts.copyWith(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                    Text(
+                      'LOCAL REGISTRY COLLECTION OFFICER I',
+                      style: ts.copyWith(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 8,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1638,8 +2104,21 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                     Text('Noted by:', style: ts),
                     const SizedBox(height: 30),
                     Text('________________________', style: ts),
-                    Text('MARIA DONNALYN E. BRI\u00d1AS', style: ts.copyWith(fontWeight: FontWeight.bold, fontSize: 11, decoration: TextDecoration.underline)),
-                    Text('City Tourism Officer CGDH-1', style: ts.copyWith(fontWeight: FontWeight.bold, fontSize: 8)),
+                    Text(
+                      'MARIA DONNALYN E. BRI\u00d1AS',
+                      style: ts.copyWith(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                    Text(
+                      'City Tourism Officer CGDH-1',
+                      style: ts.copyWith(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 8,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1668,17 +2147,25 @@ class _ReportViewerModalState extends State<ReportViewerModal>
         showTotal = true;
         final seriesMonthWidth = _dayColWidth * 1.5;
         final seriesTotalWidth = seriesMonthWidth * 0.9;
-        return _labelColWidth + dayColCount * seriesMonthWidth + seriesTotalWidth;
+        return _labelColWidth +
+            dayColCount * seriesMonthWidth +
+            seriesTotalWidth;
       default:
         dayColCount = 0;
         showTotal = false;
     }
-    return _labelColWidth + dayColCount * _dayColWidth + (showTotal ? _totalColWidth : 0);
+    return _labelColWidth +
+        dayColCount * _dayColWidth +
+        (showTotal ? _totalColWidth : 0);
   }
 
   Widget _buildFooter() {
     final isDaily = widget.batch.reportVariant == 'daily';
-    final ts = const TextStyle(fontFamily: _Dae.font, fontSize: 10, color: _Dae.ink);
+    final ts = const TextStyle(
+      fontFamily: _Dae.font,
+      fontSize: 10,
+      color: _Dae.ink,
+    );
 
     if (isDaily) {
       return Container(
@@ -1694,7 +2181,11 @@ class _ReportViewerModalState extends State<ReportViewerModal>
             const SizedBox(height: 4),
             const Text(
               '                                                      Signature over Printed Name                                                     Position/Designation',
-              style: TextStyle(fontFamily: _Dae.font, fontSize: 10, color: _Dae.ink),
+              style: TextStyle(
+                fontFamily: _Dae.font,
+                fontSize: 10,
+                color: _Dae.ink,
+              ),
             ),
           ],
         ),
@@ -1715,7 +2206,10 @@ class _ReportViewerModalState extends State<ReportViewerModal>
           const SizedBox(height: 12),
           Row(
             children: [
-              Text('Prepared by:        ____________________________________', style: ts),
+              Text(
+                'Prepared by:        ____________________________________',
+                style: ts,
+              ),
               const SizedBox(width: 24),
               Text('________________', style: ts),
             ],
@@ -1753,7 +2247,11 @@ class _ReportViewerModalState extends State<ReportViewerModal>
           padding: EdgeInsets.all(32),
           child: Text(
             'No data available for this report period.',
-            style: TextStyle(fontFamily: _Dae.font, color: Colors.black54, fontSize: 12),
+            style: TextStyle(
+              fontFamily: _Dae.font,
+              color: Colors.black54,
+              fontSize: 12,
+            ),
           ),
         ),
       );
@@ -1764,7 +2262,9 @@ class _ReportViewerModalState extends State<ReportViewerModal>
         final year = widget.batch.periodYear;
         final month = widget.batch.periodMonths.first;
         final daysInMonth = DateTime(year, month + 1, 0).day;
-        final cols = [for (int d = 1; d <= daysInMonth; d++) _ColumnSpec('$d', md!, '$d')];
+        final cols = [
+          for (int d = 1; d <= daysInMonth; d++) _ColumnSpec('$d', md!, '$d'),
+        ];
         return _ReportTable(est: est, columns: cols, showTotalColumn: true);
 
       case 'summary':
@@ -1779,11 +2279,24 @@ class _ReportViewerModalState extends State<ReportViewerModal>
 
       case 'series':
         const monthNames = [
-          '', 'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
-          'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
+          '',
+          'JANUARY',
+          'FEBRUARY',
+          'MARCH',
+          'APRIL',
+          'MAY',
+          'JUNE',
+          'JULY',
+          'AUGUST',
+          'SEPTEMBER',
+          'OCTOBER',
+          'NOVEMBER',
+          'DECEMBER',
         ];
         final series = est.seriesData ?? const <MonthSeriesEntry>[];
-        final cols = [for (final s in series) _ColumnSpec(monthNames[s.month], s.data, '0')];
+        final cols = [
+          for (final s in series) _ColumnSpec(monthNames[s.month], s.data, '0'),
+        ];
         final seriesMonthWidth = _dayColWidth * 1.5;
         final seriesTotalWidth = seriesMonthWidth * 0.9;
         return _ReportTable(
@@ -1796,7 +2309,10 @@ class _ReportViewerModalState extends State<ReportViewerModal>
 
       default:
         return const Center(
-          child: Text('Unknown variant', style: TextStyle(fontFamily: _Dae.font)),
+          child: Text(
+            'Unknown variant',
+            style: TextStyle(fontFamily: _Dae.font),
+          ),
         );
     }
   }
@@ -1865,7 +2381,9 @@ class _ModalHeader extends StatelessWidget {
             ),
             Container(
               padding: EdgeInsets.symmetric(
-                  horizontal: isMobile ? 5 : 7, vertical: 2),
+                horizontal: isMobile ? 5 : 7,
+                vertical: 2,
+              ),
               decoration: BoxDecoration(
                 color: AppColors.primaryCyan.withOpacity(0.10),
                 borderRadius: BorderRadius.circular(5),
@@ -1909,7 +2427,11 @@ class _ModalHeader extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: AppColors.cardBorder),
             ),
-            child: Icon(Icons.remove, color: AppColors.textGray, size: btnIconSize),
+            child: Icon(
+              Icons.remove,
+              color: AppColors.textGray,
+              size: btnIconSize,
+            ),
           ),
         ),
         SizedBox(width: isMobile ? 2 : 4),
@@ -1946,7 +2468,11 @@ class _ModalHeader extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: AppColors.cardBorder),
             ),
-            child: Icon(Icons.add, color: AppColors.textGray, size: btnIconSize),
+            child: Icon(
+              Icons.add,
+              color: AppColors.textGray,
+              size: btnIconSize,
+            ),
           ),
         ),
       ],
@@ -2004,7 +2530,12 @@ class _ModalHeader extends StatelessWidget {
 
     if (isMobile) {
       return Padding(
-        padding: EdgeInsets.fromLTRB(horizontalPad, verticalPad, horizontalPad, verticalPad),
+        padding: EdgeInsets.fromLTRB(
+          horizontalPad,
+          verticalPad,
+          horizontalPad,
+          verticalPad,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -2030,20 +2561,19 @@ class _ModalHeader extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                downloadButtons,
-                const Spacer(),
-                zoomControls,
-              ],
-            ),
+            Row(children: [downloadButtons, const Spacer(), zoomControls]),
           ],
         ),
       );
     }
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(horizontalPad, verticalPad, horizontalPad, verticalPad),
+      padding: EdgeInsets.fromLTRB(
+        horizontalPad,
+        verticalPad,
+        horizontalPad,
+        verticalPad,
+      ),
       child: Row(
         children: [
           Container(
@@ -2100,7 +2630,9 @@ class _DownloadButton extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         child: Container(
           padding: EdgeInsets.symmetric(
-              horizontal: compact ? 8 : 14, vertical: compact ? 5 : 8),
+            horizontal: compact ? 8 : 14,
+            vertical: compact ? 5 : 8,
+          ),
           decoration: BoxDecoration(
             color: color.withOpacity(0.12),
             borderRadius: BorderRadius.circular(8),
@@ -2113,7 +2645,10 @@ class _DownloadButton extends StatelessWidget {
                 SizedBox(
                   width: compact ? 11 : 13,
                   height: compact ? 11 : 13,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: color),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: color,
+                  ),
                 )
               else
                 Icon(icon, color: color, size: compact ? 12 : 14),
