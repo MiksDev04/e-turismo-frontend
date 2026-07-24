@@ -630,71 +630,81 @@ class _VarReportTable extends StatelessWidget {
   final List<EstablishmentReport> establishments;
   final VarData totals;
 
+  static const double _hRowH = 20.0;
+  static const double _hTotalW = _varNameW + _varAttrW + 15 * _varDataW;
+  static const double _hTotalH = _hRowH * 4;
+
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildHeaderRow1(),
-        _buildHeaderRow2(),
-        _buildHeaderRow3(),
-        _buildHeaderRow4(),
+        _buildHeader(),
         _buildDataSection(),
       ],
     );
   }
 
-  // Level 1: "Visitor Attraction" | "*** Place of Residence" | "* Grand Total..."
-  Widget _buildHeaderRow1() {
-    return Row(
-      children: [
-        _varHeaderCell('Visitor Attraction', width: _varNameW + _varAttrW, bold: true, height: 20),
-        _varHeaderCell('*** Place of Residence', width: _varDataW * 12, bold: true, height: 20),
-        _varHeaderCell('* Grand Total\nNumber of\nVisitors', width: _varDataW * 3, bold: true, wrap: true, height: 36),
-      ],
-    );
-  }
+  Widget _buildHeader() {
+    // Column x-positions
+    const double xName = 0;
+    const double xAttr = _varNameW;
+    const double xData = _varNameW + _varAttrW;
+    // Row y-positions
+    const double y0 = 0;
+    const double y1 = _hRowH;
+    const double y2 = _hRowH * 2;
+    const double y3 = _hRowH * 3;
 
-  // Level 2: [Name] | [Code] | "Philippines" | "Foreign Country Residence" | [Grand Total]
-  Widget _buildHeaderRow2() {
-    return Row(
-      children: [
-        _varHeaderCell('Name', width: _varNameW, bold: true, wrap: true, height: 28),
-        _varHeaderCell('Attraction\nCode', width: _varAttrW, bold: true, wrap: true, height: 28),
-        _varHeaderCell('Philippines', width: _varDataW * 9, bold: true, height: 18),
-        _varHeaderCell('Foreign Country\nResidence', width: _varDataW * 3, bold: true, wrap: true, height: 28),
-        _varHeaderCell('', width: _varDataW * 3, height: 28),
-      ],
-    );
-  }
+    Widget cell(String text, {
+      required double x, required double y, required double w, required double h,
+      bool bold = true, bool wrap = false, TextAlign align = TextAlign.center,
+    }) {
+      return Positioned(
+        left: x, top: y, width: w, height: h,
+        child: _varHeaderCell(text, width: w, bold: bold, wrap: wrap, height: h, textAlign: align),
+      );
+    }
 
-  // Level 3: [Name] | [Code] | "This City" | "Other City" | "Other Province" | [Foreign] | [Grand Total]
-  Widget _buildHeaderRow3() {
-    return Row(
-      children: [
-        _varHeaderCell('', width: _varNameW, height: 18),
-        _varHeaderCell('', width: _varAttrW, height: 18),
-        _varHeaderCell('This City/\nMunicipality', width: _varDataW * 3, bold: true, wrap: true, height: 28),
-        _varHeaderCell('Other City/\nMunicipality', width: _varDataW * 3, bold: true, wrap: true, height: 28),
-        _varHeaderCell('Other\nProvince', width: _varDataW * 3, bold: true, wrap: true, height: 28),
-        _varHeaderCell('', width: _varDataW * 3, height: 18),
-        _varHeaderCell('', width: _varDataW * 3, height: 18),
-      ],
-    );
-  }
+    return SizedBox(
+      width: _hTotalW,
+      height: _hTotalH,
+      child: Stack(
+        children: [
+          // ── Row 1 (y=0) ──────────────────────────────────────────────
+          // B12:C12 = "Visitor Attraction"
+          cell('Visitor Attraction', x: xName, y: y0, w: _varNameW + _varAttrW, h: _hRowH),
+          // D12:O12 = "*** Place of Residence"
+          cell('*** Place of Residence', x: xData, y: y0, w: _varDataW * 12, h: _hRowH),
+          // P12:R14 = "* Grand Total Number of Visitors" (spans 3 rows)
+          cell('* Grand Total\nNumber of\nVisitors', x: xData + _varDataW * 12, y: y0, w: _varDataW * 3, h: _hRowH * 3, wrap: true),
 
-  // Level 4: [Name] | [Code] | M | F | T (×5 groups)
-  Widget _buildHeaderRow4() {
-    return Row(
-      children: [
-        _varHeaderCell('', width: _varNameW, height: 18),
-        _varHeaderCell('', width: _varAttrW, height: 18),
-        for (int g = 0; g < 5; g++) ...[
-          _varHeaderCell('Male', width: _varDataW, bold: true, height: 18),
-          _varHeaderCell('Female', width: _varDataW, bold: true, height: 18),
-          _varHeaderCell('Total', width: _varDataW, bold: true, height: 18),
+          // ── Row 2 (y=20) ────────────────────────────────────────────
+          // B13:B15 = "Name" (spans 3 rows)
+          cell('Name', x: xName, y: y1, w: _varNameW, h: _hRowH * 3, wrap: true),
+          // C13:C15 = "Attraction Code" (spans 3 rows)
+          cell('Attraction\nCode', x: xAttr, y: y1, w: _varAttrW, h: _hRowH * 3, wrap: true),
+          // D13:L13 = "Philippines"
+          cell('Philippines', x: xData, y: y1, w: _varDataW * 9, h: _hRowH),
+          // M13:O14 = "Foreign Country Residence" (spans 2 rows)
+          cell('Foreign Country\nResidence', x: xData + _varDataW * 9, y: y1, w: _varDataW * 3, h: _hRowH * 2, wrap: true),
+
+          // ── Row 3 (y=40) ────────────────────────────────────────────
+          // D14:F14 = "This City/Municipality"
+          cell('This City/\nMunicipality', x: xData, y: y2, w: _varDataW * 3, h: _hRowH, wrap: true),
+          // G14:I14 = "Other City/Municipality"
+          cell('Other City/\nMunicipality', x: xData + _varDataW * 3, y: y2, w: _varDataW * 3, h: _hRowH, wrap: true),
+          // J14:L14 = "Other Province"
+          cell('Other\nProvince', x: xData + _varDataW * 6, y: y2, w: _varDataW * 3, h: _hRowH, wrap: true),
+
+          // ── Row 4 (y=60) – M / F / T for each group ─────────────────
+          for (int g = 0; g < 5; g++) ...[
+            cell('Male',   x: xData + _varDataW * (g * 3),     y: y3, w: _varDataW, h: _hRowH, bold: true),
+            cell('Female', x: xData + _varDataW * (g * 3 + 1), y: y3, w: _varDataW, h: _hRowH, bold: true),
+            cell('Total',  x: xData + _varDataW * (g * 3 + 2), y: y3, w: _varDataW, h: _hRowH, bold: true),
+          ],
         ],
-      ],
+      ),
     );
   }
 
