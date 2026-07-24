@@ -4,6 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:app/core/constants/app_colors.dart';
 import 'package:app/core/services/connectivity_service.dart';
 import 'package:app/api/admin_report_api.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 // ─────────────────────────────────────────────────────────────────────────
 // DAE-1B TEMPLATE PALETTE
@@ -26,6 +29,28 @@ class _Dae {
   static const double headerSize = 10.0;
   static const double titleSize = 12.0;
   static const double indicatorSize = 9.0;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VAR REPORT PALETTE  (lifted from VAR-REPORT.xlsx)
+// Yellow header (#FFFF00), green total (#92D050), Arial throughout.
+// ─────────────────────────────────────────────────────────────────────────
+class _Var {
+  static const String font = 'Arial';
+  static const Color paper = Colors.white;
+  static const Color ink = Colors.black;
+  static const Color gridLine = Colors.black;
+  static const Color headerYellow = Color(0xFFFFFF00);
+  static const Color totalGreen = Color(0xFF92D050);
+  static const Color emailBlue = Color(0xFF0000FF);
+  static const double dataSize = 8.0;
+  static const double headerSize = 9.0;
+  static const double smallSize = 9.0;
+
+  static const double nameColWidth = 260;
+  static const double attrCodeWidth = 70;
+  static const double dataColWidth = 55;
+  static const int kDataRowCount = 41;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -179,6 +204,7 @@ double _avgLengthOfStay(EstablishmentReport est, MonthData md, String day) {
   if (guests == 0) return 0;
   return _guestNights(est, md, day) / guests;
 }
+
 
 int _sexCategory(MonthData md, String day, String sex, String category) =>
     md.sexByDay?[day]?[sex]?[category] ?? 0;
@@ -527,6 +553,222 @@ class _ReportTable extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// VAR REPORT TABLE  (mirrors VAR-REPORT.xlsx exactly)
+// 4-level merged header, 41 data rows, green total row.
+// ─────────────────────────────────────────────────────────────────────────
+Container _varDataCell(String text, {
+  required double width,
+  Color bg = _Var.paper,
+  bool bold = false,
+  double height = 17,
+  bool isTotal = false,
+}) {
+  final effectiveBg = isTotal ? _Var.totalGreen : bg;
+  return Container(
+    width: width,
+    height: height,
+    decoration: BoxDecoration(
+      color: effectiveBg,
+      border: Border.all(color: _Var.gridLine, width: 0.5),
+    ),
+    alignment: Alignment.center,
+    padding: const EdgeInsets.symmetric(horizontal: 2),
+    child: Text(
+      text,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontFamily: _Var.font,
+        fontSize: _Var.dataSize,
+        fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+        color: _Var.ink,
+      ),
+    ),
+  );
+}
+
+Container _varHeaderCell(String text, {
+  required double width,
+  bool bold = false,
+  bool wrap = false,
+  Color bg = _Var.headerYellow,
+  double height = 20,
+  TextAlign textAlign = TextAlign.center,
+}) {
+  return Container(
+    width: width,
+    height: height,
+    decoration: BoxDecoration(
+      color: bg,
+      border: Border.all(color: _Var.gridLine, width: 0.5),
+    ),
+    alignment: Alignment.center,
+    padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+    child: Text(
+      text,
+      textAlign: textAlign,
+      softWrap: wrap,
+      overflow: TextOverflow.visible,
+      style: TextStyle(
+        fontFamily: _Var.font,
+        fontSize: _Var.headerSize,
+        fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+        color: _Var.ink,
+      ),
+    ),
+  );
+}
+
+// Column widths for the VAR table
+const double _varNameW = _Var.nameColWidth;
+const double _varAttrW = _Var.attrCodeWidth;
+const double _varDataW = _Var.dataColWidth;
+
+class _VarReportTable extends StatelessWidget {
+  const _VarReportTable({required this.establishments, required this.totals});
+
+  final List<EstablishmentReport> establishments;
+  final VarData totals;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildHeaderRow1(),
+        _buildHeaderRow2(),
+        _buildHeaderRow3(),
+        _buildHeaderRow4(),
+        _buildDataSection(),
+      ],
+    );
+  }
+
+  // Level 1: "Visitor Attraction" | "*** Place of Residence" | "* Grand Total..."
+  Widget _buildHeaderRow1() {
+    return Row(
+      children: [
+        _varHeaderCell('Visitor Attraction', width: _varNameW + _varAttrW, bold: true, height: 20),
+        _varHeaderCell('*** Place of Residence', width: _varDataW * 12, bold: true, height: 20),
+        _varHeaderCell('* Grand Total\nNumber of\nVisitors', width: _varDataW * 3, bold: true, wrap: true, height: 36),
+      ],
+    );
+  }
+
+  // Level 2: [Name] | [Code] | "Philippines" | "Foreign Country Residence" | [Grand Total]
+  Widget _buildHeaderRow2() {
+    return Row(
+      children: [
+        _varHeaderCell('Name', width: _varNameW, bold: true, wrap: true, height: 28),
+        _varHeaderCell('Attraction\nCode', width: _varAttrW, bold: true, wrap: true, height: 28),
+        _varHeaderCell('Philippines', width: _varDataW * 9, bold: true, height: 18),
+        _varHeaderCell('Foreign Country\nResidence', width: _varDataW * 3, bold: true, wrap: true, height: 28),
+        _varHeaderCell('', width: _varDataW * 3, height: 28),
+      ],
+    );
+  }
+
+  // Level 3: [Name] | [Code] | "This City" | "Other City" | "Other Province" | [Foreign] | [Grand Total]
+  Widget _buildHeaderRow3() {
+    return Row(
+      children: [
+        _varHeaderCell('', width: _varNameW, height: 18),
+        _varHeaderCell('', width: _varAttrW, height: 18),
+        _varHeaderCell('This City/\nMunicipality', width: _varDataW * 3, bold: true, wrap: true, height: 28),
+        _varHeaderCell('Other City/\nMunicipality', width: _varDataW * 3, bold: true, wrap: true, height: 28),
+        _varHeaderCell('Other\nProvince', width: _varDataW * 3, bold: true, wrap: true, height: 28),
+        _varHeaderCell('', width: _varDataW * 3, height: 18),
+        _varHeaderCell('', width: _varDataW * 3, height: 18),
+      ],
+    );
+  }
+
+  // Level 4: [Name] | [Code] | M | F | T (×5 groups)
+  Widget _buildHeaderRow4() {
+    return Row(
+      children: [
+        _varHeaderCell('', width: _varNameW, height: 18),
+        _varHeaderCell('', width: _varAttrW, height: 18),
+        for (int g = 0; g < 5; g++) ...[
+          _varHeaderCell('Male', width: _varDataW, bold: true, height: 18),
+          _varHeaderCell('Female', width: _varDataW, bold: true, height: 18),
+          _varHeaderCell('Total', width: _varDataW, bold: true, height: 18),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDataSection() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (int i = 0; i < _Var.kDataRowCount; i++) _buildDataRow(i),
+        _buildTotalRow(),
+      ],
+    );
+  }
+
+  Row _buildDataRow(int index) {
+    final est = index < establishments.length ? establishments[index] : null;
+    final vd = est?.varData;
+
+    String cell(int val) => val == 0 ? '' : '$val';
+    String cellTotal(int val) => '$val';
+
+    final name = est?.businessName ?? '';
+    final totalMale = (vd?.maleThisCity ?? 0) + (vd?.maleOtherCity ?? 0) + (vd?.maleOtherProvince ?? 0) + (vd?.maleForeign ?? 0);
+    final totalFemale = (vd?.femaleThisCity ?? 0) + (vd?.femaleOtherCity ?? 0) + (vd?.femaleOtherProvince ?? 0) + (vd?.femaleForeign ?? 0);
+    final grandTotal = totalMale + totalFemale;
+
+    return Row(children: [
+      _varDataCell(name, width: _varNameW),
+      _varDataCell('9-902', width: _varAttrW),
+      _varDataCell(cell(vd?.maleThisCity ?? 0), width: _varDataW),
+      _varDataCell(cell(vd?.femaleThisCity ?? 0), width: _varDataW),
+      _varDataCell(cellTotal((vd?.totalThisCity ?? 0)), width: _varDataW),
+      _varDataCell(cell(vd?.maleOtherCity ?? 0), width: _varDataW),
+      _varDataCell(cell(vd?.femaleOtherCity ?? 0), width: _varDataW),
+      _varDataCell(cellTotal((vd?.totalOtherCity ?? 0)), width: _varDataW),
+      _varDataCell(cell(vd?.maleOtherProvince ?? 0), width: _varDataW),
+      _varDataCell(cell(vd?.femaleOtherProvince ?? 0), width: _varDataW),
+      _varDataCell(cellTotal((vd?.totalOtherProvince ?? 0)), width: _varDataW),
+      _varDataCell(cell(vd?.maleForeign ?? 0), width: _varDataW),
+      _varDataCell(cell(vd?.femaleForeign ?? 0), width: _varDataW),
+      _varDataCell(cellTotal((vd?.totalForeign ?? 0)), width: _varDataW),
+      _varDataCell(cell(totalMale), width: _varDataW),
+      _varDataCell(cell(totalFemale), width: _varDataW),
+      _varDataCell(cellTotal(grandTotal), width: _varDataW),
+    ]);
+  }
+
+  Row _buildTotalRow() {
+    String v(int val) => '$val';
+    final grandMale = totals.grandMale;
+    final grandFemale = totals.grandFemale;
+    final grandTotal = totals.grandTotal;
+
+    return Row(children: [
+      _varDataCell('Total of this Month ****', width: _varNameW, bold: true, isTotal: true),
+      _varDataCell('', width: _varAttrW, isTotal: true),
+      _varDataCell(v(totals.maleThisCity), width: _varDataW, isTotal: true),
+      _varDataCell(v(totals.femaleThisCity), width: _varDataW, isTotal: true),
+      _varDataCell(v(totals.totalThisCity), width: _varDataW, isTotal: true),
+      _varDataCell(v(totals.maleOtherCity), width: _varDataW, isTotal: true),
+      _varDataCell(v(totals.femaleOtherCity), width: _varDataW, isTotal: true),
+      _varDataCell(v(totals.totalOtherCity), width: _varDataW, isTotal: true),
+      _varDataCell(v(totals.maleOtherProvince), width: _varDataW, isTotal: true),
+      _varDataCell(v(totals.femaleOtherProvince), width: _varDataW, isTotal: true),
+      _varDataCell(v(totals.totalOtherProvince), width: _varDataW, isTotal: true),
+      _varDataCell(v(totals.maleForeign), width: _varDataW, isTotal: true),
+      _varDataCell(v(totals.femaleForeign), width: _varDataW, isTotal: true),
+      _varDataCell(v(totals.totalForeign), width: _varDataW, isTotal: true),
+      _varDataCell(v(grandMale), width: _varDataW, isTotal: true),
+      _varDataCell(v(grandFemale), width: _varDataW, isTotal: true),
+      _varDataCell(v(grandTotal), width: _varDataW, isTotal: true),
+    ]);
+  }
+}
+
 // ─── Report Viewer Modal ──────────────────────────────────────────────────────
 
 class ReportViewerModal extends StatefulWidget {
@@ -550,6 +792,7 @@ class _ReportViewerModalState extends State<ReportViewerModal>
   ReportViewResponse? _viewData;
 
   bool _downloading = false;
+  bool _printing = false;
   TabController? _tabController;
   final ScrollController _hScrollCtrl = ScrollController();
   final ScrollController _hScrollCtrlBottom = ScrollController();
@@ -671,6 +914,60 @@ class _ReportViewerModalState extends State<ReportViewerModal>
     }
   }
 
+  Future<void> _handlePrint() async {
+    setState(() => _printing = true);
+    try {
+      final pdfBytes = await _reportService.downloadReport(DownloadReportParams(
+        reportType: widget.batch.reportType,
+        reportVariant: widget.batch.reportVariant,
+        periodYear: widget.batch.periodYear,
+        periodMonths: widget.batch.periodMonths,
+        format: 'pdf',
+      ));
+      if (!mounted) return;
+
+      await Printing.layoutPdf(
+        name: '${widget.batch.reportType == "var" ? "VAR" : "DAE"}_Report',
+        onLayout: (format) async {
+          final rasterPages = await Printing.raster(
+            pdfBytes,
+            dpi: 300,
+          ).toList();
+
+          final marginPt = 16.0 * PdfPageFormat.mm;
+          final doc = pw.Document();
+
+          for (final page in rasterPages) {
+            final image = await page.toPng();
+            final availW = format.width - 2 * marginPt;
+            final availH = format.height - 2 * marginPt;
+            final imgW = page.width * 72.0 / 300;
+            final imgH = page.height * 72.0 / 300;
+            final scale = (availW / imgW < availH / imgH)
+                ? availW / imgW
+                : availH / imgH;
+            doc.addPage(pw.Page(
+              pageFormat: format,
+              margin: pw.EdgeInsets.all(marginPt),
+              build: (_) => pw.Center(
+                child: pw.Image(
+                  pw.MemoryImage(image),
+                  width: imgW * scale,
+                  height: imgH * scale,
+                ),
+              ),
+            ));
+          }
+          return doc.save();
+        },
+      );
+    } catch (e) {
+      debugPrint('Print error: $e');
+    } finally {
+      if (mounted) setState(() => _printing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
@@ -706,7 +1003,9 @@ class _ReportViewerModalState extends State<ReportViewerModal>
               onClose: () => Navigator.pop(context),
               onDownloadExcel: _downloading ? null : () => _handleDownload('xlsx'),
               onDownloadPdf: _downloading ? null : () => _handleDownload('pdf'),
+              onPrint: (_viewData == null || _printing) ? null : _handlePrint,
               downloading: _downloading,
+              printing: _printing,
               zoomLevel: _zoomLevel,
               onZoomIn: _zoomIn,
               onZoomOut: _zoomOut,
@@ -751,7 +1050,12 @@ class _ReportViewerModalState extends State<ReportViewerModal>
       );
     }
 
-    // Single establishment: no tabs
+    // VAR: single table with all establishments
+    if (widget.batch.reportType == 'var') {
+      return _buildVarContent();
+    }
+
+    // DAE: single establishment or tabs
     if (establishments.length == 1) {
       return _buildEstablishmentView(establishments.first);
     }
@@ -1026,6 +1330,316 @@ class _ReportViewerModalState extends State<ReportViewerModal>
     );
   }
 
+  // ── VAR Report Content ─────────────────────────────────────────────────────
+
+  Widget _buildVarContent() {
+    final data = _viewData!;
+    final tableWidth = _varTableWidth();
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          bottom: 14,
+          child: Listener(
+            onPointerSignal: (event) {
+              if (event is PointerScrollEvent &&
+                  HardwareKeyboard.instance.isControlPressed) {
+                final delta = event.scrollDelta.dy > 0 ? -_zoomStep : _zoomStep;
+                setState(() =>
+                    _zoomLevel = (_zoomLevel + delta).clamp(_zoomMin, _zoomMax));
+              }
+            },
+            child: GestureDetector(
+              onScaleUpdate: (details) {
+                if (details.pointerCount > 1) {
+                  setState(() => _zoomLevel =
+                      (_zoomLevel * details.scale).clamp(_zoomMin, _zoomMax));
+                }
+              },
+              child: RawScrollbar(
+                thumbVisibility: true,
+                thumbColor: Colors.blue,
+                trackColor: Colors.blue.withOpacity(0.12),
+                trackBorderColor: Colors.blue.withOpacity(0.3),
+                radius: const Radius.circular(6),
+                thickness: 10,
+                child: SingleChildScrollView(
+                  primary: true,
+                  scrollDirection: Axis.vertical,
+                  child: SizedBox(
+                    height: _unscaledContentHeight > 0
+                        ? (_unscaledContentHeight + 20) * _zoomLevel
+                        : null,
+                    child: SingleChildScrollView(
+                      controller: _hScrollCtrl,
+                      scrollDirection: Axis.horizontal,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 20, right: 20),
+                        child: SizedBox(
+                          width: (tableWidth + 20) * _zoomLevel,
+                          child: Transform.scale(
+                            scale: _zoomLevel,
+                            alignment: Alignment.topLeft,
+                            child: SizedBox(
+                              key: _contentKey,
+                              width: tableWidth,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildVarFormHeader(),
+                                  _VarReportTable(
+                                    establishments: data.establishments,
+                                    totals: data.totals.varData ?? const VarData(),
+                                  ),
+                                  _buildVarFooter(),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 14,
+          child: Container(
+            color: AppColors.cardBackground,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final viewportWidth = constraints.maxWidth;
+                final contentWidth = (tableWidth + 20) * _zoomLevel + 20;
+                final minWidth = contentWidth > viewportWidth
+                    ? contentWidth
+                    : viewportWidth + 1;
+                return RawScrollbar(
+                  controller: _hScrollCtrlBottom,
+                  thumbVisibility: true,
+                  trackVisibility: true,
+                  thumbColor: Colors.blue,
+                  trackColor: Colors.blue.withOpacity(0.12),
+                  trackBorderColor: Colors.blue.withOpacity(0.3),
+                  radius: const Radius.circular(6),
+                  thickness: 10,
+                  child: SingleChildScrollView(
+                    controller: _hScrollCtrlBottom,
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(
+                      width: minWidth,
+                      height: 1,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  double _varTableWidth() {
+    return _Var.nameColWidth + _Var.attrCodeWidth + 15 * _Var.dataColWidth;
+  }
+
+  // ── VAR Form Header (rows 1-11 of VAR-REPORT.xlsx) ────────────────────────
+
+  Widget _buildVarFormHeader() {
+    final ts = const TextStyle(
+      fontFamily: _Var.font,
+      fontSize: 12,
+      color: _Var.ink,
+    );
+
+    final month = widget.batch.periodMonths.isNotEmpty
+        ? widget.batch.periodMonths.first
+        : 1;
+    const monthNames = [
+      '', 'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    const monthAbbr = [
+      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final year = widget.batch.periodYear;
+    final monthLabel = widget.batch.periodMonths.length == 1
+        ? '${monthNames[month]}, $year'
+        : '${monthAbbr[widget.batch.periodMonths.first]}-${monthAbbr[widget.batch.periodMonths.last]}, $year';
+
+    return Container(
+      color: _Var.paper,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      width: _varTableWidth(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Row 1: Republic of the Philippines
+          Center(
+            child: Text('Republic of the Philippines', style: ts.copyWith(fontSize: 12)),
+          ),
+          const SizedBox(height: 2),
+          // Row 2: City Government
+          Center(
+            child: Text('City Government of San Pablo', style: ts.copyWith(fontSize: 12)),
+          ),
+          const SizedBox(height: 2),
+          // Row 3: Address
+          Center(
+            child: Text(
+              'Information Center, Do\u00f1a Leonila Park, City Hall Compound, San Pablo City ',
+              style: ts.copyWith(fontSize: 10),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 2),
+          // Row 4: Email/contact
+          Center(
+            child: Text(
+              'e-mail: tourism.sanpablo@yahoo.com Tel./Fax No.: (049)562-1429',
+              style: ts.copyWith(
+                fontSize: 10,
+                decoration: TextDecoration.underline,
+                color: _Var.emailBlue,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Row 6: Tourism Attraction Visitor Record
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Tourism Attraction Visitor Record', style: ts.copyWith(fontWeight: FontWeight.bold)),
+              Text('VAR 2', style: ts),
+            ],
+          ),
+          const SizedBox(height: 4),
+          // Row 7: Note
+          Text(
+            '( This recording form can be used instead of just counting the visitors )',
+            style: ts.copyWith(fontSize: _Var.smallSize),
+          ),
+          const SizedBox(height: 12),
+          // Row 9: Month/Year
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Text('Month/Year:', style: ts),
+              const SizedBox(width: 8),
+              Container(
+                width: 180,
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: _Var.ink, width: 1)),
+                ),
+                child: Text(
+                  monthLabel,
+                  style: ts.copyWith(fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          // Row 10: Name of Municipality
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Text('Name of Municipality:', style: ts),
+              const SizedBox(width: 8),
+              Container(
+                width: 180,
+                decoration: const BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: _Var.ink, width: 1),
+                    bottom: BorderSide(color: _Var.ink, width: 1),
+                  ),
+                ),
+                child: Text(
+                  'SAN PABLO CITY',
+                  style: ts.copyWith(fontSize: 10, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+
+  // ── VAR Footer (rows 58-65 of VAR-REPORT.xlsx) ───────────────────────────
+
+  Widget _buildVarFooter() {
+    final ts = const TextStyle(fontFamily: _Var.font, fontSize: 10, color: _Var.ink);
+
+    return Container(
+      color: _Var.paper,
+      width: _varTableWidth(),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Note: *Total number must be recorded, ** Sex & ***Residence entries are optional. ****Total number of this month must be reported.',
+            style: ts.copyWith(fontSize: _Var.smallSize),
+          ),
+          const SizedBox(height: 16),
+          // Signature lines
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    Text('Prepared by:', style: ts),
+                    const SizedBox(height: 30),
+                    Text('________________________', style: ts),
+                    Text('MIZPAH A. LENESES', style: ts.copyWith(fontWeight: FontWeight.bold, fontSize: 11, decoration: TextDecoration.underline)),
+                    Text('ADMINISTRATIVE AIDE 1', style: ts.copyWith(fontWeight: FontWeight.bold, fontSize: 8)),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    Text('Check and Submitted by:', style: ts),
+                    const SizedBox(height: 30),
+                    Text('________________________', style: ts),
+                    Text('ROLDAN B. AQUINO', style: ts.copyWith(fontWeight: FontWeight.bold, fontSize: 11, decoration: TextDecoration.underline)),
+                    Text('LOCAL REGISTRY COLLECTION OFFICER I', style: ts.copyWith(fontWeight: FontWeight.bold, fontSize: 8)),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    Text('Noted by:', style: ts),
+                    const SizedBox(height: 30),
+                    Text('________________________', style: ts),
+                    Text('MARIA DONNALYN E. BRI\u00d1AS', style: ts.copyWith(fontWeight: FontWeight.bold, fontSize: 11, decoration: TextDecoration.underline)),
+                    Text('City Tourism Officer CGDH-1', style: ts.copyWith(fontWeight: FontWeight.bold, fontSize: 8)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text('QFM-OCT-006 Rev 0 2022.02.16', style: ts.copyWith(fontSize: 8)),
+        ],
+      ),
+    );
+  }
+
   double _computeTableWidth(EstablishmentReport est) {
     int dayColCount;
     bool showTotal;
@@ -1184,7 +1798,9 @@ class _ModalHeader extends StatelessWidget {
     required this.onClose,
     required this.onDownloadExcel,
     required this.onDownloadPdf,
+    required this.onPrint,
     required this.downloading,
+    required this.printing,
     required this.zoomLevel,
     required this.onZoomIn,
     required this.onZoomOut,
@@ -1195,7 +1811,9 @@ class _ModalHeader extends StatelessWidget {
   final VoidCallback onClose;
   final VoidCallback? onDownloadExcel;
   final VoidCallback? onDownloadPdf;
+  final VoidCallback? onPrint;
   final bool downloading;
+  final bool printing;
   final double zoomLevel;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
@@ -1226,7 +1844,7 @@ class _ModalHeader extends StatelessWidget {
           runSpacing: 4,
           children: [
             Text(
-              'DAE \u2014 ${batch.variantLabel}',
+              '${batch.reportType == "var" ? "VAR" : "DAE"} \u2014 ${batch.variantLabel}',
               style: TextStyle(
                 color: AppColors.textWhite,
                 fontSize: titleFontSize,
@@ -1340,6 +1958,15 @@ class _ModalHeader extends StatelessWidget {
           color: const Color(0xFFD32F2F),
           isLoading: downloading,
           onTap: onDownloadPdf,
+          compact: isMobile,
+        ),
+        SizedBox(width: isMobile ? 6 : 8),
+        _DownloadButton(
+          icon: Icons.print_rounded,
+          label: 'Print',
+          color: const Color(0xFF1565C0),
+          isLoading: printing,
+          onTap: onPrint,
           compact: isMobile,
         ),
       ],

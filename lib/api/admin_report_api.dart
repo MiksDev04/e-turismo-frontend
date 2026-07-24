@@ -156,6 +156,7 @@ class EstablishmentReport {
     this.businessLine,
     this.monthData,
     this.seriesData,
+    this.varData,
   });
 
   final String businessId;
@@ -173,9 +174,13 @@ class EstablishmentReport {
   /// For series: list of {month, data} objects
   final List<MonthSeriesEntry>? seriesData;
 
+  /// For VAR: aggregated sex × residence counts
+  final VarData? varData;
+
   static EstablishmentReport fromJson(Map<String, dynamic> json) {
     final md = json['monthData'];
     final sd = json['seriesData'];
+    final vd = json['varData'];
 
     return EstablishmentReport(
       businessId: json['businessId'] as String,
@@ -194,6 +199,7 @@ class EstablishmentReport {
               .map((e) => MonthSeriesEntry.fromJson(e as Map<String, dynamic>))
               .toList()
           : null,
+      varData: vd != null ? VarData.fromJson(vd as Map<String, dynamic>) : null,
     );
   }
 }
@@ -298,6 +304,49 @@ class MonthData {
   }
 }
 
+// ─── VAR Data Model ──────────────────────────────────────────────────────────
+
+class VarData {
+  const VarData({
+    this.maleThisCity = 0,
+    this.femaleThisCity = 0,
+    this.maleOtherCity = 0,
+    this.femaleOtherCity = 0,
+    this.maleOtherProvince = 0,
+    this.femaleOtherProvince = 0,
+    this.maleForeign = 0,
+    this.femaleForeign = 0,
+  });
+
+  final int maleThisCity;
+  final int femaleThisCity;
+  final int maleOtherCity;
+  final int femaleOtherCity;
+  final int maleOtherProvince;
+  final int femaleOtherProvince;
+  final int maleForeign;
+  final int femaleForeign;
+
+  int get totalThisCity => maleThisCity + femaleThisCity;
+  int get totalOtherCity => maleOtherCity + femaleOtherCity;
+  int get totalOtherProvince => maleOtherProvince + femaleOtherProvince;
+  int get totalForeign => maleForeign + femaleForeign;
+  int get grandMale => maleThisCity + maleOtherCity + maleOtherProvince + maleForeign;
+  int get grandFemale => femaleThisCity + femaleOtherCity + femaleOtherProvince + femaleForeign;
+  int get grandTotal => totalThisCity + totalOtherCity + totalOtherProvince + totalForeign;
+
+  static VarData fromJson(Map<String, dynamic> json) => VarData(
+    maleThisCity: (json['maleThisCity'] as num?)?.toInt() ?? 0,
+    femaleThisCity: (json['femaleThisCity'] as num?)?.toInt() ?? 0,
+    maleOtherCity: (json['maleOtherCity'] as num?)?.toInt() ?? 0,
+    femaleOtherCity: (json['femaleOtherCity'] as num?)?.toInt() ?? 0,
+    maleOtherProvince: (json['maleOtherProvince'] as num?)?.toInt() ?? 0,
+    femaleOtherProvince: (json['femaleOtherProvince'] as num?)?.toInt() ?? 0,
+    maleForeign: (json['maleForeign'] as num?)?.toInt() ?? 0,
+    femaleForeign: (json['femaleForeign'] as num?)?.toInt() ?? 0,
+  );
+}
+
 class ReportTotals {
   const ReportTotals({
     this.totalRooms,
@@ -306,6 +355,7 @@ class ReportTotals {
     this.sexByDay,
     this.roomsOccupied,
     this.guestNights,
+    this.varData,
   });
 
   final int? totalRooms;
@@ -314,15 +364,22 @@ class ReportTotals {
   final Map<String, Map<String, Map<String, int>>>? sexByDay;
   final Map<String, int>? roomsOccupied;
   final int? guestNights;
+  final VarData? varData;
 
-  static ReportTotals fromJson(Map<String, dynamic> json) => ReportTotals(
-    totalRooms: json['totalRooms'] as int?,
-    countryByDay: MonthData._parseNestedMap(json['countryByDay']),
-    residentsByDay: MonthData._parseNestedMap(json['residentsByDay']),
-    sexByDay: MonthData._parseSexByDay(json['sexByDay']),
-    roomsOccupied: MonthData._parseIntMap(json['roomsOccupied']),
-    guestNights: json['guestNights'] as int?,
-  );
+  static ReportTotals fromJson(Map<String, dynamic> json) {
+    // Check if this is a VAR totals response (has maleThisCity etc.)
+    if (json.containsKey('maleThisCity')) {
+      return ReportTotals(varData: VarData.fromJson(json));
+    }
+    return ReportTotals(
+      totalRooms: json['totalRooms'] as int?,
+      countryByDay: MonthData._parseNestedMap(json['countryByDay']),
+      residentsByDay: MonthData._parseNestedMap(json['residentsByDay']),
+      sexByDay: MonthData._parseSexByDay(json['sexByDay']),
+      roomsOccupied: MonthData._parseIntMap(json['roomsOccupied']),
+      guestNights: json['guestNights'] as int?,
+    );
+  }
 }
 
 // ─── Parameters ──────────────────────────────────────────────────────────────
