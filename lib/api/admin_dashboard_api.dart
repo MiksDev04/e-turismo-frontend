@@ -287,14 +287,19 @@ class AdminDashboardApi extends BaseApi {
     final yearRecords =
         List<Map<String, dynamic>>.from(data['yearRecords'] as List);
 
-    final touristsThisPeriod = periodRecords.fold<int>(
-      0,
-      (s, r) => s + (r['total_guests'] as int),
-    );
-    final touristsThisYear = yearRecords.fold<int>(
-      0,
-      (s, r) => s + (r['total_guests'] as int),
-    );
+    final periodStart = DateTime.parse(start);
+    final periodEnd = DateTime.parse(end);
+    final yearStartDt = DateTime.parse(yearStart);
+    final yearEndDt = DateTime.parse(yearEnd);
+
+    int touristsThisPeriod = 0;
+    for (final r in periodRecords) {
+      touristsThisPeriod += _recordGuestDays(r, periodStart, periodEnd);
+    }
+    int touristsThisYear = 0;
+    for (final r in yearRecords) {
+      touristsThisYear += _recordGuestDays(r, yearStartDt, yearEndDt);
+    }
 
     final stats = data['stats'] as Map<String, dynamic>;
     final activeAccommodations = (stats['activeAccommodations'] as num).toInt();
@@ -303,16 +308,26 @@ class AdminDashboardApi extends BaseApi {
     final breakdowns =
         List<Map<String, dynamic>>.from(data['breakdowns'] as List);
 
+    // Build per-record guest-days map for the period
+    final recordGuestDays = <String, int>{};
+    for (final r in periodRecords) {
+      final id = r['id']?.toString();
+      if (id != null) {
+        recordGuestDays[id] = _recordGuestDays(r, periodStart, periodEnd);
+      }
+    }
+
     int male = 0, female = 0, other = 0;
     for (final breakdown in breakdowns) {
       final sex = (breakdown['sex'] as String? ?? '').toLowerCase();
-      final count = breakdown['count'] as int? ?? 0;
+      final recordId = breakdown['guest_record_id']?.toString() ?? '';
+      final guestDays = recordGuestDays[recordId] ?? 1;
       if (sex == 'male') {
-        male += count;
+        male += guestDays;
       } else if (sex == 'female') {
-        female += count;
+        female += guestDays;
       } else {
-        other += count;
+        other += guestDays;
       }
     }
 
@@ -321,8 +336,9 @@ class AdminDashboardApi extends BaseApi {
       final ageGroup = (breakdown['age_group'] as String? ?? '').trim();
       if (ageGroup.isEmpty) continue;
       final label = _toTitleCase(ageGroup);
-      ageGroupMap[label] =
-          (ageGroupMap[label] ?? 0) + (breakdown['count'] as int? ?? 0);
+      final recordId = breakdown['guest_record_id']?.toString() ?? '';
+      final guestDays = recordGuestDays[recordId] ?? 1;
+      ageGroupMap[label] = (ageGroupMap[label] ?? 0) + guestDays;
     }
     final ageGroups =
         ageGroupMap.entries
@@ -335,8 +351,9 @@ class AdminDashboardApi extends BaseApi {
       final country = (breakdown['country'] as String? ?? '').trim();
       if (country.isEmpty) continue;
       final label = _toTitleCase(country);
-      nationalityMap[label] =
-          (nationalityMap[label] ?? 0) + (breakdown['count'] as int? ?? 0);
+      final recordId = breakdown['guest_record_id']?.toString() ?? '';
+      final guestDays = recordGuestDays[recordId] ?? 1;
+      nationalityMap[label] = (nationalityMap[label] ?? 0) + guestDays;
     }
     final topNationalities =
         (nationalityMap.entries
@@ -356,8 +373,9 @@ class AdminDashboardApi extends BaseApi {
       final region = (breakdown['philippines_region'] as String? ?? '').trim();
       if (region.isEmpty) continue;
       final label = _toTitleCase(region);
-      regionMap[label] =
-          (regionMap[label] ?? 0) + (breakdown['count'] as int? ?? 0);
+      final recordId = breakdown['guest_record_id']?.toString() ?? '';
+      final guestDays = recordGuestDays[recordId] ?? 1;
+      regionMap[label] = (regionMap[label] ?? 0) + guestDays;
     }
     final topRegions =
         (regionMap.entries
@@ -374,8 +392,9 @@ class AdminDashboardApi extends BaseApi {
       final purpose = (record['purpose_of_visit'] as String? ?? '').trim();
       if (purpose.isEmpty) continue;
       final label = _toTitleCase(purpose);
-      purposeMap[label] =
-          (purposeMap[label] ?? 0) + (record['total_guests'] as int? ?? 0);
+      final id = record['id']?.toString() ?? '';
+      final guestDays = recordGuestDays[id] ?? 1;
+      purposeMap[label] = (purposeMap[label] ?? 0) + guestDays;
     }
     final purposeOfVisit =
         (purposeMap.entries
@@ -397,9 +416,10 @@ class AdminDashboardApi extends BaseApi {
       final businessId = record['business_id']?.toString();
       final lines = linesByBusiness[businessId] ?? const [];
       if (lines.isEmpty) continue;
-      final guestCount = (record['total_guests'] as num?)?.toInt() ?? 0;
+      final id = record['id']?.toString() ?? '';
+      final guestDays = recordGuestDays[id] ?? 1;
       for (final type in lines) {
-        typeMap[type] = (typeMap[type] ?? 0) + guestCount;
+        typeMap[type] = (typeMap[type] ?? 0) + guestDays;
       }
     }
     final accommodationTypes = typeMap.entries
@@ -441,11 +461,47 @@ class AdminDashboardApi extends BaseApi {
       final (start, end) = _dateRange(0, year);
       final records = await _fetchGuestRecords(startDate: start, endDate: end);
 
+      final yearEndDt = DateTime.parse(end);
+
       final monthMap = <int, int>{};
       for (final record in records) {
-        final month = DateTime.parse(record['check_in'] as String).month;
-        monthMap[month] =
-            (monthMap[month] ?? 0) + (record['total_guests'] as int);
+        final checkInText = record['check_in']?.toString();
+        if (checkInText == null) continue;
+        final checkIn = DateTime.tryParse(checkInText);
+        if (checkIn == null) continue;
+
+        final effectiveCheckOutText =
+            record['actual_check_out']?.toString() ??
+            record['actual_checkout']?.toString() ??
+            record['check_out']?.toString();
+        if (effectiveCheckOutText == null) continue;
+        final effectiveCheckOut = DateTime.tryParse(effectiveCheckOutText);
+        if (effectiveCheckOut == null) continue;
+
+        final guests = (record['total_guests'] as num?)?.toInt() ?? 0;
+        if (guests <= 0) continue;
+
+        // Spread guest-days across each month the stay overlaps
+        var cur = DateTime(checkIn.year, checkIn.month, checkIn.day);
+        final effectiveCheckOutDate = DateTime(
+          effectiveCheckOut.year,
+          effectiveCheckOut.month,
+          effectiveCheckOut.day,
+        );
+        final stayEnd = effectiveCheckOutDate.isAfter(yearEndDt)
+            ? yearEndDt
+            : effectiveCheckOutDate;
+        while (!cur.isAfter(stayEnd) && !cur.isAfter(yearEndDt)) {
+          final monthEnd = DateTime(cur.year, cur.month + 1, 0);
+          final periodEnd = stayEnd.isBefore(monthEnd) ? stayEnd : monthEnd;
+          final isClampedEnd = periodEnd.isBefore(effectiveCheckOutDate);
+          final nights = periodEnd.difference(cur).inDays;
+          final spreadDays =
+              isClampedEnd ? nights + 1 : (nights < 1 ? 1 : nights);
+          monthMap[cur.month] =
+              (monthMap[cur.month] ?? 0) + guests * spreadDays;
+          cur = DateTime(cur.year, cur.month + 1, 1);
+        }
       }
 
       result[year] = List.generate(
@@ -477,22 +533,27 @@ class AdminDashboardApi extends BaseApi {
       ..writeln('Period,${month == 0 ? 'Full Year' : _monthName(month)} $year')
       ..writeln()
       ..writeln(
-        'Check In,Check Out,Total Guests,'
-        'Country,Region,Sex,Age Group,Count',
+        'Check In,Check Out,Total Guests,Guest Days,'
+        'Country,Region,Sex,Age Group,Guest Days',
       );
+
+    final periodStart = DateTime.parse(start);
+    final periodEnd = DateTime.parse(end);
 
     for (final breakdown in breakdowns) {
       final record = recordMap[breakdown['guest_record_id'].toString()];
       if (record == null) continue;
+      final guestDays = _recordGuestDays(record, periodStart, periodEnd);
       final row = [
         record['check_in'],
         record['check_out'],
         record['total_guests'],
+        guestDays,
         _csvCell(breakdown['country'] as String? ?? ''),
         _csvCell(breakdown['philippines_region'] as String? ?? ''),
         breakdown['sex'],
         breakdown['age_group'],
-        breakdown['count'],
+        guestDays,
       ];
       buffer.writeln(row.join(','));
     }
@@ -501,6 +562,46 @@ class AdminDashboardApi extends BaseApi {
   }
 
   String _csvCell(String value) => value.contains(',') ? '"$value"' : value;
+
+  /// Compute guest-days for a record within [rangeStart, rangeEnd].
+  int _recordGuestDays(
+    Map<String, dynamic> record,
+    DateTime rangeStart,
+    DateTime rangeEnd,
+  ) {
+    final checkInText = record['check_in']?.toString();
+    if (checkInText == null) return 0;
+    final checkInRaw = DateTime.tryParse(checkInText);
+    if (checkInRaw == null) return 0;
+
+    final effectiveCheckOutText =
+        record['actual_check_out']?.toString() ??
+        record['actual_checkout']?.toString() ??
+        record['check_out']?.toString();
+    if (effectiveCheckOutText == null) return 0;
+    final effectiveCheckOutRaw = DateTime.tryParse(effectiveCheckOutText);
+    if (effectiveCheckOutRaw == null) return 0;
+
+    final guests = (record['total_guests'] as num?)?.toInt() ?? 0;
+    if (guests <= 0) return 0;
+
+    final checkIn = DateTime(checkInRaw.year, checkInRaw.month, checkInRaw.day);
+    final effectiveCheckOut = DateTime(
+      effectiveCheckOutRaw.year,
+      effectiveCheckOutRaw.month,
+      effectiveCheckOutRaw.day,
+    );
+
+    final stayStart = checkIn.isBefore(rangeStart) ? rangeStart : checkIn;
+    final stayEnd =
+        effectiveCheckOut.isAfter(rangeEnd) ? rangeEnd : effectiveCheckOut;
+    if (stayEnd.isBefore(stayStart)) return 0;
+
+    final isClamped = effectiveCheckOut.isAfter(rangeEnd);
+    final nights = stayEnd.difference(stayStart).inDays;
+    final presenceDays = isClamped ? nights + 1 : nights;
+    return guests * (presenceDays < 1 ? 1 : presenceDays);
+  }
 
   String _monthName(int month) => const [
     '',

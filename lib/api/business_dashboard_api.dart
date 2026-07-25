@@ -364,19 +364,22 @@ class BusinessDashboardApi extends BaseApi {
     final periodEnd = DateTime.parse(end);
     final periodRecords = (month == 0)
         ? allRecords
-        : allRecords.where((r) {
-            final d = _stringValue(r, 'check_in');
-            if (d == null) return false;
-            final dt = DateTime.tryParse(d);
-            return dt != null && !dt.isBefore(periodStart) && !dt.isAfter(periodEnd);
-          }).toList();
+        : allRecords.where((r) => _recordOverlapsPeriod(r, periodStart, periodEnd)).toList();
 
     final yearRecords = allRecords;
+
+    final (yStart, yEnd) = _dateRange(0, year);
+    final yearStartDt = DateTime.parse(yStart);
+    final yearEndDt = DateTime.parse(yEnd);
 
     final stats = _computeStats(
       periodRecords: periodRecords,
       yearRecords: yearRecords,
       totalRooms: totalRooms,
+      periodStart: periodStart,
+      periodEnd: periodEnd,
+      yearStart: yearStartDt,
+      yearEnd: yearEndDt,
     );
 
     final recordIds = periodRecords
@@ -390,6 +393,8 @@ class BusinessDashboardApi extends BaseApi {
       stats: stats,
       breakdowns: breakdowns,
       periodRecords: periodRecords,
+      periodStart: periodStart,
+      periodEnd: periodEnd,
     );
   }
 
@@ -436,19 +441,21 @@ class BusinessDashboardApi extends BaseApi {
     final periodEnd = DateTime.parse(end);
     final periodRecords = (month == 0)
         ? allRecords
-        : allRecords.where((r) {
-            final d = _stringValue(r, 'check_in');
-            if (d == null) return false;
-            final dt = DateTime.tryParse(d);
-            return dt != null && !dt.isBefore(periodStart) && !dt.isAfter(periodEnd);
-          }).toList();
+        : allRecords.where((r) => _recordOverlapsPeriod(r, periodStart, periodEnd)).toList();
 
     final yearRecords = allRecords;
+
+    final yearStartDt = DateTime.parse(yearStart);
+    final yearEndDt = DateTime.parse(yearEnd);
 
     final stats = _computeStats(
       periodRecords: periodRecords,
       yearRecords: yearRecords,
       totalRooms: totalRooms,
+      periodStart: periodStart,
+      periodEnd: periodEnd,
+      yearStart: yearStartDt,
+      yearEnd: yearEndDt,
     );
 
     final recordIds = periodRecords
@@ -462,6 +469,8 @@ class BusinessDashboardApi extends BaseApi {
       stats: stats,
       breakdowns: breakdowns,
       periodRecords: periodRecords,
+      periodStart: periodStart,
+      periodEnd: periodEnd,
     );
   }
 
@@ -477,6 +486,7 @@ class BusinessDashboardApi extends BaseApi {
         'id',
         'check_in',
         'check_out',
+        'actual_checkout',
         'total_guests',
         'purpose_of_visit',
         'lead_country',
@@ -488,7 +498,7 @@ class BusinessDashboardApi extends BaseApi {
       ],
       where:
           'business_id = ? AND is_deleted = 0  '
-          'AND check_in >= ? AND check_in <= ?',
+          'AND COALESCE(actual_checkout, check_out) >= ? AND check_in <= ?',
       whereArgs: [businessId, startDate, endDate],
     );
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
@@ -566,15 +576,20 @@ class BusinessDashboardApi extends BaseApi {
     required List<Map<String, dynamic>> periodRecords,
     required List<Map<String, dynamic>> yearRecords,
     required int totalRooms,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+    required DateTime yearStart,
+    required DateTime yearEnd,
   }) {
-    final guestsThisMonth = periodRecords.fold<int>(
-      0,
-      (s, r) => s + ((_intValue(r, 'total_guests')) ?? 0),
-    );
-    final guestsThisYear = yearRecords.fold<int>(
-      0,
-      (s, r) => s + ((_intValue(r, 'total_guests')) ?? 0),
-    );
+    int guestsThisMonth = 0;
+    for (final r in periodRecords) {
+      guestsThisMonth += _recordGuestDays(r, periodStart, periodEnd);
+    }
+
+    int guestsThisYear = 0;
+    for (final r in yearRecords) {
+      guestsThisYear += _recordGuestDays(r, yearStart, yearEnd);
+    }
 
     double avgStay = 0;
     if (periodRecords.isNotEmpty) {
@@ -583,17 +598,20 @@ class BusinessDashboardApi extends BaseApi {
 
       for (final r in periodRecords) {
         final checkInText = _stringValue(r, 'check_in');
-        final checkOutText = _stringValue(r, 'check_out');
-        if (checkInText == null || checkOutText == null) continue;
+        final effectiveCheckOutText =
+            _stringValue(r, 'actual_check_out') ??
+            _stringValue(r, 'actual_checkout') ??
+            _stringValue(r, 'check_out');
+        if (checkInText == null || effectiveCheckOutText == null) continue;
         final checkIn = DateTime.tryParse(checkInText);
-        final checkOut = DateTime.tryParse(checkOutText);
-        if (checkIn == null || checkOut == null) continue;
+        final effectiveCheckOut = DateTime.tryParse(effectiveCheckOutText);
+        if (checkIn == null || effectiveCheckOut == null) continue;
 
-        final nights = checkOut.difference(checkIn).inDays;
+        final nights = effectiveCheckOut.difference(checkIn).inDays;
         final guestCount = (_intValue(r, 'total_guests')) ?? 0;
 
-        totalNights += nights * guestCount; // weight by guests
-        totalGuests += guestCount; // count persons, not bookings
+        totalNights += (nights < 1 ? 1 : nights) * guestCount;
+        totalGuests += guestCount;
       }
 
       if (totalGuests > 0) avgStay = totalNights / totalGuests;
@@ -611,18 +629,30 @@ class BusinessDashboardApi extends BaseApi {
     required DashboardStats stats,
     required List<Map<String, dynamic>> breakdowns,
     required List<Map<String, dynamic>> periodRecords,
+    required DateTime periodStart,
+    required DateTime periodEnd,
   }) {
+    // Build per-record guest-days map for the period
+    final recordGuestDays = <String, int>{};
+    for (final r in periodRecords) {
+      final id = _stringValue(r, 'id');
+      if (id != null) {
+        recordGuestDays[id] = _recordGuestDays(r, periodStart, periodEnd);
+      }
+    }
+
     // Sex distribution
     int male = 0, female = 0, genderOther = 0;
     for (final b in breakdowns) {
       final sex = _stringValue(b, 'sex')?.toLowerCase() ?? '';
-      final cnt = (_intValue(b, 'count')) ?? 0;
+      final recordId = _stringValue(b, 'guest_record_id') ?? '';
+      final guestDays = recordGuestDays[recordId] ?? 1;
       if (sex == 'male') {
-        male += cnt;
+        male += guestDays;
       } else if (sex == 'female') {
-        female += cnt;
+        female += guestDays;
       } else {
-        genderOther += cnt;
+        genderOther += guestDays;
       }
     }
 
@@ -631,8 +661,9 @@ class BusinessDashboardApi extends BaseApi {
     for (final b in breakdowns) {
       final ageGroup = _stringValue(b, 'age_group')?.trim() ?? '';
       if (ageGroup.isEmpty) continue;
-      ageGroupMap[ageGroup] =
-          (ageGroupMap[ageGroup] ?? 0) + ((_intValue(b, 'count')) ?? 0);
+      final recordId = _stringValue(b, 'guest_record_id') ?? '';
+      final guestDays = recordGuestDays[recordId] ?? 1;
+      ageGroupMap[ageGroup] = (ageGroupMap[ageGroup] ?? 0) + guestDays;
     }
     final ageGroups =
         ageGroupMap.entries
@@ -644,8 +675,9 @@ class BusinessDashboardApi extends BaseApi {
     final countryMap = <String, int>{};
     for (final b in breakdowns) {
       final country = _stringValue(b, 'country') ?? 'Unknown';
-      countryMap[country] =
-          (countryMap[country] ?? 0) + ((_intValue(b, 'count')) ?? 0);
+      final recordId = _stringValue(b, 'guest_record_id') ?? '';
+      final guestDays = recordGuestDays[recordId] ?? 1;
+      countryMap[country] = (countryMap[country] ?? 0) + guestDays;
     }
     final topCountries =
         (countryMap.entries
@@ -660,8 +692,9 @@ class BusinessDashboardApi extends BaseApi {
     for (final b in breakdowns) {
       final region = _stringValue(b, 'philippines_region');
       if (region != null && region.isNotEmpty) {
-        regionMap[region] =
-            (regionMap[region] ?? 0) + ((_intValue(b, 'count')) ?? 0);
+        final recordId = _stringValue(b, 'guest_record_id') ?? '';
+        final guestDays = recordGuestDays[recordId] ?? 1;
+        regionMap[region] = (regionMap[region] ?? 0) + guestDays;
       }
     }
     final topRegions =
@@ -677,8 +710,9 @@ class BusinessDashboardApi extends BaseApi {
     for (final record in periodRecords) {
       final purpose = _stringValue(record, 'purpose_of_visit')?.trim() ?? '';
       if (purpose.isEmpty) continue;
-      purposeMap[purpose] =
-          (purposeMap[purpose] ?? 0) + ((_intValue(record, 'total_guests')) ?? 0);
+      final id = _stringValue(record, 'id') ?? '';
+      final guestDays = recordGuestDays[id] ?? 1;
+      purposeMap[purpose] = (purposeMap[purpose] ?? 0) + guestDays;
     }
     final purposeOfVisit =
         (purposeMap.entries
@@ -773,10 +807,37 @@ class BusinessDashboardApi extends BaseApi {
     for (final r in records) {
       final checkInText = _stringValue(r, 'check_in');
       if (checkInText == null) continue;
-      final parsed = DateTime.tryParse(checkInText);
-      if (parsed == null) continue;
-      final m = parsed.month;
-      monthMap[m] = (monthMap[m] ?? 0) + ((_intValue(r, 'total_guests')) ?? 0);
+      final checkIn = DateTime.tryParse(checkInText);
+      if (checkIn == null) continue;
+
+      final effectiveCheckOutText =
+          _stringValue(r, 'actual_check_out') ??
+          _stringValue(r, 'actual_checkout') ??
+          _stringValue(r, 'check_out');
+      if (effectiveCheckOutText == null) continue;
+      final effectiveCheckOut = DateTime.tryParse(effectiveCheckOutText);
+      if (effectiveCheckOut == null) continue;
+
+      final guests = _intValue(r, 'total_guests') ?? 0;
+      if (guests <= 0) continue;
+
+      // Spread guest-days across each month the stay overlaps
+      var cur = DateTime(checkIn.year, checkIn.month, checkIn.day);
+      final end = DateTime(
+        effectiveCheckOut.year,
+        effectiveCheckOut.month,
+        effectiveCheckOut.day,
+      );
+      while (!cur.isAfter(end)) {
+        final monthEnd = DateTime(cur.year, cur.month + 1, 0);
+        final periodEnd = end.isBefore(monthEnd) ? end : monthEnd;
+        final isClampedEnd = periodEnd.isBefore(end);
+        final nights = periodEnd.difference(cur).inDays;
+        final spreadDays =
+            isClampedEnd ? nights + 1 : (nights < 1 ? 1 : nights);
+        monthMap[cur.month] = (monthMap[cur.month] ?? 0) + guests * spreadDays;
+        cur = DateTime(cur.year, cur.month + 1, 1);
+      }
     }
     return List.generate(
       12,
@@ -827,24 +888,29 @@ class BusinessDashboardApi extends BaseApi {
       ..writeln('Period,${month == 0 ? 'Full Year' : _monthName(month)} $year')
       ..writeln()
       ..writeln(
-        'Check In,Check Out,Total Guests,'
-        'Country,Region,Sex,Age Group,Count',
+        'Check In,Check Out,Total Guests,Guest Days,'
+        'Country,Region,Sex,Age Group,Guest Days',
       );
+
+    final periodStart = DateTime.parse(start);
+    final periodEnd = DateTime.parse(end);
 
     for (final b in breakdowns) {
       final recordId = _stringValue(b, 'guest_record_id');
       if (recordId == null) continue;
       final rec = recordMap[recordId];
       if (rec == null) continue;
+      final guestDays = _recordGuestDays(rec, periodStart, periodEnd);
       final row = [
         _stringValue(rec, 'check_in') ?? '',
         _stringValue(rec, 'check_out') ?? '',
         _intValue(rec, 'total_guests') ?? 0,
+        guestDays,
         _csvCell(_stringValue(b, 'country') ?? 'Unknown'),
         _csvCell(_stringValue(b, 'philippines_region') ?? ''),
         _stringValue(b, 'sex') ?? '',
         _stringValue(b, 'age_group') ?? '',
-        _intValue(b, 'count') ?? 0,
+        guestDays,
       ];
       buf.writeln(row.join(','));
     }
@@ -863,6 +929,68 @@ class BusinessDashboardApi extends BaseApi {
     final value = data[key];
     if (value is int) return value;
     return int.tryParse(value?.toString() ?? '');
+  }
+
+  /// Compute guest-days for a record within [rangeStart, rangeEnd].
+  int _recordGuestDays(
+    Map<String, dynamic> record,
+    DateTime rangeStart,
+    DateTime rangeEnd,
+  ) {
+    final checkInText = _stringValue(record, 'check_in');
+    if (checkInText == null) return 0;
+    final checkInRaw = DateTime.tryParse(checkInText);
+    if (checkInRaw == null) return 0;
+
+    final effectiveCheckOutText =
+        _stringValue(record, 'actual_check_out') ??
+        _stringValue(record, 'actual_checkout') ??
+        _stringValue(record, 'check_out');
+    if (effectiveCheckOutText == null) return 0;
+    final effectiveCheckOutRaw = DateTime.tryParse(effectiveCheckOutText);
+    if (effectiveCheckOutRaw == null) return 0;
+
+    final guests = _intValue(record, 'total_guests') ?? 0;
+    if (guests <= 0) return 0;
+
+    final checkIn = DateTime(checkInRaw.year, checkInRaw.month, checkInRaw.day);
+    final effectiveCheckOut = DateTime(
+      effectiveCheckOutRaw.year,
+      effectiveCheckOutRaw.month,
+      effectiveCheckOutRaw.day,
+    );
+
+    final stayStart = checkIn.isBefore(rangeStart) ? rangeStart : checkIn;
+    final stayEnd =
+        effectiveCheckOut.isAfter(rangeEnd) ? rangeEnd : effectiveCheckOut;
+    if (stayEnd.isBefore(stayStart)) return 0;
+
+    final isClamped = effectiveCheckOut.isAfter(rangeEnd);
+    final nights = stayEnd.difference(stayStart).inDays;
+    final presenceDays = isClamped ? nights + 1 : nights;
+    return guests * (presenceDays < 1 ? 1 : presenceDays);
+  }
+
+  /// Check whether a record's stay overlaps with [rangeStart, rangeEnd].
+  bool _recordOverlapsPeriod(
+    Map<String, dynamic> record,
+    DateTime rangeStart,
+    DateTime rangeEnd,
+  ) {
+    final checkInText = _stringValue(record, 'check_in');
+    if (checkInText == null) return false;
+    final checkIn = DateTime.tryParse(checkInText);
+    if (checkIn == null) return false;
+
+    final effectiveCheckOutText =
+        _stringValue(record, 'actual_check_out') ??
+        _stringValue(record, 'actual_checkout') ??
+        _stringValue(record, 'check_out');
+    if (effectiveCheckOutText == null) return false;
+    final effectiveCheckOut = DateTime.tryParse(effectiveCheckOutText);
+    if (effectiveCheckOut == null) return false;
+
+    return !checkIn.isAfter(rangeEnd) && !effectiveCheckOut.isBefore(rangeStart);
   }
 
   String _csvCell(String value) => value.contains(',') ? '"$value"' : value;
