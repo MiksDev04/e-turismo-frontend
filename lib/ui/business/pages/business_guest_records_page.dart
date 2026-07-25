@@ -1914,27 +1914,39 @@ class _RecordDetailModal extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const _ModalSectionLabel('Stay Information'),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppColors.inputBackground,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.cardBorder.withOpacity(0.4)),
+                      ),
+                      child: const _ModalSectionLabel('Stay Information'),
+                    ),
                     const SizedBox(height: 10),
                     _StayInfoGrid(record: record),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 24),
 
-                    const Divider(color: AppColors.cardBorder, height: 1),
-                    const SizedBox(height: 20),
+                    Container(
+                      width: double.infinity,
+                      height: 1,
+                      color: AppColors.cardBorder.withOpacity(0.6),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppColors.inputBackground,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.cardBorder.withOpacity(0.4)),
+                      ),
+                      child: const _ModalSectionLabel('Demographic Data (Lead Guest)'),
+                    ),
+                    const SizedBox(height: 12),
 
-                    const _ModalSectionLabel('Demographic Data (Lead Guest)'),
-                    const SizedBox(height: 10),
-                    if (demo == null || demo.breakdowns.isEmpty)
-                      const Text(
-                        'No demographic data available.',
-                        style: TextStyle(
-                          color: AppColors.textSubtle,
-                          fontSize: 13,
-                        ),
-                      )
-                    else ...[
-                      _BreakdownTable(breakdowns: demo.breakdowns),
-                    ],
+                    _LeadGuestDemoGrid(record: record),
                   ],
                 ),
               ),
@@ -1966,9 +1978,53 @@ class _StayInfoGrid extends StatelessWidget {
       (Icons.nights_stay_outlined,  'Length of Stay',    record.nights),
       (Icons.people_outline,        'Total Guests',      '${record.guests}'),
       (Icons.meeting_room_outlined, 'Rooms Occupied',    roomsDisplay),
-      (Icons.location_city_outlined,'City/Municipality', record.leadMunicipality ?? '-'),
       (Icons.work_outline,          'Purpose of Visit',  record.purpose),
       (Icons.directions_car_outlined, 'Mode of Transport', record.transport),
+    ];
+
+    const spacing = 12.0;
+    const rowGap  = 12.0;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final itemWidth = (constraints.maxWidth - spacing) / 2;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: rowGap,
+          children: [
+            for (final item in items)
+              SizedBox(
+                width: itemWidth,
+                child: _DetailField(
+                  icon: item.$1,
+                  label: item.$2,
+                  value: item.$3,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ─── Lead Guest Demographics Grid ──────────────────────────────────────────────
+
+class _LeadGuestDemoGrid extends StatelessWidget {
+  const _LeadGuestDemoGrid({required this.record});
+  final GuestRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      (Icons.person_outline,            'Sex',               record.leadSex ?? '-'),
+      (Icons.cake_outlined,             'Birthdate',         record.leadBirthdate ?? '-'),
+      (Icons.flag_outlined,             'Country',           record.leadCountry ?? '-'),
+      (Icons.account_balance_outlined,  'Nationality',       record.leadNationality ?? '-'),
+      (Icons.public_outlined,           'Region',            record.leadPhilippinesRegion ?? '-'),
+      (Icons.map_outlined,              'Province',          record.leadProvince ?? '-'),
+      (Icons.location_city_outlined,    'City/Municipality', record.leadMunicipality ?? '-'),
+      (Icons.flight_outlined,           'Is Overseas',       record.leadIsOverseas ? 'Yes' : 'No'),
     ];
 
     const spacing = 12.0;
