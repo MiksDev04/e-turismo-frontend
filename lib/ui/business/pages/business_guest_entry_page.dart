@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/services/business_page_cache.dart';
+import '../../../core/services/session_service.dart';
 import '../../../core/services/offline_service.dart';
 import '../../../core/services/psgc_repository.dart';
 import '../../../core/models/psgc_models.dart';
@@ -438,12 +438,6 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
 
     if (result.success) {
       _clearForm();
-      // Invalidate related caches so other pages show fresh data.
-      BusinessPageCacheService()
-        ..invalidate(BusinessPageCacheKeys.dashboardDash)
-        ..invalidate(BusinessPageCacheKeys.dashboardTrend)
-        ..invalidate(BusinessPageCacheKeys.rooms)
-        ..invalidate(BusinessPageCacheKeys.guestRecords);
       if (result.syncedToCloud) {
         _showSnackBar('Guest entry saved successfully!');
       } else {

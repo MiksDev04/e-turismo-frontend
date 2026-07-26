@@ -13,7 +13,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path/path.dart' as p;
 import '../../../core/constants/app_colors.dart';
-import '../../../core/services/business_page_cache.dart';
 import '../../../core/services/offline_service.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../../api/business_dashboard_api.dart';
@@ -100,21 +99,8 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
   @override
   void initState() {
     super.initState();
-    // Capture initial state synchronously so the banner is correct on first
-    // frame — before initState's async work completes.
     _isOffline = !ConnectivityService.instance.isOnline;
     _subscribeToConnectivity();
-
-    // Sync cache check — renders immediately, no spinner.
-    final cache = BusinessPageCacheService();
-    if (cache.hasData(BusinessPageCacheKeys.dashboardDash)) {
-      _dashData = cache.get(BusinessPageCacheKeys.dashboardDash);
-      _loadingDash = false;
-    }
-    if (cache.hasData(BusinessPageCacheKeys.dashboardTrend)) {
-      _trendData = cache.get(BusinessPageCacheKeys.dashboardTrend);
-      _loadingTrend = false;
-    }
 
     _initBusinessFromSession();
   }
@@ -261,7 +247,6 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
       );
       if (mounted) {
         setState(() => _dashData = data);
-        BusinessPageCacheService().set(BusinessPageCacheKeys.dashboardDash, data);
       }
     } catch (e) {
       if (mounted) setState(() => _dashError = e.toString());
@@ -282,7 +267,6 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
       );
       if (mounted) {
         setState(() => _trendData = data);
-        BusinessPageCacheService().set(BusinessPageCacheKeys.dashboardTrend, data);
       }
     } catch (_) {
       // Non-critical; silently fail.

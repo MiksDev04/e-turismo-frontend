@@ -17,7 +17,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../shared/layouts/admin_layout.dart';
 import '../../../api/admin_dashboard_api.dart';
 import '../../../api/base_api.dart';
-import '../../../core/services/admin_page_cache.dart';
+import '../../../core/services/session_service.dart';
 import '../../../router/app_routes.dart';
 
 // ─── Admin Dashboard Page ─────────────────────────────────────────────────────
@@ -51,21 +51,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   @override
   void initState() {
     super.initState();
-    final cache = AdminPageCacheService();
-    if (cache.hasData(AdminPageCacheKeys.dashboardDash)) {
-      _dashData = cache.get(AdminPageCacheKeys.dashboardDash);
-      _loadingDash = false;
-    } else {
-      _loadDashboard();
-    }
-    if (cache.hasData(AdminPageCacheKeys.dashboardTrend)) {
-      _trendData = Map<int, List<MonthlyCount>>.from(
-        cache.get(AdminPageCacheKeys.dashboardTrend) as Map,
-      );
-      _loadingTrend = false;
-    } else {
-      _loadTrend();
-    }
+    _loadDashboard();
+    _loadTrend();
   }
 
   Future<void> _loadDashboard() async {
@@ -79,7 +66,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         month: _selectedMonth,
         year: _selectedYear,
       );
-      AdminPageCacheService().set(AdminPageCacheKeys.dashboardDash, data);
       if (mounted) setState(() => _dashData = data);
     } on ApiException catch (e) {
       if (mounted)
@@ -105,7 +91,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       final data = await _api.fetchYearlyComparison(
         years: [_trendYear1, _trendYear2],
       );
-      AdminPageCacheService().set(AdminPageCacheKeys.dashboardTrend, data);
       if (mounted) setState(() => _trendData = data);
     } catch (_) {
       // trend is non-critical; silently fail

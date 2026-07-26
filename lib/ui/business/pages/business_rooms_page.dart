@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/services/business_page_cache.dart';
+import '../../../core/services/session_service.dart';
 import '../../../core/services/offline_service.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../shared/widgets/paginator.dart';
@@ -52,20 +52,6 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
     _isOffline = !ConnectivityService.instance.isOnline;
     _subscribeToConnectivity();
     _subscribeToSync();
-
-    // Sync cache check — renders immediately, no spinner.
-    final cache = BusinessPageCacheService();
-    if (_activeFilter == _Filter.all &&
-        _currentPage == 0 &&
-        cache.hasData(BusinessPageCacheKeys.rooms)) {
-      final cached = cache.get<Map<String, dynamic>>(BusinessPageCacheKeys.rooms);
-      if (cached != null) {
-        _rooms      = cached['rooms'];
-        _totalPages = cached['totalPages'];
-        _totalItems = cached['totalItems'];
-        _isLoading  = false;
-      }
-    }
 
     _init();
   }
@@ -154,14 +140,6 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
         _totalItems = data.totalCount;
         _isLoading = false;
       });
-      // Only cache the default filter state (all, page 0).
-      if (_activeFilter == _Filter.all && _currentPage == 0) {
-        BusinessPageCacheService().set(BusinessPageCacheKeys.rooms, {
-          'rooms':      data.data,
-          'totalPages': data.pageCount,
-          'totalItems': data.totalCount,
-        });
-      }
     } else {
       setState(() {
         _isLoading = false;
@@ -213,10 +191,6 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
     if (result.success) {
       _showSnack(
           'Room ${room.roomNumber} marked as ${_labels[newStatus]?.toLowerCase()}.');
-      // Invalidate dashboard cache — room stats may have changed.
-      BusinessPageCacheService()
-        ..invalidate(BusinessPageCacheKeys.dashboardDash)
-        ..invalidate(BusinessPageCacheKeys.dashboardTrend);
       _loadRooms();
     } else {
       _showSnack(result.error ?? 'Failed to update room status.',
@@ -232,10 +206,6 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
       existingNames: names,
     );
     if (updated != null && mounted) {
-      // Invalidate dashboard cache — room count or details may have changed.
-      BusinessPageCacheService()
-        ..invalidate(BusinessPageCacheKeys.dashboardDash)
-        ..invalidate(BusinessPageCacheKeys.dashboardTrend);
       _loadRooms();
     }
   }
@@ -252,10 +222,6 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
       existingNames: names,
     );
     if (created == true && mounted) {
-      // Invalidate dashboard cache — room count may have changed.
-      BusinessPageCacheService()
-        ..invalidate(BusinessPageCacheKeys.dashboardDash)
-        ..invalidate(BusinessPageCacheKeys.dashboardTrend);
       _loadRooms();
     }
   }

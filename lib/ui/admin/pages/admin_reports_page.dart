@@ -2,7 +2,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:app/core/services/admin_page_cache.dart';
+import 'package:app/core/services/session_service.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import 'package:app/core/constants/app_colors.dart';
 import 'package:app/core/services/connectivity_service.dart';
@@ -66,16 +66,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
   @override
   void initState() {
     super.initState();
-    final cache = AdminPageCacheService();
-    if (cache.hasData(AdminPageCacheKeys.reports)) {
-      final cached = cache.get<Map<String, dynamic>>(AdminPageCacheKeys.reports)!;
-      _batches = cached['batches'] as List<ReportBatch>;
-      _totalPages = cached['totalPages'] as int;
-      _totalItems = cached['totalItems'] as int;
-      _loadingReports = false;
-    } else {
-      _fetchBatches();
-    }
+    _fetchBatches();
   }
 
   Future<void> _fetchBatches() async {
@@ -98,11 +89,6 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
         _batches = result.data;
         _totalPages = result.pageCount;
         _totalItems = result.totalCount;
-      });
-      AdminPageCacheService().set(AdminPageCacheKeys.reports, {
-        'batches': _batches,
-        'totalPages': _totalPages,
-        'totalItems': _totalItems,
       });
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -155,7 +141,6 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
         periodMonths: months,
       ));
       await _fetchBatches();
-      AdminPageCacheService().invalidate(AdminPageCacheKeys.dashboardDash);
       if (!mounted) return;
       if (result.alreadyExisted) {
         _showWarning('Report already exists');
