@@ -214,7 +214,9 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
       _showSnack(
           'Room ${room.roomNumber} marked as ${_labels[newStatus]?.toLowerCase()}.');
       // Invalidate dashboard cache — room stats may have changed.
-      BusinessPageCacheService().invalidate(BusinessPageCacheKeys.dashboardDash);
+      BusinessPageCacheService()
+        ..invalidate(BusinessPageCacheKeys.dashboardDash)
+        ..invalidate(BusinessPageCacheKeys.dashboardTrend);
       _loadRooms();
     } else {
       _showSnack(result.error ?? 'Failed to update room status.',
@@ -231,7 +233,9 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
     );
     if (updated != null && mounted) {
       // Invalidate dashboard cache — room count or details may have changed.
-      BusinessPageCacheService().invalidate(BusinessPageCacheKeys.dashboardDash);
+      BusinessPageCacheService()
+        ..invalidate(BusinessPageCacheKeys.dashboardDash)
+        ..invalidate(BusinessPageCacheKeys.dashboardTrend);
       _loadRooms();
     }
   }
@@ -249,7 +253,9 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
     );
     if (created == true && mounted) {
       // Invalidate dashboard cache — room count may have changed.
-      BusinessPageCacheService().invalidate(BusinessPageCacheKeys.dashboardDash);
+      BusinessPageCacheService()
+        ..invalidate(BusinessPageCacheKeys.dashboardDash)
+        ..invalidate(BusinessPageCacheKeys.dashboardTrend);
       _loadRooms();
     }
   }

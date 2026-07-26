@@ -390,7 +390,9 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
 
     if (result.isSuccess) {
       // Invalidate dashboard cache — guest data may have changed.
-      BusinessPageCacheService().invalidate(BusinessPageCacheKeys.dashboardDash);
+      BusinessPageCacheService()
+        ..invalidate(BusinessPageCacheKeys.dashboardDash)
+        ..invalidate(BusinessPageCacheKeys.dashboardTrend);
       _loadRecords();
     } else {
       _showSnack(result.error ?? 'Failed to update.', isError: true);
@@ -594,6 +596,7 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       // Invalidate related caches — checkout affects room availability & dashboard stats.
       BusinessPageCacheService()
         ..invalidate(BusinessPageCacheKeys.dashboardDash)
+        ..invalidate(BusinessPageCacheKeys.dashboardTrend)
         ..invalidate(BusinessPageCacheKeys.rooms);
       _loadRecords();
     } else {

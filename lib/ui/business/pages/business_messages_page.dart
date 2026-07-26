@@ -113,8 +113,18 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
   void _subscribeConnectivity() {
     _connectivitySub =
         ConnectivityService.instance.onlineStream.listen((isOnline) {
-      if (!mounted || !isOnline || !_isOffline || _isLoading) return;
-      // Was showing offline state, connection restored → auto-retry.
+      if (!mounted) return;
+
+      if (!isOnline) {
+        if (_isOffline) return;
+        setState(() {
+          _isOffline = true;
+          _isLoading = false;
+        });
+        return;
+      }
+
+      if (!_isOffline || _isLoading) return;
       setState(() => _isOffline = false);
       _loadData();
     });
@@ -127,8 +137,38 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
   }
 
   Future<void> _loadData() async {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading  = true;
+      _isOffline  = false;
+      _error      = null;
+      _errorCode  = null;
+    });
+
+    // ── Pre-check connectivity FIRST (before cache) ────────────────────────
+    final online = await ConnectivityService.instance.checkOnline;
+    if (!mounted) return;
+    if (!online) {
+      setState(() { _isOffline = true; _isLoading = false; });
+      return;
+    }
+
     var session = await SessionService.instance.loadAndCache();
     if (!mounted) return;
+
+    // Check if we need to auto-authenticate (offline to online transition)
+    if (session != null && (session.token == null || session.isOfflineSession)) {
+      if (session.username != null && session.password != null) {
+        final success = await LoginApi().backgroundAuth(
+          username: session.username!,
+          password: session.password!,
+        );
+        if (success) {
+          session = SessionService.instance.current;
+        }
+      }
+    }
 
     setState(() => _businessId = session?.businessId);
 
@@ -140,7 +180,7 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
       return;
     }
 
-    // Check cache — render immediately if available (default filter state only).
+    // ── Check cache — render immediately if available ──────────────────────
     final cache = BusinessPageCacheService();
     if (_activeFilter == _Filter.all &&
         _currentPage == 0 &&
@@ -157,38 +197,6 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
         return;
       }
     }
-
-    setState(() {
-      _isLoading = true;
-      _error     = null;
-      _errorCode = null;
-    });
-
-    // ── Pre-check connectivity ─────────────────────────────────────────────
-    final online = await ConnectivityService.instance.checkOnline;
-    if (!mounted) return;
-    if (!online) {
-      setState(() {
-        _isOffline = true;
-        _isLoading = false;
-      });
-      return;
-    }
-
-    // Check if we need to auto-authenticate (offline to online transition)
-    if (session != null && (session.token == null || session.isOfflineSession)) {
-      if (session.username != null && session.password != null) {
-        final success = await LoginApi().backgroundAuth(
-          username: session.username!,
-          password: session.password!,
-        );
-        if (success) {
-          session = SessionService.instance.current;
-        }
-      }
-    }
-
-    setState(() => _businessId = session?.businessId);
 
     // ── Fetch ─────── ───────────────────────────────────────────────────────
     try {

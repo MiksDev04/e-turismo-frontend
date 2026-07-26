@@ -441,6 +441,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
       // Invalidate related caches so other pages show fresh data.
       BusinessPageCacheService()
         ..invalidate(BusinessPageCacheKeys.dashboardDash)
+        ..invalidate(BusinessPageCacheKeys.dashboardTrend)
         ..invalidate(BusinessPageCacheKeys.rooms)
         ..invalidate(BusinessPageCacheKeys.guestRecords);
       if (result.syncedToCloud) {
