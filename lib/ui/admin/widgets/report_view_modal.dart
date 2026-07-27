@@ -1145,6 +1145,190 @@ class _VarReportTable extends StatelessWidget {
   }
 }
 
+// ─── Per-tab establishment view with own scroll controllers ──────────────────
+
+class _EstablishmentView extends StatefulWidget {
+  const _EstablishmentView({
+    required this.content,
+    required this.tableWidth,
+    required this.zoomLevel,
+    required this.onZoomChanged,
+  });
+
+  final Widget content;
+  final double tableWidth;
+  final double zoomLevel;
+  final void Function(double) onZoomChanged;
+
+  @override
+  State<_EstablishmentView> createState() => _EstablishmentViewState();
+}
+
+class _EstablishmentViewState extends State<_EstablishmentView> {
+  final GlobalKey _contentKey = GlobalKey();
+  final ScrollController _hScrollCtrl = ScrollController();
+  final ScrollController _hScrollCtrlBottom = ScrollController();
+  final ScrollController _vScrollCtrl = ScrollController();
+  bool _syncingScroll = false;
+  double _unscaledContentHeight = 0;
+
+  void _syncFromContent() {
+    if (_syncingScroll) return;
+    _syncingScroll = true;
+    if (_hScrollCtrlBottom.hasClients &&
+        _hScrollCtrlBottom.offset != _hScrollCtrl.offset) {
+      _hScrollCtrlBottom.jumpTo(_hScrollCtrl.offset);
+    }
+    _syncingScroll = false;
+  }
+
+  void _syncFromBottom() {
+    if (_syncingScroll) return;
+    _syncingScroll = true;
+    if (_hScrollCtrl.hasClients &&
+        _hScrollCtrl.offset != _hScrollCtrlBottom.offset) {
+      _hScrollCtrl.jumpTo(_hScrollCtrlBottom.offset);
+    }
+    _syncingScroll = false;
+  }
+
+  void _measureContent() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final contentBox =
+          _contentKey.currentContext?.findRenderObject() as RenderBox?;
+      if (contentBox != null) {
+        final h = contentBox.size.height;
+        if (h > 0 && (h - _unscaledContentHeight).abs() > 0.5) {
+          setState(() => _unscaledContentHeight = h);
+        }
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _hScrollCtrl.addListener(_syncFromContent);
+    _hScrollCtrlBottom.addListener(_syncFromBottom);
+    _measureContent();
+  }
+
+  @override
+  void dispose() {
+    _hScrollCtrl.removeListener(_syncFromContent);
+    _hScrollCtrlBottom.removeListener(_syncFromBottom);
+    _hScrollCtrl.dispose();
+    _hScrollCtrlBottom.dispose();
+    _vScrollCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tableWidth = widget.tableWidth;
+    final zoomLevel = widget.zoomLevel;
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          bottom: 14,
+          child: Listener(
+            onPointerSignal: (event) {
+              if (event is PointerScrollEvent &&
+                  HardwareKeyboard.instance.isControlPressed) {
+                final delta = event.scrollDelta.dy > 0 ? -0.1 : 0.1;
+                widget.onZoomChanged(
+                  (zoomLevel + delta).clamp(1.0, 2.0),
+                );
+              }
+            },
+            child: GestureDetector(
+              onScaleUpdate: (details) {
+                if (details.pointerCount > 1) {
+                  widget.onZoomChanged(
+                    (zoomLevel * details.scale).clamp(1.0, 2.0),
+                  );
+                }
+              },
+              child: RawScrollbar(
+                thumbVisibility: true,
+                thumbColor: Colors.blue,
+                trackColor: Colors.blue.withOpacity(0.12),
+                trackBorderColor: Colors.blue.withOpacity(0.3),
+                radius: const Radius.circular(6),
+                thickness: 10,
+                child: SingleChildScrollView(
+                  controller: _vScrollCtrl,
+                  scrollDirection: Axis.vertical,
+                  child: SizedBox(
+                    height: _unscaledContentHeight > 0
+                        ? (_unscaledContentHeight + 20) * zoomLevel
+                        : null,
+                    child: SingleChildScrollView(
+                      controller: _hScrollCtrl,
+                      scrollDirection: Axis.horizontal,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 20, right: 20),
+                        child: SizedBox(
+                          width: (tableWidth + 20) * zoomLevel,
+                          child: Transform.scale(
+                            scale: zoomLevel,
+                            alignment: Alignment.topLeft,
+                            child: SizedBox(
+                              key: _contentKey,
+                              width: tableWidth,
+                              child: widget.content,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 14,
+          child: Container(
+            color: AppColors.cardBackground,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final viewportWidth = constraints.maxWidth;
+                final contentWidth = (tableWidth + 20) * zoomLevel + 20;
+                final minWidth = contentWidth > viewportWidth
+                    ? contentWidth
+                    : viewportWidth + 1;
+                return RawScrollbar(
+                  controller: _hScrollCtrlBottom,
+                  thumbVisibility: true,
+                  trackVisibility: true,
+                  thumbColor: Colors.blue,
+                  trackColor: Colors.blue.withOpacity(0.12),
+                  trackBorderColor: Colors.blue.withOpacity(0.3),
+                  radius: const Radius.circular(6),
+                  thickness: 10,
+                  child: SingleChildScrollView(
+                    controller: _hScrollCtrlBottom,
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(width: minWidth, height: 1),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 // ─── Report Viewer Modal ──────────────────────────────────────────────────────
 
 class ReportViewerModal extends StatefulWidget {
@@ -1170,15 +1354,11 @@ class _ReportViewerModalState extends State<ReportViewerModal>
   bool _downloading = false;
   bool _printing = false;
   TabController? _tabController;
-  final ScrollController _hScrollCtrl = ScrollController();
-  final ScrollController _hScrollCtrlBottom = ScrollController();
-  bool _syncingScroll = false;
 
   double _zoomLevel = 1.0;
   static const double _zoomStep = 0.1;
   static const double _zoomMin = 1.0;
   static const double _zoomMax = 2.0;
-  double _unscaledContentHeight = 0;
 
   void _zoomIn() => setState(
     () => _zoomLevel = (_zoomLevel + _zoomStep).clamp(_zoomMin, _zoomMax),
@@ -1188,58 +1368,16 @@ class _ReportViewerModalState extends State<ReportViewerModal>
   );
   void _resetZoom() => setState(() => _zoomLevel = 1.0);
 
-  void _measureContent() {
-    if (!mounted) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final contentBox =
-          _contentKey.currentContext?.findRenderObject() as RenderBox?;
-      if (contentBox != null) {
-        final h = contentBox.size.height;
-        if (h > 0 && (h - _unscaledContentHeight).abs() > 0.5) {
-          setState(() => _unscaledContentHeight = h);
-        }
-      }
-    });
-  }
-
-  void _syncFromContent() {
-    if (_syncingScroll) return;
-    _syncingScroll = true;
-    if (_hScrollCtrlBottom.hasClients &&
-        _hScrollCtrlBottom.offset != _hScrollCtrl.offset) {
-      _hScrollCtrlBottom.jumpTo(_hScrollCtrl.offset);
-    }
-    _syncingScroll = false;
-  }
-
-  void _syncFromBottom() {
-    if (_syncingScroll) return;
-    _syncingScroll = true;
-    if (_hScrollCtrl.hasClients &&
-        _hScrollCtrl.offset != _hScrollCtrlBottom.offset) {
-      _hScrollCtrl.jumpTo(_hScrollCtrlBottom.offset);
-    }
-    _syncingScroll = false;
-  }
-
   final _reportService = ReportService();
-  final GlobalKey _contentKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
-    _hScrollCtrl.addListener(_syncFromContent);
-    _hScrollCtrlBottom.addListener(_syncFromBottom);
     _loadReport();
   }
 
   @override
   void dispose() {
-    _hScrollCtrl.removeListener(_syncFromContent);
-    _hScrollCtrlBottom.removeListener(_syncFromBottom);
-    _hScrollCtrl.dispose();
-    _hScrollCtrlBottom.dispose();
     _tabController?.dispose();
     super.dispose();
   }
@@ -1259,16 +1397,12 @@ class _ReportViewerModalState extends State<ReportViewerModal>
         _viewData = data;
         _loading = false;
       });
-      _measureContent();
 
       if (data.establishments.length > 1) {
         _tabController = TabController(
           length: data.establishments.length,
           vsync: this,
         );
-        _tabController!.addListener(() {
-          if (!_tabController!.indexIsChanging) _measureContent();
-        });
       }
     } catch (e) {
       debugPrint('❌ Report view error: $e');
@@ -1452,27 +1586,32 @@ class _ReportViewerModalState extends State<ReportViewerModal>
     // Multiple establishments: tab bar
     return Column(
       children: [
-        Material(
-          color: AppColors.backgroundDark,
-          child: TabBar(
-            controller: _tabController,
-            isScrollable: true,
-            labelColor: AppColors.primaryCyan,
-            unselectedLabelColor: AppColors.textGray,
-            indicatorColor: AppColors.primaryCyan,
-            indicatorSize: TabBarIndicatorSize.label,
-            labelStyle: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+        SizedBox(
+          height: 34,
+          child: Material(
+            color: AppColors.backgroundDark,
+            child: TabBar(
+              controller: _tabController,
+              isScrollable: true,
+              labelColor: AppColors.primaryCyan,
+              unselectedLabelColor: AppColors.textGray,
+              indicatorColor: AppColors.primaryCyan,
+              indicatorSize: TabBarIndicatorSize.label,
+              labelPadding: const EdgeInsets.symmetric(horizontal: 12),
+              labelStyle: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+              unselectedLabelStyle: const TextStyle(fontSize: 11),
+              tabAlignment: TabAlignment.start,
+              tabs: establishments.map((e) => Tab(text: e.businessName)).toList(),
             ),
-            unselectedLabelStyle: const TextStyle(fontSize: 12),
-            tabAlignment: TabAlignment.start,
-            tabs: establishments.map((e) => Tab(text: e.businessName)).toList(),
           ),
         ),
         Expanded(
           child: TabBarView(
             controller: _tabController,
+            physics: const NeverScrollableScrollPhysics(),
             children: establishments
                 .map((e) => _buildEstablishmentView(e))
                 .toList(),
@@ -1624,123 +1763,25 @@ class _ReportViewerModalState extends State<ReportViewerModal>
   Widget _buildEstablishmentView(EstablishmentReport est) {
     final tableWidth = _computeTableWidth(est);
 
-    return Stack(
-      children: [
-        // ── Content area (fills viewport minus pinned scrollbar) ──
-        Positioned.fill(
-          bottom: 14,
-          child: Listener(
-            onPointerSignal: (event) {
-              if (event is PointerScrollEvent &&
-                  HardwareKeyboard.instance.isControlPressed) {
-                final delta = event.scrollDelta.dy > 0 ? -_zoomStep : _zoomStep;
-                setState(
-                  () => _zoomLevel = (_zoomLevel + delta).clamp(
-                    _zoomMin,
-                    _zoomMax,
-                  ),
-                );
-              }
-            },
-            child: GestureDetector(
-              onScaleUpdate: (details) {
-                if (details.pointerCount > 1) {
-                  setState(
-                    () => _zoomLevel = (_zoomLevel * details.scale).clamp(
-                      _zoomMin,
-                      _zoomMax,
-                    ),
-                  );
-                }
-              },
-              child: RawScrollbar(
-                thumbVisibility: true,
-                thumbColor: Colors.blue,
-                trackColor: Colors.blue.withOpacity(0.12),
-                trackBorderColor: Colors.blue.withOpacity(0.3),
-                radius: const Radius.circular(6),
-                thickness: 10,
-                child: SingleChildScrollView(
-                  primary: true,
-                  scrollDirection: Axis.vertical,
-                  child: SizedBox(
-                    height: _unscaledContentHeight > 0
-                        ? (_unscaledContentHeight + 20) * _zoomLevel
-                        : null,
-                    child: SingleChildScrollView(
-                      controller: _hScrollCtrl,
-                      scrollDirection: Axis.horizontal,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 20, right: 20),
-                        child: SizedBox(
-                          width: (tableWidth + 20) * _zoomLevel,
-                          child: Transform.scale(
-                            scale: _zoomLevel,
-                            alignment: Alignment.topLeft,
-                            child: SizedBox(
-                              key: _contentKey,
-                              width: tableWidth,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  SizedBox(
-                                    width: tableWidth,
-                                    child: _buildFormHeader(est),
-                                  ),
-                                  _buildReportTable(est),
-                                  SizedBox(
-                                    width: tableWidth,
-                                    child: _buildFooter(),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+    return _EstablishmentView(
+      tableWidth: tableWidth,
+      zoomLevel: _zoomLevel,
+      onZoomChanged: (z) => setState(() => _zoomLevel = z),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: tableWidth,
+            child: _buildFormHeader(est),
           ),
-        ),
-        // ── Pinned horizontal scrollbar at viewport bottom ──
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: 14,
-          child: Container(
-            color: AppColors.cardBackground,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final viewportWidth = constraints.maxWidth;
-                final contentWidth = (tableWidth + 20) * _zoomLevel + 20;
-                final minWidth = contentWidth > viewportWidth
-                    ? contentWidth
-                    : viewportWidth + 1;
-                return RawScrollbar(
-                  controller: _hScrollCtrlBottom,
-                  thumbVisibility: true,
-                  trackVisibility: true,
-                  thumbColor: Colors.blue,
-                  trackColor: Colors.blue.withOpacity(0.12),
-                  trackBorderColor: Colors.blue.withOpacity(0.3),
-                  radius: const Radius.circular(6),
-                  thickness: 10,
-                  child: SingleChildScrollView(
-                    controller: _hScrollCtrlBottom,
-                    scrollDirection: Axis.horizontal,
-                    child: SizedBox(width: minWidth, height: 1),
-                  ),
-                );
-              },
-            ),
+          _buildReportTable(est),
+          SizedBox(
+            width: tableWidth,
+            child: _buildFooter(),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1750,119 +1791,22 @@ class _ReportViewerModalState extends State<ReportViewerModal>
     final data = _viewData!;
     final tableWidth = _varTableWidth();
 
-    return Stack(
-      children: [
-        Positioned.fill(
-          bottom: 14,
-          child: Listener(
-            onPointerSignal: (event) {
-              if (event is PointerScrollEvent &&
-                  HardwareKeyboard.instance.isControlPressed) {
-                final delta = event.scrollDelta.dy > 0 ? -_zoomStep : _zoomStep;
-                setState(
-                  () => _zoomLevel = (_zoomLevel + delta).clamp(
-                    _zoomMin,
-                    _zoomMax,
-                  ),
-                );
-              }
-            },
-            child: GestureDetector(
-              onScaleUpdate: (details) {
-                if (details.pointerCount > 1) {
-                  setState(
-                    () => _zoomLevel = (_zoomLevel * details.scale).clamp(
-                      _zoomMin,
-                      _zoomMax,
-                    ),
-                  );
-                }
-              },
-              child: RawScrollbar(
-                thumbVisibility: true,
-                thumbColor: Colors.blue,
-                trackColor: Colors.blue.withOpacity(0.12),
-                trackBorderColor: Colors.blue.withOpacity(0.3),
-                radius: const Radius.circular(6),
-                thickness: 10,
-                child: SingleChildScrollView(
-                  primary: true,
-                  scrollDirection: Axis.vertical,
-                  child: SizedBox(
-                    height: _unscaledContentHeight > 0
-                        ? (_unscaledContentHeight + 20) * _zoomLevel
-                        : null,
-                    child: SingleChildScrollView(
-                      controller: _hScrollCtrl,
-                      scrollDirection: Axis.horizontal,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 20, right: 20),
-                        child: SizedBox(
-                          width: (tableWidth + 20) * _zoomLevel,
-                          child: Transform.scale(
-                            scale: _zoomLevel,
-                            alignment: Alignment.topLeft,
-                            child: SizedBox(
-                              key: _contentKey,
-                              width: tableWidth,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _buildVarFormHeader(),
-                                  _VarReportTable(
-                                    establishments: data.establishments,
-                                    totals:
-                                        data.totals.varData ?? const VarData(),
-                                  ),
-                                  _buildVarFooter(),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+    return _EstablishmentView(
+      tableWidth: tableWidth,
+      zoomLevel: _zoomLevel,
+      onZoomChanged: (z) => setState(() => _zoomLevel = z),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildVarFormHeader(),
+          _VarReportTable(
+            establishments: data.establishments,
+            totals: data.totals.varData ?? const VarData(),
           ),
-        ),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: 14,
-          child: Container(
-            color: AppColors.cardBackground,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final viewportWidth = constraints.maxWidth;
-                final contentWidth = (tableWidth + 20) * _zoomLevel + 20;
-                final minWidth = contentWidth > viewportWidth
-                    ? contentWidth
-                    : viewportWidth + 1;
-                return RawScrollbar(
-                  controller: _hScrollCtrlBottom,
-                  thumbVisibility: true,
-                  trackVisibility: true,
-                  thumbColor: Colors.blue,
-                  trackColor: Colors.blue.withOpacity(0.12),
-                  trackBorderColor: Colors.blue.withOpacity(0.3),
-                  radius: const Radius.circular(6),
-                  thickness: 10,
-                  child: SingleChildScrollView(
-                    controller: _hScrollCtrlBottom,
-                    scrollDirection: Axis.horizontal,
-                    child: SizedBox(width: minWidth, height: 1),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-      ],
+          _buildVarFooter(),
+        ],
+      ),
     );
   }
 

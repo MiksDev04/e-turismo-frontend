@@ -753,19 +753,21 @@ class _TypeBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = type.toUpperCase();
+    final isDae = label == 'DAE';
+    final color = isDae ? const Color(0xFF00C48C) : const Color(0xFFFFCA28);
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: AppColors.primaryCyan.withOpacity(0.08),
+          color: color.withOpacity(0.08),
           borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: AppColors.primaryCyan.withOpacity(0.2)),
+          border: Border.all(color: color.withOpacity(0.2)),
         ),
         child: Text(
           label,
-          style: const TextStyle(
-            color: AppColors.primaryCyan,
+          style: TextStyle(
+            color: color,
             fontSize: 10,
             fontWeight: FontWeight.w600,
           ),
