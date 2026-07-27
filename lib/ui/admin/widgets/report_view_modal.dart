@@ -1253,6 +1253,7 @@ class _EstablishmentViewState extends State<_EstablishmentView> {
                 }
               },
               child: RawScrollbar(
+                controller: _vScrollCtrl,
                 thumbVisibility: true,
                 thumbColor: Colors.blue,
                 trackColor: Colors.blue.withOpacity(0.12),

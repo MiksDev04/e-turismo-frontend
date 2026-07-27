@@ -235,6 +235,10 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
 
   int get _totalGuests => int.tryParse(_totalGuestsCtrl.text) ?? 0;
 
+  int get _selectedRoomsCapacity => _vacantRooms
+      .where((r) => _selectedRoomIds.contains(r.id))
+      .fold<int>(0, (sum, r) => sum + r.capacity);
+
   bool get _isPhilippines =>
       !_leadIsOverseas && _leadCountry == 'Philippines';
 
@@ -242,6 +246,31 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
     if (_errors.containsKey(key)) {
       setState(() => _errors = Map.from(_errors)..remove(key));
     }
+  }
+
+  void _validateRoomCapacity() {
+    final guests = int.tryParse(_totalGuestsCtrl.text) ?? 0;
+    if (_selectedRoomIds.isEmpty || guests <= 0) return;
+
+    final cap = _selectedRoomsCapacity;
+    setState(() {
+      final e = Map<String, String?>.from(_errors);
+      if (cap > 0 && guests > cap) {
+        e['totalGuests'] =
+            'Total guests ($guests) exceeds selected room capacity ($cap pax).';
+        e['rooms'] = 'Selected rooms can only accommodate $cap guests.';
+      } else {
+        if (e['totalGuests']
+                ?.contains('exceeds selected room capacity') ==
+            true) {
+          e.remove('totalGuests');
+        }
+        if (e['rooms']?.contains('accommodate') == true) {
+          e.remove('rooms');
+        }
+      }
+      _errors = e;
+    });
   }
 
   void _showSnackBar(String message, {Color? color}) {
@@ -310,6 +339,22 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
 
     // Rooms are intentionally optional: a day-tour guest (no overnight stay,
     // no room taken — e.g. a resort day visitor) is still a valid record.
+
+    if (_selectedRoomIds.isNotEmpty && guests != null && guests > 0) {
+      final cap = _selectedRoomsCapacity;
+      if (cap > 0 && guests > cap) {
+        errors.putIfAbsent(
+          'totalGuests',
+          () =>
+              'Total guests ($guests) exceeds selected room capacity ($cap pax).',
+        );
+        errors.putIfAbsent(
+          'rooms',
+          () => 'Selected rooms can only accommodate $cap guests.',
+        );
+        hasError = true;
+      }
+    }
 
     if (_purpose == null) {
       errors['purpose'] = 'Please select a purpose of visit.';
@@ -603,6 +648,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                     onGuestsChanged: (_) {
                       setState(() {});
                       _clearFieldError('totalGuests');
+                      _validateRoomCapacity();
                     },
                     onRoomToggled: (roomId) {
                       setState(() {
@@ -613,6 +659,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                         }
                       });
                       _clearFieldError('rooms');
+                      _validateRoomCapacity();
                     },
                     onPurposeOtherChanged: (_) =>
                         _clearFieldError('purposeOther'),

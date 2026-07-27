@@ -277,6 +277,10 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
 
   int get _totalGuests => int.tryParse(_guestsCtrl.text.trim()) ?? 0;
 
+  int get _selectedRoomsCapacity => _vacantRooms
+      .where((r) => _selectedRoomIds.contains(r.id))
+      .fold<int>(0, (sum, r) => sum + r.capacity);
+
   bool get _isPhilippines => !_leadIsOverseas && _leadCountry == 'Philippines';
 
   // ─── Room loading ────────────────────────────────────────────────────────
@@ -345,6 +349,31 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
     }
   }
 
+  void _validateRoomCapacity() {
+    final guests = int.tryParse(_guestsCtrl.text.trim()) ?? 0;
+    if (_selectedRoomIds.isEmpty || guests <= 0) return;
+
+    final cap = _selectedRoomsCapacity;
+    setState(() {
+      final e = Map<String, String?>.from(_errors);
+      if (cap > 0 && guests > cap) {
+        e['totalGuests'] =
+            'Total guests ($guests) exceeds selected room capacity ($cap pax).';
+        e['rooms'] = 'Selected rooms can only accommodate $cap guests.';
+      } else {
+        if (e['totalGuests']
+                ?.contains('exceeds selected room capacity') ==
+            true) {
+          e.remove('totalGuests');
+        }
+        if (e['rooms']?.contains('accommodate') == true) {
+          e.remove('rooms');
+        }
+      }
+      _errors = e;
+    });
+  }
+
   // ─── Validation ───────────────────────────────────────────────────────────
 
   bool _validateAndSetErrors() {
@@ -392,6 +421,22 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
     } else if (guests > 9999) {
       errors['totalGuests'] = 'Value seems too large (max 9,999).';
       hasError = true;
+    }
+
+    if (_selectedRoomIds.isNotEmpty && guests != null && guests > 0) {
+      final cap = _selectedRoomsCapacity;
+      if (cap > 0 && guests > cap) {
+        errors.putIfAbsent(
+          'totalGuests',
+          () =>
+              'Total guests ($guests) exceeds selected room capacity ($cap pax).',
+        );
+        errors.putIfAbsent(
+          'rooms',
+          () => 'Selected rooms can only accommodate $cap guests.',
+        );
+        hasError = true;
+      }
     }
 
     // ── Purpose ─────────────────────────────────────────────────────────────
@@ -763,6 +808,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                                 onChanged: (_) {
                                   setState(() {});
                                   _clearFieldError('totalGuests');
+                                  _validateRoomCapacity();
                                 },
                               ),
                             ),
@@ -789,6 +835,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                                     }
                                   });
                                   _clearFieldError('rooms');
+                                  _validateRoomCapacity();
                                 },
                               ),
                             ),
