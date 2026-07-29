@@ -1435,52 +1435,21 @@ class _ReportViewerModalState extends State<ReportViewerModal>
   Future<void> _handlePrint() async {
     setState(() => _printing = true);
     try {
-      final pdfBytes = await _reportService.downloadReport(
-        DownloadReportParams(
-          reportType: widget.batch.reportType,
-          reportVariant: widget.batch.reportVariant,
-          periodYear: widget.batch.periodYear,
-          periodMonths: widget.batch.periodMonths,
-          format: 'pdf',
-        ),
-      );
-      if (!mounted) return;
-
       await Printing.layoutPdf(
         name: '${widget.batch.reportType == "var" ? "VAR" : "DAE"}_Report',
         onLayout: (format) async {
-          final rasterPages = await Printing.raster(
-            pdfBytes,
-            dpi: 300,
-          ).toList();
-
-          final marginPt = 16.0 * PdfPageFormat.mm;
-          final doc = pw.Document();
-
-          for (final page in rasterPages) {
-            final image = await page.toPng();
-            final availW = format.width - 2 * marginPt;
-            final availH = format.height - 2 * marginPt;
-            final imgW = page.width * 72.0 / 300;
-            final imgH = page.height * 72.0 / 300;
-            final scale = (availW / imgW < availH / imgH)
-                ? availW / imgW
-                : availH / imgH;
-            doc.addPage(
-              pw.Page(
-                pageFormat: format,
-                margin: pw.EdgeInsets.all(marginPt),
-                build: (_) => pw.Center(
-                  child: pw.Image(
-                    pw.MemoryImage(image),
-                    width: imgW * scale,
-                    height: imgH * scale,
-                  ),
-                ),
-              ),
-            );
-          }
-          return doc.save();
+          final pdfBytes = await _reportService.downloadReport(
+            DownloadReportParams(
+              reportType: widget.batch.reportType,
+              reportVariant: widget.batch.reportVariant,
+              periodYear: widget.batch.periodYear,
+              periodMonths: widget.batch.periodMonths,
+              format: 'pdf',
+              pageWidth: format.width,
+              pageHeight: format.height,
+            ),
+          );
+          return pdfBytes;
         },
       );
     } catch (e) {

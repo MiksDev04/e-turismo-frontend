@@ -432,6 +432,8 @@ class DownloadReportParams {
   final int periodYear;
   final List<int> periodMonths;
   final String format;
+  final double? pageWidth;
+  final double? pageHeight;
 
   const DownloadReportParams({
     this.reportType = 'dae',
@@ -439,6 +441,8 @@ class DownloadReportParams {
     required this.periodYear,
     required this.periodMonths,
     this.format = 'xlsx',
+    this.pageWidth,
+    this.pageHeight,
   });
 
   Map<String, dynamic> toJson() => {
@@ -447,6 +451,8 @@ class DownloadReportParams {
     'periodYear': periodYear,
     'periodMonths': periodMonths,
     'format': format,
+    if (pageWidth != null) 'pageWidth': pageWidth,
+    if (pageHeight != null) 'pageHeight': pageHeight,
   };
 }
 
