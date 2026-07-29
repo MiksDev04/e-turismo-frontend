@@ -260,18 +260,6 @@ int _roomsAvailable(EstablishmentReport est, MonthData md, String day) {
 int _guestNights(EstablishmentReport est, MonthData md, String day) =>
     day == '0' ? (md.guestNights ?? 0) : (md.guestNightsByDay?[day] ?? 0);
 
-double _occupancyRate(EstablishmentReport est, MonthData md, String day) {
-  final avail = _roomsAvailable(est, md, day);
-  if (avail == 0) return 0;
-  return _roomsOccupied(est, md, day) / avail * 100;
-}
-
-double _avgLengthOfStay(EstablishmentReport est, MonthData md, String day) {
-  final guests = _grandTotal(est, md, day);
-  if (guests == 0) return 0;
-  return _guestNights(est, md, day) / guests;
-}
-
 int _sexCategory(MonthData md, String day, String sex, String category) =>
     md.sexByDay?[day]?[sex]?[category] ?? 0;
 
@@ -411,18 +399,8 @@ List<_RRow> _buildIndicatorRows() {
     ),
     _RRow('3. Total Guest nights', _RKind.indicator, value: _guestNights),
     _RRow('Alternative Submission', _RKind.plainNote),
-    _RRow(
-      '1. Average Monthly Occupancy Rate',
-      _RKind.indicator,
-      value: _occupancyRate,
-      format: (v) => '${v.toStringAsFixed(1)}%',
-    ),
-    _RRow(
-      '2. Average Length of Stay (in Nights)',
-      _RKind.indicator,
-      value: _avgLengthOfStay,
-      format: (v) => v.toStringAsFixed(1),
-    ),
+    _RRow('1. Average Monthly Occupancy Rate', _RKind.indicator, value: (est, md, day) => 0),
+    _RRow('2. Average Length of Stay (in Nights)', _RKind.indicator, value: (est, md, day) => 0),
     _RRow('B. VOLUME PER SEX', _RKind.subsectionTitle),
     _RRow('1. Male', _RKind.indicatorBold),
     _RRow(
