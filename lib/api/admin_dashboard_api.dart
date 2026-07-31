@@ -461,46 +461,88 @@ class AdminDashboardApi extends BaseApi {
       final (start, end) = _dateRange(0, year);
       final records = await _fetchGuestRecords(startDate: start, endDate: end);
 
+      final yearStartDt = DateTime.parse(start);
       final yearEndDt = DateTime.parse(end);
 
       final monthMap = <int, int>{};
       for (final record in records) {
         final checkInText = record['check_in']?.toString();
         if (checkInText == null) continue;
-        final checkIn = DateTime.tryParse(checkInText);
-        if (checkIn == null) continue;
+        final checkInRaw = DateTime.tryParse(checkInText);
+        if (checkInRaw == null) continue;
 
         final effectiveCheckOutText =
             record['actual_check_out']?.toString() ??
             record['actual_checkout']?.toString() ??
             record['check_out']?.toString();
         if (effectiveCheckOutText == null) continue;
-        final effectiveCheckOut = DateTime.tryParse(effectiveCheckOutText);
-        if (effectiveCheckOut == null) continue;
+        final effectiveCheckOutRaw = DateTime.tryParse(effectiveCheckOutText);
+        if (effectiveCheckOutRaw == null) continue;
 
         final guests = (record['total_guests'] as num?)?.toInt() ?? 0;
         if (guests <= 0) continue;
 
-        // Spread guest-days across each month the stay overlaps
-        var cur = DateTime(checkIn.year, checkIn.month, checkIn.day);
-        final effectiveCheckOutDate = DateTime(
-          effectiveCheckOut.year,
-          effectiveCheckOut.month,
-          effectiveCheckOut.day,
+        // Spread guest-days across each month the stay overlaps, using the
+        // same presence-window semantics as the DAE report: every calendar
+        // day from check-in up to (but excluding) the effective check-out.
+        // Same-day stays count one day. Days outside the target year are
+        // clamped away so prior/next-year stays don't leak into this year.
+        final checkIn = DateTime(
+          checkInRaw.year,
+          checkInRaw.month,
+          checkInRaw.day,
         );
-        final stayEnd = effectiveCheckOutDate.isAfter(yearEndDt)
-            ? yearEndDt
-            : effectiveCheckOutDate;
-        while (!cur.isAfter(stayEnd) && !cur.isAfter(yearEndDt)) {
-          final monthEnd = DateTime(cur.year, cur.month + 1, 0);
-          final periodEnd = stayEnd.isBefore(monthEnd) ? stayEnd : monthEnd;
-          final isClampedEnd = periodEnd.isBefore(effectiveCheckOutDate);
-          final nights = periodEnd.difference(cur).inDays;
-          final spreadDays =
-              isClampedEnd ? nights + 1 : (nights < 1 ? 1 : nights);
-          monthMap[cur.month] =
-              (monthMap[cur.month] ?? 0) + guests * spreadDays;
-          cur = DateTime(cur.year, cur.month + 1, 1);
+        final effectiveCheckOutDate = DateTime(
+          effectiveCheckOutRaw.year,
+          effectiveCheckOutRaw.month,
+          effectiveCheckOutRaw.day,
+        );
+        if (effectiveCheckOutDate.isBefore(checkIn)) continue;
+
+        final nights = effectiveCheckOutDate.difference(checkIn).inDays;
+        final spreadDays = nights < 1 ? 1 : nights;
+        final spreadEnd = DateTime(
+          checkIn.year,
+          checkIn.month,
+          checkIn.day + spreadDays,
+        );
+        final yearEndExclusive = DateTime(
+          yearEndDt.year,
+          yearEndDt.month,
+          yearEndDt.day + 1,
+        );
+        final rangeStart = checkIn.isBefore(yearStartDt)
+            ? yearStartDt
+            : checkIn;
+        final rangeEnd = spreadEnd.isAfter(yearEndExclusive)
+            ? yearEndExclusive
+            : spreadEnd;
+        if (!rangeEnd.isAfter(rangeStart)) continue;
+
+        var monthCursor = DateTime(rangeStart.year, rangeStart.month, 1);
+        final lastMonth = DateTime(rangeEnd.year, rangeEnd.month, 1);
+        while (!monthCursor.isAfter(lastMonth)) {
+          final monthEndExclusive = DateTime(
+            monthCursor.year,
+            monthCursor.month + 1,
+            1,
+          );
+          final segStart = rangeStart.isAfter(monthCursor)
+              ? rangeStart
+              : monthCursor;
+          final segEnd = rangeEnd.isBefore(monthEndExclusive)
+              ? rangeEnd
+              : monthEndExclusive;
+          if (segEnd.isAfter(segStart)) {
+            monthMap[monthCursor.month] =
+                (monthMap[monthCursor.month] ?? 0) +
+                    guests * segEnd.difference(segStart).inDays;
+          }
+          monthCursor = DateTime(
+            monthCursor.year,
+            monthCursor.month + 1,
+            1,
+          );
         }
       }
 
@@ -564,6 +606,10 @@ class AdminDashboardApi extends BaseApi {
   String _csvCell(String value) => value.contains(',') ? '"$value"' : value;
 
   /// Compute guest-days for a record within [rangeStart, rangeEnd].
+  ///
+  /// A guest is counted on every calendar day of presence — check-in up to
+  /// (but excluding) the effective check-out, which is `actual_check_out`
+  /// when present, otherwise `check_out`. Same-day stays count a single day.
   int _recordGuestDays(
     Map<String, dynamic> record,
     DateTime rangeStart,
@@ -591,16 +637,28 @@ class AdminDashboardApi extends BaseApi {
       effectiveCheckOutRaw.month,
       effectiveCheckOutRaw.day,
     );
+    if (effectiveCheckOut.isBefore(checkIn)) return 0;
 
-    final stayStart = checkIn.isBefore(rangeStart) ? rangeStart : checkIn;
-    final stayEnd =
-        effectiveCheckOut.isAfter(rangeEnd) ? rangeEnd : effectiveCheckOut;
-    if (stayEnd.isBefore(stayStart)) return 0;
+    final nights = effectiveCheckOut.difference(checkIn).inDays;
+    final spreadDays = nights < 1 ? 1 : nights;
+    final spreadEnd = DateTime(
+      checkIn.year,
+      checkIn.month,
+      checkIn.day + spreadDays,
+    );
+    final rangeEndExclusive = DateTime(
+      rangeEnd.year,
+      rangeEnd.month,
+      rangeEnd.day + 1,
+    );
 
-    final isClamped = effectiveCheckOut.isAfter(rangeEnd);
-    final nights = stayEnd.difference(stayStart).inDays;
-    final presenceDays = isClamped ? nights + 1 : nights;
-    return guests * (presenceDays < 1 ? 1 : presenceDays);
+    final start = checkIn.isBefore(rangeStart) ? rangeStart : checkIn;
+    final end = spreadEnd.isAfter(rangeEndExclusive)
+        ? rangeEndExclusive
+        : spreadEnd;
+    if (!end.isAfter(start)) return 0;
+
+    return guests * end.difference(start).inDays;
   }
 
   String _monthName(int month) => const [
