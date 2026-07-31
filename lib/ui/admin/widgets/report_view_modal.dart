@@ -955,7 +955,7 @@ class _VarReportTable extends StatelessWidget {
           // ── Row 3 (y=40) ────────────────────────────────────────────
           // D14:F14 = "This City/Municipality"
           cell(
-            'This City/\nMunicipality',
+            'This City/Municipality',
             x: xData,
             y: y2,
             w: _varDataW * 3,
@@ -964,7 +964,7 @@ class _VarReportTable extends StatelessWidget {
           ),
           // G14:I14 = "Other City/Municipality"
           cell(
-            'Other City/\nMunicipality',
+            'Other City/Municipality',
             x: xData + _varDataW * 3,
             y: y2,
             w: _varDataW * 3,
@@ -973,7 +973,7 @@ class _VarReportTable extends StatelessWidget {
           ),
           // J14:L14 = "Other Province"
           cell(
-            'Other\nProvince',
+            'Other Province',
             x: xData + _varDataW * 6,
             y: y2,
             w: _varDataW * 3,
@@ -1948,19 +1948,12 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                     Text('Prepared by:', style: ts),
                     const SizedBox(height: 30),
                     Text('________________________', style: ts),
-                    Text(
-                      'MIZPAH A. LENESES',
-                      style: ts.copyWith(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
+                   
                     Text(
                       'ADMINISTRATIVE AIDE 1',
                       style: ts.copyWith(
                         fontWeight: FontWeight.bold,
-                        fontSize: 8,
+                        fontSize: 12,
                       ),
                     ),
                   ],
@@ -1972,19 +1965,12 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                     Text('Check and Submitted by:', style: ts),
                     const SizedBox(height: 30),
                     Text('________________________', style: ts),
-                    Text(
-                      'ROLDAN B. AQUINO',
-                      style: ts.copyWith(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
+                    
                     Text(
                       'LOCAL REGISTRY COLLECTION OFFICER I',
                       style: ts.copyWith(
                         fontWeight: FontWeight.bold,
-                        fontSize: 8,
+                        fontSize: 12,
                       ),
                     ),
                   ],
@@ -1996,19 +1982,12 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                     Text('Noted by:', style: ts),
                     const SizedBox(height: 30),
                     Text('________________________', style: ts),
-                    Text(
-                      'MARIA DONNALYN E. BRI\u00d1AS',
-                      style: ts.copyWith(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
+                    
                     Text(
                       'City Tourism Officer CGDH-1',
                       style: ts.copyWith(
                         fontWeight: FontWeight.bold,
-                        fontSize: 8,
+                        fontSize: 12,
                       ),
                     ),
                   ],
