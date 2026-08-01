@@ -399,8 +399,16 @@ List<_RRow> _buildIndicatorRows() {
     ),
     _RRow('3. Total Guest nights', _RKind.indicator, value: _guestNights),
     _RRow('Alternative Submission', _RKind.plainNote),
-    _RRow('1. Average Monthly Occupancy Rate', _RKind.indicator, value: (est, md, day) => 0),
-    _RRow('2. Average Length of Stay (in Nights)', _RKind.indicator, value: (est, md, day) => 0),
+    _RRow(
+      '1. Average Monthly Occupancy Rate',
+      _RKind.indicator,
+      value: (est, md, day) => 0,
+    ),
+    _RRow(
+      '2. Average Length of Stay (in Nights)',
+      _RKind.indicator,
+      value: (est, md, day) => 0,
+    ),
     _RRow('B. VOLUME PER SEX', _RKind.subsectionTitle),
     _RRow('1. Male', _RKind.indicatorBold),
     _RRow(
@@ -1217,9 +1225,7 @@ class _EstablishmentViewState extends State<_EstablishmentView> {
               if (event is PointerScrollEvent &&
                   HardwareKeyboard.instance.isControlPressed) {
                 final delta = event.scrollDelta.dy > 0 ? -0.1 : 0.1;
-                widget.onZoomChanged(
-                  (zoomLevel + delta).clamp(1.0, 2.0),
-                );
+                widget.onZoomChanged((zoomLevel + delta).clamp(1.0, 2.0));
               }
             },
             child: GestureDetector(
@@ -1552,7 +1558,9 @@ class _ReportViewerModalState extends State<ReportViewerModal>
               ),
               unselectedLabelStyle: const TextStyle(fontSize: 11),
               tabAlignment: TabAlignment.start,
-              tabs: establishments.map((e) => Tab(text: e.businessName)).toList(),
+              tabs: establishments
+                  .map((e) => Tab(text: e.businessName))
+                  .toList(),
             ),
           ),
         ),
@@ -1719,15 +1727,9 @@ class _ReportViewerModalState extends State<ReportViewerModal>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: tableWidth,
-            child: _buildFormHeader(est),
-          ),
+          SizedBox(width: tableWidth, child: _buildFormHeader(est)),
           _buildReportTable(est),
-          SizedBox(
-            width: tableWidth,
-            child: _buildFooter(),
-          ),
+          SizedBox(width: tableWidth, child: _buildFooter()),
         ],
       ),
     );
@@ -1813,105 +1815,126 @@ class _ReportViewerModalState extends State<ReportViewerModal>
       color: _Var.paper,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       width: _varTableWidth(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
         children: [
-          // Row 1: Republic of the Philippines
-          Center(
-            child: Text(
-              'Republic of the Philippines',
-              style: ts.copyWith(fontSize: 12),
+          Positioned(
+            top: 5,
+            left: 70,
+            child: Image.asset(
+              'assets/images/tourism_office_logo.jpg',
+              width: 50,
+              height: 50,
+              fit: BoxFit.contain,
             ),
           ),
-          const SizedBox(height: 2),
-          // Row 2: City Government
-          Center(
-            child: Text(
-              'City Government of San Pablo',
-              style: ts.copyWith(fontSize: 12),
-            ),
-          ),
-          const SizedBox(height: 2),
-          // Row 3: Address
-          Center(
-            child: Text(
-              'Information Center, Do\u00f1a Leonila Park, City Hall Compound, San Pablo City ',
-              style: ts.copyWith(fontSize: 10),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(height: 2),
-          // Row 4: Email/contact
-          Center(
-            child: Text(
-              'e-mail: tourism.sanpablo@yahoo.com Tel./Fax No.: (049)562-1429',
-              style: ts.copyWith(
-                fontSize: 10,
-                decoration: TextDecoration.underline,
-                color: _Var.emailBlue,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Row 6: Tourism Attraction Visitor Record
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Row 1: Republic of the Philippines
+              Center(
+                child: Text(
+                  'Republic of the Philippines',
+                  style: ts.copyWith(fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 2),
+              // Row 2: City Government
+              Center(
+                child: Text(
+                  'City Government of San Pablo',
+                  style: ts.copyWith(fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 2),
+              // Row 3: Address
+              Center(
+                child: Text(
+                  'Information Center, Do\u00f1a Leonila Park, City Hall Compound, San Pablo City ',
+                  style: ts.copyWith(fontSize: 10),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 2),
+              // Row 4: Email/contact
+              Center(
+                child: Text(
+                  'e-mail: tourism.sanpablo@yahoo.com Tel./Fax No.: (049)562-1429',
+                  style: ts.copyWith(
+                    fontSize: 10,
+                    decoration: TextDecoration.underline,
+                    color: _Var.emailBlue,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Row 6: Tourism Attraction Visitor Record
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Tourism Attraction Visitor Record',
+                    style: ts.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  Text('VAR 2', style: ts),
+                ],
+              ),
+              const SizedBox(height: 4),
+              // Row 7: Note
               Text(
-                'Tourism Attraction Visitor Record',
-                style: ts.copyWith(fontWeight: FontWeight.bold),
+                '( This recording form can be used instead of just counting the visitors )',
+                style: ts.copyWith(fontSize: _Var.smallSize),
               ),
-              Text('VAR 2', style: ts),
+              const SizedBox(height: 12),
+              // Row 9: Month/Year
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text('Month/Year:', style: ts),
+                  const SizedBox(width: 20),
+                  Container(
+                    width: 650,
+                    decoration: const BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(color: _Var.ink, width: 1),
+                      ),
+                    ),
+                    child: Text(
+                      monthLabel,
+                      style: ts.copyWith(fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.start,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              // Row 10: Name of Municipality
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text('Name of Municipality:', style: ts),
+                  const SizedBox(width: 20),
+                  Container(
+                    width: 650,
+                    decoration: const BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(color: _Var.ink, width: 1),
+                      ),
+                    ),
+                    child: Text(
+                      'SAN PABLO CITY',
+                      style: ts.copyWith(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.start,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
             ],
           ),
-          const SizedBox(height: 4),
-          // Row 7: Note
-          Text(
-            '( This recording form can be used instead of just counting the visitors )',
-            style: ts.copyWith(fontSize: _Var.smallSize),
-          ),
-          const SizedBox(height: 12),
-          // Row 9: Month/Year
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Text('Month/Year:', style: ts),
-              const SizedBox(width: 20),
-              Container(
-                width: 650,
-                decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: _Var.ink, width: 1)),
-                ),
-                child: Text(
-                  monthLabel,
-                  style: ts.copyWith(fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.start,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          // Row 10: Name of Municipality
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Text('Name of Municipality:', style: ts),
-              const SizedBox(width: 20),
-              Container(
-                width: 650,
-                decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: _Var.ink, width: 1)),
-                ),
-                child: Text(
-                  'SAN PABLO CITY',
-                  style: ts.copyWith(fontSize: 10, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.start,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
         ],
       ),
     );
@@ -1948,7 +1971,7 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                     Text('Prepared by:', style: ts),
                     const SizedBox(height: 30),
                     Text('________________________', style: ts),
-                   
+
                     Text(
                       'ADMINISTRATIVE AIDE 1',
                       style: ts.copyWith(
@@ -1965,7 +1988,7 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                     Text('Check and Submitted by:', style: ts),
                     const SizedBox(height: 30),
                     Text('________________________', style: ts),
-                    
+
                     Text(
                       'LOCAL REGISTRY COLLECTION OFFICER I',
                       style: ts.copyWith(
@@ -1982,7 +2005,7 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                     Text('Noted by:', style: ts),
                     const SizedBox(height: 30),
                     Text('________________________', style: ts),
-                    
+
                     Text(
                       'City Tourism Officer CGDH-1',
                       style: ts.copyWith(
