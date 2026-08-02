@@ -163,6 +163,7 @@ class BusinessGuestRecordApi extends BaseApi {
     String? leadBirthdate,
     String? leadSex,
     String? actualCheckOut,
+    String? status,
   }) async {
     if (ConnectivityService.instance.isOnline && hasToken) {
       try {
@@ -184,6 +185,7 @@ class BusinessGuestRecordApi extends BaseApi {
           leadBirthdate:          leadBirthdate,
           leadSex:                leadSex,
           actualCheckOut:         actualCheckOut,
+          status:                 status,
         );
       } on ApiException catch (e) {
         if (e.statusCode == 401) {
@@ -205,6 +207,7 @@ class BusinessGuestRecordApi extends BaseApi {
             leadBirthdate:          leadBirthdate,
             leadSex:                leadSex,
             actualCheckOut:         actualCheckOut,
+            status:                 status,
           );
         }
         return ApiResult.failure('Update failed: ${e.message}');
@@ -229,6 +232,7 @@ class BusinessGuestRecordApi extends BaseApi {
       leadBirthdate:          leadBirthdate,
       leadSex:                leadSex,
       actualCheckOut:         actualCheckOut,
+      status:                 status,
     );
   }
 
@@ -281,7 +285,11 @@ class BusinessGuestRecordApi extends BaseApi {
     final allRecords   = List<GuestRecord>.from(cloudRecords);
 
     if (!kIsWeb) {
-      final merged = await _getMergedLocalRecords(businessId, cloudRecords.map((r) => r.id).toSet());
+      final merged = await _getMergedLocalRecords(
+        businessId,
+        cloudRecords.map((r) => r.id).toSet(),
+        status: status,
+      );
       debugPrint('🧩 _fetchOnline: merged ${merged.length} local records');
       allRecords.addAll(merged);
       allRecords.sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
@@ -296,7 +304,11 @@ class BusinessGuestRecordApi extends BaseApi {
     return ApiResult.success((data: allRecords, totalCount: totalCount, pageCount: pageCount));
   }
 
-  Future<List<GuestRecord>> _getMergedLocalRecords(String businessId, Set<String> cloudIds) async {
+  Future<List<GuestRecord>> _getMergedLocalRecords(
+    String businessId,
+    Set<String> cloudIds, {
+    String? status,
+  }) async {
     try {
       final db = await LocalDatabase.instance.database;
       
@@ -304,11 +316,27 @@ class BusinessGuestRecordApi extends BaseApi {
       final graceThreshold = now.subtract(const Duration(minutes: 2)).toIso8601String();
 
       final allLocalCount = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM ${LocalDatabase.tableGuestRecords}'));
-      
+
+      final conditions = <String>[
+        'business_id = ?',
+        'is_deleted = 0',
+        '(sync_status != ? OR local_updated_at > ?)',
+      ];
+      final whereArgs = <dynamic>[
+        businessId,
+        LocalDatabase.syncSynced,
+        graceThreshold,
+      ];
+      if (status == 'archived') {
+        conditions.add("status = 'archived'");
+      } else if (status == 'active') {
+        conditions.add("status = 'active'");
+      }
+
       final rows = await db.query(
         LocalDatabase.tableGuestRecords,
-        where: 'business_id = ? AND is_deleted = 0 AND (sync_status != ? OR local_updated_at > ?)',
-        whereArgs: [businessId, LocalDatabase.syncSynced, graceThreshold],
+        where: conditions.join(' AND '),
+        whereArgs: whereArgs,
       );
       
       if (rows.isEmpty && (allLocalCount ?? 0) > 0) {
@@ -499,6 +527,7 @@ class BusinessGuestRecordApi extends BaseApi {
     String? leadBirthdate,
     String? leadSex,
     String? actualCheckOut,
+    String? status,
   }) async {
     try {
       final businessId = SessionService.instance.current?.businessId;
@@ -507,6 +536,7 @@ class BusinessGuestRecordApi extends BaseApi {
         'checkIn':               checkIn,
         'checkOut':              checkOut,
         'actualCheckOut':        actualCheckOut,
+        'status':                status,
         'totalGuests':           totalGuests,
         'purposeOfVisit':        purposeOfVisit,
         'transportationMode':    transportationMode,
@@ -543,29 +573,33 @@ class BusinessGuestRecordApi extends BaseApi {
         final preserveCreate = currentState.isNotEmpty &&
             currentState.first['sync_status'] == LocalDatabase.syncPendingCreate;
 
+        final localUpdate = <String, dynamic>{
+          'check_in':                checkIn,
+          'check_out':               checkOut,
+          'actual_checkout':         actualCheckOut,
+          'total_guests':            totalGuests,
+          'purpose_of_visit':        purposeOfVisit,
+          'transportation_mode':     transportationMode,
+          'lead_country':            leadCountry,
+          'lead_city_municipality':  leadMunicipality,
+          'lead_province':           leadProvince,
+          'lead_nationality':        leadNationality,
+          'lead_philippines_region': leadPhilippinesRegion,
+          'lead_is_overseas':        leadIsOverseas ? 1 : 0,
+          'lead_birthdate':          leadBirthdate,
+          'lead_sex':                leadSex?.toLowerCase(),
+          'updated_at':              DateTime.now().toUtc().toIso8601String(),
+          'sync_status':             preserveCreate
+              ? LocalDatabase.syncPendingCreate
+              : LocalDatabase.syncSynced,
+          'local_updated_at':        DateTime.now().toUtc().toIso8601String(),
+        };
+        if (status != null) {
+          localUpdate['status'] = status;
+        }
         await db.update(
           LocalDatabase.tableGuestRecords,
-          {
-            'check_in':                checkIn,
-            'check_out':               checkOut,
-            'actual_checkout':         actualCheckOut,
-            'total_guests':            totalGuests,
-            'purpose_of_visit':        purposeOfVisit,
-            'transportation_mode':     transportationMode,
-            'lead_country':            leadCountry,
-            'lead_city_municipality':  leadMunicipality,
-            'lead_province':           leadProvince,
-            'lead_nationality':        leadNationality,
-            'lead_philippines_region': leadPhilippinesRegion,
-            'lead_is_overseas':        leadIsOverseas ? 1 : 0,
-            'lead_birthdate':          leadBirthdate,
-            'lead_sex':                leadSex?.toLowerCase(),
-            'updated_at':              DateTime.now().toUtc().toIso8601String(),
-            'sync_status':             preserveCreate
-                ? LocalDatabase.syncPendingCreate
-                : LocalDatabase.syncSynced,
-            'local_updated_at':        DateTime.now().toUtc().toIso8601String(),
-          },
+          localUpdate,
           where:     'id = ?',
           whereArgs: [recordId],
         );
@@ -603,6 +637,7 @@ class BusinessGuestRecordApi extends BaseApi {
     String? leadBirthdate,
     String? leadSex,
     String? actualCheckOut,
+    String? status,
   }) async {
     try {
       final now = DateTime.now().toUtc().toIso8601String();
@@ -622,29 +657,33 @@ class BusinessGuestRecordApi extends BaseApi {
       final preserveCreate = currentState.isNotEmpty &&
           currentState.first['sync_status'] == LocalDatabase.syncPendingCreate;
 
+      final localUpdate = <String, dynamic>{
+        'check_in':                checkIn,
+        'check_out':               checkOut,
+        'actual_checkout':         actualCheckOut,
+        'total_guests':            totalGuests,
+        'purpose_of_visit':        purposeOfVisit,
+        'transportation_mode':     transportationMode,
+        'lead_country':            leadCountry,
+        'lead_city_municipality':  leadMunicipality,
+        'lead_province':           leadProvince,
+        'lead_nationality':        leadNationality,
+        'lead_philippines_region': leadPhilippinesRegion,
+        'lead_is_overseas':        leadIsOverseas ? 1 : 0,
+        'lead_birthdate':          leadBirthdate,
+        'lead_sex':                leadSex?.toLowerCase(),
+        'updated_at':              now,
+        'sync_status':             preserveCreate
+            ? LocalDatabase.syncPendingCreate
+            : LocalDatabase.syncPendingUpdate,
+        'local_updated_at':        now,
+      };
+      if (status != null) {
+        localUpdate['status'] = status;
+      }
       await db.update(
         LocalDatabase.tableGuestRecords,
-        {
-          'check_in':                checkIn,
-          'check_out':               checkOut,
-          'actual_checkout':         actualCheckOut,
-          'total_guests':            totalGuests,
-          'purpose_of_visit':        purposeOfVisit,
-          'transportation_mode':     transportationMode,
-          'lead_country':            leadCountry,
-          'lead_city_municipality':  leadMunicipality,
-          'lead_province':           leadProvince,
-          'lead_nationality':        leadNationality,
-          'lead_philippines_region': leadPhilippinesRegion,
-          'lead_is_overseas':        leadIsOverseas ? 1 : 0,
-          'lead_birthdate':          leadBirthdate,
-          'lead_sex':                leadSex?.toLowerCase(),
-          'updated_at':              now,
-          'sync_status':             preserveCreate
-              ? LocalDatabase.syncPendingCreate
-              : LocalDatabase.syncPendingUpdate,
-          'local_updated_at':        now,
-        },
+        localUpdate,
         where:     'id = ?',
         whereArgs: [recordId],
       );

@@ -500,8 +500,8 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       }
     }
 
-    // Mark junction table rows as completed during offline checkout
-    if (!kIsWeb && allSuccess) {
+    // Mark junction table rows as completed during checkout
+    if (!kIsWeb) {
       try {
         final db = await LocalDatabase.instance.database;
         final now = DateTime.now().toUtc().toIso8601String();
@@ -527,41 +527,46 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
     if (!mounted) return;
     Navigator.of(context).pop();
 
-    if (allSuccess) {
-      final now = DateTime.now();
-      final actualCheckOut = '${now.year.toString().padLeft(4, '0')}-'
-          '${now.month.toString().padLeft(2, '0')}-'
-          '${now.day.toString().padLeft(2, '0')} '
-          '${now.hour.toString().padLeft(2, '0')}:'
-          '${now.minute.toString().padLeft(2, '0')}:'
-          '${now.second.toString().padLeft(2, '0')}';
-      final updateResult = await _api.updateRecord(
-        recordId:               record.id,
-        checkIn:                record.checkIn,
-        checkOut:               record.checkOut,
-        totalGuests:            record.guests,
-        purposeOfVisit:         record.purpose,
-        transportationMode:     record.transport,
-        breakdowns:             record.demographics?.breakdowns ?? [],
-        leadCountry:            record.leadCountry,
-        leadMunicipality:       record.leadMunicipality,
-        leadProvince:           record.leadProvince,
-        leadNationality:        record.leadNationality,
-        leadPhilippinesRegion:  record.leadPhilippinesRegion,
-        leadIsOverseas:         record.leadIsOverseas,
-        leadBirthdate:          record.leadBirthdate,
-        leadSex:                record.leadSex,
-        actualCheckOut:         actualCheckOut,
+    final now = DateTime.now();
+    final actualCheckOut = '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')} '
+        '${now.hour.toString().padLeft(2, '0')}:'
+        '${now.minute.toString().padLeft(2, '0')}:'
+        '${now.second.toString().padLeft(2, '0')}';
+    final updateResult = await _api.updateRecord(
+      recordId:               record.id,
+      checkIn:                record.checkIn,
+      checkOut:               record.checkOut,
+      totalGuests:            record.guests,
+      roomIds:                roomIds,
+      purposeOfVisit:         record.purpose,
+      transportationMode:     record.transport,
+      breakdowns:             record.demographics?.breakdowns ?? [],
+      leadCountry:            record.leadCountry,
+      leadMunicipality:       record.leadMunicipality,
+      leadProvince:           record.leadProvince,
+      leadNationality:        record.leadNationality,
+      leadPhilippinesRegion:  record.leadPhilippinesRegion,
+      leadIsOverseas:         record.leadIsOverseas,
+      leadBirthdate:          record.leadBirthdate,
+      leadSex:                record.leadSex,
+      actualCheckOut:         actualCheckOut,
+      status:                 'archived',
+    );
+    if (updateResult.isSuccess) {
+      _showSnack(
+        allSuccess
+            ? 'Guest checked out successfully.'
+            : 'Guest checked out, but some rooms could not be marked vacant.',
       );
-      if (updateResult.isSuccess) {
-        _showSnack('Guest checked out successfully.');
-      } else {
-        _showSnack('Guest checked out but check-out time was not recorded.');
-      }
-      _loadRecords();
     } else {
-      _showSnack('Failed to check out guest. Please try again.', isError: true);
+      _showSnack(
+        'Guest checked out but the check-out time was not recorded.',
+        isError: true,
+      );
     }
+    _loadRecords();
   }
 
   void _showSnack(String msg, {bool isError = false, Color? color}) {
