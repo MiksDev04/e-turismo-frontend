@@ -27,6 +27,8 @@ class BusinessActivityRecord {
   final BusinessStatusLevel businessStatus;
   final int totalRecords;
   final int totalGuests;
+  /// Last day a guest was present (date-only, derived from stay dates:
+  /// actual_check_out, or today while the guest is still checked in).
   final DateTime? lastActivity;
   final ActivityStatus activityStatus;
 
