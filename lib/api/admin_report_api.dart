@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'base_api.dart';
+import '../core/utils/datetime_utils.dart';
 
 export 'base_api.dart';
 
@@ -85,12 +86,12 @@ class ReportBatch {
     reportVariant: json['report_variant'] as String,
     periodYear: json['period_year'] as int,
     periodMonths: (json['period_months'] as List).map((e) => e as int).toList(),
-    createdAt: DateTime.parse(json['created_at'] as String),
+    createdAt: parseDbDateTime(json['created_at'] as String),
     lastViewedAt: json['last_viewed_at'] != null
-        ? DateTime.parse(json['last_viewed_at'] as String)
+        ? parseDbDateTime(json['last_viewed_at'] as String)
         : null,
     lastGeneratedAt: json['last_generated_at'] != null
-        ? DateTime.parse(json['last_generated_at'] as String)
+        ? parseDbDateTime(json['last_generated_at'] as String)
         : null,
     requestedByName: json['requested_by_name'] as String?,
     periodLabel: null,

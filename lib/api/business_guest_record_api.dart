@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:app/core/database/local_database.dart';
 import 'package:app/core/services/offline_service.dart';
 import 'package:app/core/services/session_service.dart';
+import 'package:app/core/utils/datetime_utils.dart';
 import 'package:app/ui/business/pages/business_guest_records_page.dart';
 import 'base_api.dart';
 
@@ -1152,8 +1153,8 @@ class BusinessGuestRecordApi extends BaseApi {
     final birthdateStr = row['lead_birthdate'] as String?;
     final checkInStr   = row['check_in'] as String?;
     if (birthdateStr != null && checkInStr != null) {
-      final birthdate = DateTime.tryParse(birthdateStr);
-      final checkIn   = DateTime.tryParse(checkInStr);
+      final birthdate = tryParseDbDateTime(birthdateStr);
+      final checkIn   = tryParseDbDateTime(checkInStr);
       if (birthdate != null && checkIn != null) {
         int age = checkIn.year - birthdate.year;
         if (checkIn.month < birthdate.month ||
@@ -1207,8 +1208,8 @@ class BusinessGuestRecordApi extends BaseApi {
 
   String _calcNights(String checkIn, String checkOut) {
     try {
-      final inDate  = DateTime.parse(checkIn);
-      final outDate = DateTime.parse(checkOut);
+      final inDate  = parseDbDateTime(checkIn);
+      final outDate = parseDbDateTime(checkOut);
       final n       = outDate.difference(inDate).inDays;
       return '$n night${n == 1 ? '' : 's'}';
     } catch (_) {

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'base_api.dart';
+import '../core/utils/datetime_utils.dart';
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -178,7 +179,7 @@ class Message {
     subject: json['subject'] as String,
     content: json['content'] as String,
     isBroadcast: json['is_broadcast'] == 1 || json['is_broadcast'] == true,
-    createdAt: DateTime.parse(json['created_at'] as String),
+    createdAt: parseDbDateTime(json['created_at'] as String),
     senderName:
         (json['sender'] as Map<String, dynamic>?)?['full_name'] as String?,
   );
@@ -230,9 +231,9 @@ class InboxMessage {
         orElse: () => RecipientStatus.unread,
       ),
       isRead: json['is_read'] == 1 || json['is_read'] == true,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: parseDbDateTime(json['created_at'] as String),
       readAt: json['read_at'] != null
-          ? DateTime.parse(json['read_at'] as String)
+          ? parseDbDateTime(json['read_at'] as String)
           : null,
       messageType: MessageType.values.firstWhere(
         (e) => e.dbValue == msg['message_type'],
@@ -241,7 +242,7 @@ class InboxMessage {
       subject: msg['subject'] as String,
       content: msg['content'] as String,
       isBroadcast: msg['is_broadcast'] == 1 || msg['is_broadcast'] == true,
-      sentAt: DateTime.parse(msg['created_at'] as String),
+      sentAt: parseDbDateTime(msg['created_at'] as String),
       senderName:
           (msg['sender'] as Map<String, dynamic>?)?['full_name'] as String?,
     );
@@ -282,7 +283,7 @@ class DeliveryReceipt {
       ),
       isRead: json['is_read'] == 1 || json['is_read'] == true,
       readAt: json['read_at'] != null
-          ? DateTime.parse(json['read_at'] as String)
+          ? parseDbDateTime(json['read_at'] as String)
           : null,
     );
   }

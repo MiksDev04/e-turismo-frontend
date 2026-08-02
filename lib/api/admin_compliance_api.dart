@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'base_api.dart';
+import '../core/utils/datetime_utils.dart';
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -53,9 +54,7 @@ class BusinessActivityRecord {
       businessStatus: _parseBusinessStatus(json['business_status'] as String),
       totalRecords: (json['total_records'] as num).toInt(),
       totalGuests: (json['total_guests'] as num).toInt(),
-      lastActivity: json['last_activity'] != null
-          ? DateTime.tryParse(json['last_activity'] as String)
-          : null,
+      lastActivity: tryParseDbDateTime(json['last_activity'] as String?),
       activityStatus: _parseActivityStatus(json['activity_status'] as String),
     );
   }
@@ -223,7 +222,7 @@ class AdminComplianceApi extends BaseApi {
 
     return data.map((row) {
       return DailyGuestStat(
-        date: DateTime.parse(row['check_in'] as String),
+        date: parseDbDateTime(row['check_in'] as String),
         totalGuests: (row['total_guests'] as num).toInt(),
       );
     }).toList();

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/session_service.dart';
 import '../../../core/services/offline_service.dart';
+import '../../../core/utils/datetime_utils.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../shared/widgets/paginator.dart';
 import '../../../api/business_room_api.dart';
@@ -723,7 +724,7 @@ class _RoomCard extends StatelessWidget {
   String _displayDate(String? date) {
     if (date == null) return '—';
     try {
-      final dt = DateTime.parse(date).toLocal();
+      final dt = parseDbDateTime(date);
       final y = dt.year.toString();
       final m = dt.month.toString().padLeft(2, '0');
       final d = dt.day.toString().padLeft(2, '0');
@@ -857,7 +858,7 @@ class _RoomRow extends StatelessWidget {
   String _displayDate(String? date) {
     if (date == null) return '—';
     try {
-      final dt = DateTime.parse(date).toLocal();
+      final dt = parseDbDateTime(date);
       final y = dt.year.toString();
       final m = dt.month.toString().padLeft(2, '0');
       final d = dt.day.toString().padLeft(2, '0');

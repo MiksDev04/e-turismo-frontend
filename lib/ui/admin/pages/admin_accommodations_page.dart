@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:app/core/enums/business_enums.dart';
 import 'package:app/core/services/connectivity_service.dart';
+import 'package:app/core/utils/datetime_utils.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/accommodation_export_service.dart';
@@ -2029,14 +2030,13 @@ class _BadgeStyle {
 String _formatRegisteredDate(String? rawValue) {
   final value = rawValue?.trim() ?? '';
   if (value.isEmpty) return '—';
-  final parsed = DateTime.tryParse(value);
+  final parsed = tryParseDbDateTime(value);
   if (parsed == null) return value;
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
   ];
-  final local = parsed.toLocal();
-  return '${monthNames[local.month - 1]} ${local.day}, ${local.year}';
+  return '${monthNames[parsed.month - 1]} ${parsed.day}, ${parsed.year}';
 }
 
 // ─── Action Buttons ───────────────────────────────────────────────────────────

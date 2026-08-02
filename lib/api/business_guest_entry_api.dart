@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:app/core/database/local_database.dart';
 import 'package:app/core/services/offline_service.dart';
 import 'package:app/core/services/session_service.dart';
+import 'package:app/core/utils/datetime_utils.dart';
 import 'base_api.dart';
 
 class GuestEntryResult {
@@ -352,8 +353,8 @@ class BusinessGuestEntryApi extends BaseApi {
     final current = SessionService.instance.current;
 
     // Compute length_of_stay from dates
-    final dIn  = DateTime.parse(checkIn);
-    final dOut = DateTime.parse(checkOut);
+    final dIn  = parseDbDateTime(checkIn);
+    final dOut = parseDbDateTime(checkOut);
     final lengthOfStay = dOut.difference(dIn).inDays.clamp(1, 999);
 
     // Ensure the profile and business exist locally to satisfy foreign key constraints

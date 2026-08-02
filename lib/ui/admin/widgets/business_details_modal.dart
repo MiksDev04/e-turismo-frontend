@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../api/admin_accommodation_api.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/document_service.dart';
+import '../../../core/utils/datetime_utils.dart';
 import '../../business/widgets/business_document_preview_modal.dart';
 import '../models/accommodation_models.dart';
 
@@ -471,7 +472,7 @@ String _formatRegisteredDate(String rawValue) {
     return '—';
   }
 
-  final parsed = DateTime.tryParse(value);
+  final parsed = tryParseDbDateTime(value);
   if (parsed == null) {
     return value;
   }
@@ -491,8 +492,7 @@ String _formatRegisteredDate(String rawValue) {
     'December',
   ];
 
-  final local = parsed.toLocal();
-  return '${monthNames[local.month - 1]} ${local.day}, ${local.year}';
+  return '${monthNames[parsed.month - 1]} ${parsed.day}, ${parsed.year}';
 }
 
 String _formatPhone(String raw) {

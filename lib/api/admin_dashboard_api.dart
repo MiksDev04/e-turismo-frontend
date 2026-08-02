@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 import 'base_api.dart';
+import '../core/utils/datetime_utils.dart';
 
 // ─── Models ───────────────────────────────────────────────────────────────────
 
@@ -287,10 +288,10 @@ class AdminDashboardApi extends BaseApi {
     final yearRecords =
         List<Map<String, dynamic>>.from(data['yearRecords'] as List);
 
-    final periodStart = DateTime.parse(start);
-    final periodEnd = DateTime.parse(end);
-    final yearStartDt = DateTime.parse(yearStart);
-    final yearEndDt = DateTime.parse(yearEnd);
+    final periodStart = parseDbDateTime(start);
+    final periodEnd = parseDbDateTime(end);
+    final yearStartDt = parseDbDateTime(yearStart);
+    final yearEndDt = parseDbDateTime(yearEnd);
 
     int touristsThisPeriod = 0;
     for (final r in periodRecords) {
@@ -461,14 +462,14 @@ class AdminDashboardApi extends BaseApi {
       final (start, end) = _dateRange(0, year);
       final records = await _fetchGuestRecords(startDate: start, endDate: end);
 
-      final yearStartDt = DateTime.parse(start);
-      final yearEndDt = DateTime.parse(end);
+      final yearStartDt = parseDbDateTime(start);
+      final yearEndDt = parseDbDateTime(end);
 
       final monthMap = <int, int>{};
       for (final record in records) {
         final checkInText = record['check_in']?.toString();
         if (checkInText == null) continue;
-        final checkInRaw = DateTime.tryParse(checkInText);
+        final checkInRaw = tryParseDbDateTime(checkInText);
         if (checkInRaw == null) continue;
 
         final effectiveCheckOutText =
@@ -476,7 +477,7 @@ class AdminDashboardApi extends BaseApi {
             record['actual_checkout']?.toString() ??
             record['check_out']?.toString();
         if (effectiveCheckOutText == null) continue;
-        final effectiveCheckOutRaw = DateTime.tryParse(effectiveCheckOutText);
+        final effectiveCheckOutRaw = tryParseDbDateTime(effectiveCheckOutText);
         if (effectiveCheckOutRaw == null) continue;
 
         final guests = (record['total_guests'] as num?)?.toInt() ?? 0;
@@ -579,8 +580,8 @@ class AdminDashboardApi extends BaseApi {
         'Country,Region,Sex,Age Group,Guest Days',
       );
 
-    final periodStart = DateTime.parse(start);
-    final periodEnd = DateTime.parse(end);
+    final periodStart = parseDbDateTime(start);
+    final periodEnd = parseDbDateTime(end);
 
     for (final breakdown in breakdowns) {
       final record = recordMap[breakdown['guest_record_id'].toString()];
@@ -617,7 +618,7 @@ class AdminDashboardApi extends BaseApi {
   ) {
     final checkInText = record['check_in']?.toString();
     if (checkInText == null) return 0;
-    final checkInRaw = DateTime.tryParse(checkInText);
+    final checkInRaw = tryParseDbDateTime(checkInText);
     if (checkInRaw == null) return 0;
 
     final effectiveCheckOutText =
@@ -625,7 +626,7 @@ class AdminDashboardApi extends BaseApi {
         record['actual_checkout']?.toString() ??
         record['check_out']?.toString();
     if (effectiveCheckOutText == null) return 0;
-    final effectiveCheckOutRaw = DateTime.tryParse(effectiveCheckOutText);
+    final effectiveCheckOutRaw = tryParseDbDateTime(effectiveCheckOutText);
     if (effectiveCheckOutRaw == null) return 0;
 
     final guests = (record['total_guests'] as num?)?.toInt() ?? 0;

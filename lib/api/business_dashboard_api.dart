@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:app/core/database/local_database.dart';
 import 'package:app/core/services/offline_service.dart';
 import 'package:app/core/services/session_service.dart';
+import 'package:app/core/utils/datetime_utils.dart';
 import 'base_api.dart';
 
 // ─── Models ───────────────────────────────────────────────────────────────────
@@ -360,8 +361,8 @@ class BusinessDashboardApi extends BaseApi {
     );
 
     // Filter month records client-side to avoid a second API call.
-    final periodStart = DateTime.parse(start);
-    final periodEnd = DateTime.parse(end);
+    final periodStart = parseDbDateTime(start);
+    final periodEnd = parseDbDateTime(end);
     final periodRecords = (month == 0)
         ? allRecords
         : allRecords.where((r) => _recordOverlapsPeriod(r, periodStart, periodEnd)).toList();
@@ -369,8 +370,8 @@ class BusinessDashboardApi extends BaseApi {
     final yearRecords = allRecords;
 
     final (yStart, yEnd) = _dateRange(0, year);
-    final yearStartDt = DateTime.parse(yStart);
-    final yearEndDt = DateTime.parse(yEnd);
+    final yearStartDt = parseDbDateTime(yStart);
+    final yearEndDt = parseDbDateTime(yEnd);
 
     final stats = _computeStats(
       periodRecords: periodRecords,
@@ -437,16 +438,16 @@ class BusinessDashboardApi extends BaseApi {
     );
 
     // Filter month records client-side to avoid a second DB query.
-    final periodStart = DateTime.parse(start);
-    final periodEnd = DateTime.parse(end);
+    final periodStart = parseDbDateTime(start);
+    final periodEnd = parseDbDateTime(end);
     final periodRecords = (month == 0)
         ? allRecords
         : allRecords.where((r) => _recordOverlapsPeriod(r, periodStart, periodEnd)).toList();
 
     final yearRecords = allRecords;
 
-    final yearStartDt = DateTime.parse(yearStart);
-    final yearEndDt = DateTime.parse(yearEnd);
+    final yearStartDt = parseDbDateTime(yearStart);
+    final yearEndDt = parseDbDateTime(yearEnd);
 
     final stats = _computeStats(
       periodRecords: periodRecords,
@@ -536,8 +537,8 @@ class BusinessDashboardApi extends BaseApi {
       final birthdateStr = r['lead_birthdate'] as String?;
       final checkInStr = r['check_in'] as String?;
       if (birthdateStr != null && checkInStr != null) {
-        final birthdate = DateTime.tryParse(birthdateStr);
-        final checkIn = DateTime.tryParse(checkInStr);
+        final birthdate = tryParseDbDateTime(birthdateStr);
+        final checkIn = tryParseDbDateTime(checkInStr);
         if (birthdate != null && checkIn != null) {
           int age = checkIn.year - birthdate.year;
           if (checkIn.month < birthdate.month ||
@@ -603,8 +604,8 @@ class BusinessDashboardApi extends BaseApi {
             _stringValue(r, 'actual_checkout') ??
             _stringValue(r, 'check_out');
         if (checkInText == null || effectiveCheckOutText == null) continue;
-        final checkIn = DateTime.tryParse(checkInText);
-        final effectiveCheckOut = DateTime.tryParse(effectiveCheckOutText);
+        final checkIn = tryParseDbDateTime(checkInText);
+        final effectiveCheckOut = tryParseDbDateTime(effectiveCheckOutText);
         if (checkIn == null || effectiveCheckOut == null) continue;
 
         final nights = effectiveCheckOut.difference(checkIn).inDays;
@@ -812,7 +813,7 @@ class BusinessDashboardApi extends BaseApi {
     for (final r in records) {
       final checkInText = _stringValue(r, 'check_in');
       if (checkInText == null) continue;
-      final checkInRaw = DateTime.tryParse(checkInText);
+      final checkInRaw = tryParseDbDateTime(checkInText);
       if (checkInRaw == null) continue;
 
       final effectiveCheckOutText =
@@ -820,7 +821,7 @@ class BusinessDashboardApi extends BaseApi {
           _stringValue(r, 'actual_checkout') ??
           _stringValue(r, 'check_out');
       if (effectiveCheckOutText == null) continue;
-      final effectiveCheckOutRaw = DateTime.tryParse(effectiveCheckOutText);
+      final effectiveCheckOutRaw = tryParseDbDateTime(effectiveCheckOutText);
       if (effectiveCheckOutRaw == null) continue;
 
       final guests = _intValue(r, 'total_guests') ?? 0;
@@ -937,8 +938,8 @@ class BusinessDashboardApi extends BaseApi {
         'Country,Region,Sex,Age Group,Guest Days',
       );
 
-    final periodStart = DateTime.parse(start);
-    final periodEnd = DateTime.parse(end);
+    final periodStart = parseDbDateTime(start);
+    final periodEnd = parseDbDateTime(end);
 
     for (final b in breakdowns) {
       final recordId = _stringValue(b, 'guest_record_id');
@@ -988,7 +989,7 @@ class BusinessDashboardApi extends BaseApi {
   ) {
     final checkInText = _stringValue(record, 'check_in');
     if (checkInText == null) return 0;
-    final checkInRaw = DateTime.tryParse(checkInText);
+    final checkInRaw = tryParseDbDateTime(checkInText);
     if (checkInRaw == null) return 0;
 
     final effectiveCheckOutText =
@@ -996,7 +997,7 @@ class BusinessDashboardApi extends BaseApi {
         _stringValue(record, 'actual_checkout') ??
         _stringValue(record, 'check_out');
     if (effectiveCheckOutText == null) return 0;
-    final effectiveCheckOutRaw = DateTime.tryParse(effectiveCheckOutText);
+    final effectiveCheckOutRaw = tryParseDbDateTime(effectiveCheckOutText);
     if (effectiveCheckOutRaw == null) return 0;
 
     final guests = _intValue(record, 'total_guests') ?? 0;
@@ -1040,7 +1041,7 @@ class BusinessDashboardApi extends BaseApi {
   ) {
     final checkInText = _stringValue(record, 'check_in');
     if (checkInText == null) return false;
-    final checkIn = DateTime.tryParse(checkInText);
+    final checkIn = tryParseDbDateTime(checkInText);
     if (checkIn == null) return false;
 
     final effectiveCheckOutText =
@@ -1048,7 +1049,7 @@ class BusinessDashboardApi extends BaseApi {
         _stringValue(record, 'actual_checkout') ??
         _stringValue(record, 'check_out');
     if (effectiveCheckOutText == null) return false;
-    final effectiveCheckOut = DateTime.tryParse(effectiveCheckOutText);
+    final effectiveCheckOut = tryParseDbDateTime(effectiveCheckOutText);
     if (effectiveCheckOut == null) return false;
 
     return !checkIn.isAfter(rangeEnd) && !effectiveCheckOut.isBefore(rangeStart);
