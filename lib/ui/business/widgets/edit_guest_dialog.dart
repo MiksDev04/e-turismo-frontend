@@ -249,8 +249,14 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       );
     }
 
-    // Room selection
-    _selectedRoomIds.addAll(r.roomIds);
+    // Room selection — seed only from non-removed (soft-deleted) links so a
+    // previously removed room never reappears as selected.
+    for (final gr in r.roomDetails) {
+      if (gr.status != 'completed') _selectedRoomIds.add(gr.id);
+    }
+    if (r.roomDetails.isEmpty) {
+      _selectedRoomIds.addAll(r.roomIds);
+    }
 
     _isOffline = !ConnectivityService.instance.isOnline;
     _connectivitySub = ConnectivityService.instance.onConnectivityChanged

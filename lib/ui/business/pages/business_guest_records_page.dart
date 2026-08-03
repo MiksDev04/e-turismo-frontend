@@ -510,6 +510,7 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
             LocalDatabase.tableGuestRecordRooms,
             {
               'status':           'completed',
+              'deleted_at':       now,
               'updated_at':       now,
               'sync_status':      LocalDatabase.syncPendingUpdate,
               'local_updated_at': now,

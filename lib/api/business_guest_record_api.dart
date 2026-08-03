@@ -709,13 +709,17 @@ class BusinessGuestRecordApi extends BaseApi {
 
   /// Fetches room details for a guest record from the local SQLite
   /// junction table `local_guest_record_rooms` joined with `local_rooms`.
+  /// Only non-removed (soft-deleted) links count as current assignments,
+  /// except for archived records where the full history is preserved.
   Future<List<GuestRoom>> _fetchLocalRoomDetails(dynamic db, String recordId) async {
     try {
       final rows = await db.rawQuery(
         'SELECT r.id, r.room_number, r.capacity, r.room_status '
         'FROM local_guest_record_rooms grr '
         'JOIN local_rooms r ON r.id = grr.room_id '
-        'WHERE grr.guest_record_id = ?',
+        'JOIN local_guest_records gr ON gr.id = grr.guest_record_id '
+        'WHERE grr.guest_record_id = ? '
+        'AND (gr.status = \'archived\' OR (grr.status = \'active\' AND grr.deleted_at IS NULL))',
         [recordId],
       ) as List<Map<String, Object?>>;
       return rows.map((r) => GuestRoom(
@@ -781,15 +785,16 @@ class BusinessGuestRecordApi extends BaseApi {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
 
-      // Cache junction table + room data from cloud response
+      // Cache junction table + room data from cloud response.
+      // Always clear old junction rows first — even when the record now has no
+      // rooms — so stale links don't survive an "remove all rooms" edit.
+      await db.delete(
+        LocalDatabase.tableGuestRecordRooms,
+        where: 'guest_record_id = ?',
+        whereArgs: [recordId],
+      );
       final roomsList = (row['rooms'] as List?) ?? [];
       if (roomsList.isNotEmpty) {
-        // Clear old junction rows for this record
-        await db.delete(
-          LocalDatabase.tableGuestRecordRooms,
-          where: 'guest_record_id = ?',
-          whereArgs: [recordId],
-        );
         for (final room in roomsList) {
           final roomId = room['id'] as String?;
           if (roomId == null || roomId.isEmpty) continue;
@@ -820,6 +825,7 @@ class BusinessGuestRecordApi extends BaseApi {
               'guest_record_id':  recordId,
               'room_id':          roomId,
               'status':           room['status'] ?? 'active',
+              'deleted_at':       room['deletedAt'] ?? room['deleted_at'],
               'created_at':       room['created_at'] ?? room['createdAt'],
               'updated_at':       room['updated_at'] ?? room['updatedAt'],
               'sync_status':      LocalDatabase.syncSynced,
@@ -862,6 +868,10 @@ class BusinessGuestRecordApi extends BaseApi {
   }
 
   /// Updates room assignments in the local junction table.
+  ///
+  /// Uses soft-delete semantics matching the backend: removed links are
+  /// marked `status = 'completed'` + `deleted_at` instead of being deleted,
+  /// and re-added rooms restore the same row by clearing `deleted_at`.
   Future<void> _updateLocalRoomAssignments(
     dynamic db,
     String recordId,
@@ -874,24 +884,21 @@ class BusinessGuestRecordApi extends BaseApi {
         ? LocalDatabase.syncSynced
         : LocalDatabase.syncPendingUpdate;
 
-    // Capture old room IDs before clearing so we can diff later
+    final newRoomSet = roomIds.toSet();
+
+    // Capture current active room IDs before changing anything so we can
+    // soft-delete removed links and free rooms they were occupying.
     final oldRoomIds = <String>[];
     final oldRows = await db.query(
       LocalDatabase.tableGuestRecordRooms,
       columns: ['room_id'],
-      where: 'guest_record_id = ?',
+      where: 'guest_record_id = ? AND deleted_at IS NULL',
       whereArgs: [recordId],
     );
     for (final row in oldRows) {
       oldRoomIds.add(row['room_id'] as String);
     }
 
-    // Clear old links
-    await db.delete(
-      LocalDatabase.tableGuestRecordRooms,
-      where: 'guest_record_id = ?',
-      whereArgs: [recordId],
-    );
     // Ensure each room exists in local_rooms (FK constraint requires it)
     // INSERT OR IGNORE preserves real room data if the room already exists locally.
     for (final roomId in roomIds) {
@@ -911,23 +918,66 @@ class BusinessGuestRecordApi extends BaseApi {
         ],
       );
     }
-    // Insert new links
-    for (final roomId in roomIds) {
-      final junctionId = DateTime.now().toUtc().toIso8601String() + '-' + roomId;
-      await db.insert(
+
+    // Soft-delete links for rooms that were removed
+    final removedRoomIds = oldRoomIds.where((id) => !newRoomSet.contains(id));
+    for (final roomId in removedRoomIds) {
+      await db.update(
         LocalDatabase.tableGuestRecordRooms,
         {
-          'id':               junctionId,
-          'guest_record_id':  recordId,
-          'room_id':          roomId,
-          'status':           'active',
-          'created_at':       now,
+          'status':           'completed',
+          'deleted_at':       now,
           'updated_at':       now,
           'sync_status':      junctionSyncStatus,
           'local_updated_at': isOnline ? null : now,
         },
-        conflictAlgorithm: ConflictAlgorithm.replace,
+        where: 'guest_record_id = ? AND room_id = ? AND deleted_at IS NULL',
+        whereArgs: [recordId, roomId],
       );
+    }
+
+    // Insert new links or reactivate previously removed links
+    for (final roomId in roomIds) {
+      final existing = await db.query(
+        LocalDatabase.tableGuestRecordRooms,
+        columns: ['id'],
+        where: 'guest_record_id = ? AND room_id = ?',
+        whereArgs: [recordId, roomId],
+        limit: 1,
+      );
+
+      if (existing.isNotEmpty) {
+        // Re-add clears the soft-delete instead of creating a new row
+        await db.update(
+          LocalDatabase.tableGuestRecordRooms,
+          {
+            'status':           'active',
+            'deleted_at':       null,
+            'updated_at':       now,
+            'sync_status':      junctionSyncStatus,
+            'local_updated_at': isOnline ? null : now,
+          },
+          where: 'guest_record_id = ? AND room_id = ?',
+          whereArgs: [recordId, roomId],
+        );
+      } else {
+        final junctionId = DateTime.now().toUtc().toIso8601String() + '-' + roomId;
+        await db.insert(
+          LocalDatabase.tableGuestRecordRooms,
+          {
+            'id':               junctionId,
+            'guest_record_id':  recordId,
+            'room_id':          roomId,
+            'status':           'active',
+            'deleted_at':       null,
+            'created_at':       now,
+            'updated_at':       now,
+            'sync_status':      junctionSyncStatus,
+            'local_updated_at': isOnline ? null : now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
     }
 
     // Mark newly assigned rooms as occupied locally
@@ -947,14 +997,13 @@ class BusinessGuestRecordApi extends BaseApi {
       );
     }
 
-    // Free rooms no longer referenced by any active guest record
-    final removedRoomIds = oldRoomIds.where((id) => !roomIds.contains(id));
+    // Free rooms no longer referenced by any active, non-deleted room link
     for (final roomId in removedRoomIds) {
       final result = await db.rawQuery(
         'SELECT COUNT(*) as cnt FROM ${LocalDatabase.tableGuestRecordRooms} grr '
         'JOIN ${LocalDatabase.tableGuestRecords} gr ON gr.id = grr.guest_record_id '
         'WHERE grr.room_id = ? AND grr.guest_record_id != ? '
-        'AND gr.status = ? AND gr.is_deleted = 0',
+        'AND gr.status = ? AND gr.is_deleted = 0 AND grr.deleted_at IS NULL',
         [roomId, recordId, 'active'],
       );
       final refCount = (result.first['cnt'] as int?) ?? 0;

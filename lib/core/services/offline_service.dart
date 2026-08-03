@@ -463,11 +463,12 @@ class SyncService {
       }
 
       try {
-        // Read room IDs from junction table
+        // Read room IDs from junction table (only currently assigned — removed
+        // links are soft-deleted and must not be re-uploaded)
         final roomLinks = await db.query(
           LocalDatabase.tableGuestRecordRooms,
           columns: ['room_id'],
-          where: 'guest_record_id = ?',
+          where: 'guest_record_id = ? AND deleted_at IS NULL',
           whereArgs: [recordId],
         );
         final roomIds = roomLinks.map((r) => r['room_id'] as String).toList();
@@ -585,11 +586,12 @@ class SyncService {
       }
 
       try {
-        // Read room IDs from junction table
+        // Read room IDs from junction table (only currently assigned — removed
+        // links are soft-deleted and must not be re-uploaded)
         final roomLinks = await db.query(
           LocalDatabase.tableGuestRecordRooms,
           columns: ['room_id'],
-          where: 'guest_record_id = ?',
+          where: 'guest_record_id = ? AND deleted_at IS NULL',
           whereArgs: [recordId],
         );
         final roomIds = roomLinks.map((r) => r['room_id'] as String).toList();
@@ -1226,6 +1228,7 @@ class SyncService {
                 'guest_record_id':  recordId,
                 'room_id':          roomId,
                 'status':           r['status'] ?? 'active',
+                'deleted_at':       r['deletedAt'] ?? r['deleted_at'],
                 'created_at':       remote['created_at'],
                 'updated_at':       remote['updated_at'],
                 'sync_status':      LocalDatabase.syncSynced,

@@ -26,7 +26,7 @@ class LocalDatabase {
   static const String _kDbName = 'tourism_local.db';
 
   // ── schema version ─────────────────────────────────────────────────────────
-  static const int _kDbVersion = 9;
+  static const int _kDbVersion = 10;
 
   // ── table names ────────────────────────────────────────────────────────────
   static const String tableLocalProfiles   = 'local_profiles';
@@ -292,6 +292,15 @@ class LocalDatabase {
         await db.execute("ALTER TABLE $tableLocalBusinesses DROP COLUMN total_rooms");
       }
     }
+
+    // v9 → v10: Add deleted_at to local_guest_record_rooms (soft-deleted room links).
+    if (oldVersion < 10) {
+      final grrInfo = await db.rawQuery("PRAGMA table_info($tableGuestRecordRooms)");
+      final grrCols = grrInfo.map((c) => c['name'] as String).toSet();
+      if (!grrCols.contains('deleted_at')) {
+        await db.execute("ALTER TABLE $tableGuestRecordRooms ADD COLUMN deleted_at TEXT");
+      }
+    }
   }
 
   // ── helper: close (mainly for tests) ──────────────────────────────────────
@@ -420,6 +429,7 @@ class LocalDatabase {
       guest_record_id   TEXT NOT NULL,
       room_id           TEXT NOT NULL,
       status            TEXT NOT NULL DEFAULT 'active',
+      deleted_at        TEXT,
       created_at        TEXT,
       updated_at        TEXT,
       sync_status       TEXT NOT NULL DEFAULT '$syncSynced',
