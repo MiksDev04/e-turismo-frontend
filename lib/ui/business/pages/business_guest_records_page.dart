@@ -27,6 +27,10 @@ String _displayNationality(GuestBreakdownEntry b) {
 
 String _displayYesNo(bool value) => value ? 'Yes' : 'No';
 
+String _roomsDisplay(GuestRecord r) => r.roomDetails.isNotEmpty
+    ? r.roomDetails.map((x) => 'Room ${x.roomNumber}').join(', ')
+    : 'None';
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 enum GuestRecordStatus { active, archived }
@@ -1452,10 +1456,8 @@ class _TableHeader extends StatelessWidget {
           Expanded(flex: 3, child: _HeaderCell('Check-out')),
           Expanded(flex: 2, child: _HeaderCell('Nights')),
           Expanded(flex: 1, child: _HeaderCell('Guests')),
-          Expanded(flex: 1, child: _HeaderCell('Rooms')),
+          Expanded(flex: 3, child: _HeaderCell('Room(s)')),
           Expanded(flex: 2, child: _HeaderCell('Purpose')),
-          Expanded(flex: 2, child: _HeaderCell('Transport')),
-          Expanded(flex: 2, child: _HeaderCell('Status')),
           Expanded(flex: 3, child: _HeaderCell('Actions')),
         ],
       ),
@@ -1533,9 +1535,9 @@ class _RecordRow extends StatelessWidget {
             ),
           ),
           Expanded(
-            flex: 1,
+            flex: 3,
             child: Text(
-              '${r.rooms}',
+              _roomsDisplay(r),
               style: const TextStyle(color: AppColors.textGray, fontSize: 13),
             ),
           ),
@@ -1544,23 +1546,6 @@ class _RecordRow extends StatelessWidget {
             child: Text(
               r.purpose,
               style: const TextStyle(color: AppColors.textGray, fontSize: 13),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              r.transport,
-              style: const TextStyle(color: AppColors.textGray, fontSize: 13),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 0),
-                child: _StatusBadge(status: r.status),
-              ),
             ),
           ),
           Expanded(
@@ -1621,7 +1606,6 @@ class _RecordCard extends StatelessWidget {
                   ],
                 ),
               ),
-              _StatusBadge(status: r.status),
             ],
           ),
           const SizedBox(height: 8),
@@ -1630,9 +1614,8 @@ class _RecordCard extends StatelessWidget {
             runSpacing: 4,
             children: [
               _InfoChip(label: 'Guests', value: '${r.guests}'),
-              _InfoChip(label: 'Rooms', value: '${r.rooms}'),
+              _InfoChip(label: 'Room(s)', value: _roomsDisplay(r)),
               _InfoChip(label: 'Purpose', value: r.purpose),
-              _InfoChip(label: 'Transport', value: r.transport),
             ],
           ),
           const SizedBox(height: 10),
@@ -1696,35 +1679,6 @@ class _InfoChip extends StatelessWidget {
             style: const TextStyle(color: AppColors.textGray),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ─── Status Badge ─────────────────────────────────────────────────────────────
-
-class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.status});
-  final GuestRecordStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final isActive = status == GuestRecordStatus.active;
-    final color = isActive ? AppColors.accentGreen : AppColors.textGray;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Text(
-        isActive ? 'active' : 'archived',
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
       ),
     );
   }
