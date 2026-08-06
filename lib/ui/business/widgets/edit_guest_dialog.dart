@@ -124,23 +124,21 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
   late final TextEditingController _checkInCtrl;
   late final TextEditingController _checkOutCtrl;
   late final TextEditingController _guestsCtrl;
+  late final TextEditingController _maleGuestsCtrl;
+  late final TextEditingController _femaleGuestsCtrl;
   late String _purpose;
-  late String _transport;
 
   // ── Connectivity ──────────────────────────────────────────────────────────
   bool _isOffline = false;
   StreamSubscription<bool>? _connectivitySub;
   final TextEditingController _purposeOtherCtrl = TextEditingController();
-  final TextEditingController _transportOtherCtrl = TextEditingController();
   bool _showPurposeOther = false;
-  bool _showTransportOther = false;
   String _lengthOfStay = '0 nights';
 
   // ── Lead guest fields ────────────────────────────────────────────────────
   late final TextEditingController _leadBirthdateCtrl;
   String? _leadCountry;
   String? _leadNationality;
-  String? _selectedRegionCode;
   String? _selectedProvinceCode;
   String? _selectedCityCode;
   bool _leadIsOverseas = false;
@@ -169,15 +167,6 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
     'Others',
   ];
 
-  static const _transports = [
-    'Private Car',
-    'Bus',
-    'Van',
-    'Motorcycle',
-    'Tricycle',
-    'Others',
-  ];
-
   // ─── Init ────────────────────────────────────────────────────────────────────
 
   @override
@@ -196,6 +185,12 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
     _checkInCtrl = TextEditingController(text: stripTime(r.checkIn));
     _checkOutCtrl = TextEditingController(text: stripTime(r.checkOut));
     _guestsCtrl = TextEditingController(text: r.guests.toString());
+    _maleGuestsCtrl = TextEditingController(
+      text: r.maleCount != null ? r.maleCount.toString() : '',
+    );
+    _femaleGuestsCtrl = TextEditingController(
+      text: r.femaleCount != null ? r.femaleCount.toString() : '',
+    );
 
     if (_purposes.contains(r.purpose)) {
       _purpose = r.purpose;
@@ -204,15 +199,6 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       _purpose = 'Others';
       _showPurposeOther = true;
       _purposeOtherCtrl.text = r.purpose;
-    }
-
-    if (_transports.contains(r.transport)) {
-      _transport = r.transport;
-      _showTransportOther = r.transport == 'Others';
-    } else {
-      _transport = 'Others';
-      _showTransportOther = true;
-      _transportOtherCtrl.text = r.transport;
     }
 
     _lengthOfStay = r.nights;
@@ -226,26 +212,13 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
 
     // PSGC reverse-lookup: resolve names → codes for cascading dropdowns
     final repo = PsgcRepository.instance;
-    _selectedRegionCode = r.leadPhilippinesRegion != null
-        ? repo.findRegionCodeByName(r.leadPhilippinesRegion!)
-        : null;
-    if (_selectedRegionCode != null && r.leadProvince != null) {
-      _selectedProvinceCode = repo.findProvinceCodeByName(
-        _selectedRegionCode!,
-        r.leadProvince!,
-      );
+    if (r.leadProvince != null) {
+      _selectedProvinceCode = repo.findProvinceCodeAnywhere(r.leadProvince!);
     }
     if (_selectedProvinceCode != null && r.leadMunicipality != null) {
       _selectedCityCode = repo.findCityCodeByName(
         _selectedProvinceCode!,
         r.leadMunicipality!,
-        regionCode: _selectedRegionCode,
-      );
-    } else if (_selectedRegionCode != null && r.leadMunicipality != null) {
-      _selectedCityCode = repo.findCityCodeByName(
-        '',
-        r.leadMunicipality!,
-        regionCode: _selectedRegionCode,
       );
     }
 
@@ -272,8 +245,9 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
     _checkInCtrl.dispose();
     _checkOutCtrl.dispose();
     _guestsCtrl.dispose();
+    _maleGuestsCtrl.dispose();
+    _femaleGuestsCtrl.dispose();
     _purposeOtherCtrl.dispose();
-    _transportOtherCtrl.dispose();
     _leadBirthdateCtrl.dispose();
     _connectivitySub?.cancel();
     super.dispose();
@@ -455,14 +429,31 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       hasError = true;
     }
 
-    // ── Transport ───────────────────────────────────────────────────────────
-    if (_transport.isEmpty) {
-      errors['transport'] = 'Please select a mode of transportation.';
-      hasError = true;
-    } else if (_transport == 'Others' &&
-        _transportOtherCtrl.text.trim().isEmpty) {
-      errors['transportOther'] = 'Please specify the transportation.';
-      hasError = true;
+    // ── Male / Female counts ────────────────────────────────────────────────
+    if (guests != null && guests > 0) {
+      final male = int.tryParse(_maleGuestsCtrl.text);
+      final female = int.tryParse(_femaleGuestsCtrl.text);
+
+      if ((male != null && male < 0) || (female != null && female < 0)) {
+        errors['maleGuests'] = 'Counts cannot be negative.';
+        hasError = true;
+      } else if (male != null && male > guests) {
+        errors['maleGuests'] =
+            'Male count ($male) exceeds total guests ($guests).';
+        hasError = true;
+      } else if (female != null && female > guests) {
+        errors['femaleGuests'] =
+            'Female count ($female) exceeds total guests ($guests).';
+        hasError = true;
+      } else if (male != null &&
+          female != null &&
+          male + female != guests) {
+        errors['maleGuests'] =
+            'Male + female ($male + $female) must equal total guests ($guests).';
+        errors['femaleGuests'] =
+            'Male + female ($male + $female) must equal total guests ($guests).';
+        hasError = true;
+      }
     }
 
     // ── Lead guest validation ─────────────────────────────────────────────
@@ -498,24 +489,14 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
 
     final purposeValue =
         _purpose == 'Others' ? _purposeOtherCtrl.text.trim() : _purpose;
-    final transportValue =
-        _transport == 'Others' ? _transportOtherCtrl.text.trim() : _transport;
 
     // Derive PSGC names from selected codes
     final repo = PsgcRepository.instance;
-    String? regionName;
     String? provinceName;
     String? cityName;
     if (!_leadIsOverseas && _leadCountry == 'Philippines') {
-      if (_selectedRegionCode != null) {
-        regionName = repo.regions
-            .where((r) => r.code == _selectedRegionCode)
-            .firstOrNull
-            ?.name;
-      }
       if (_selectedProvinceCode != null) {
-        provinceName = repo
-            .provincesFor(_selectedRegionCode ?? '')
+        provinceName = repo.allProvinces
             .where((p) => p.code == _selectedProvinceCode)
             .firstOrNull
             ?.name;
@@ -528,15 +509,11 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
             .where((c) => c.code == _selectedCityCode)
             .firstOrNull
             ?.name;
-        if (cityName == null && _selectedRegionCode != null) {
-          cityName = repo
-              .citiesForRegion(_selectedRegionCode!)
-              .where((c) => c.code == _selectedCityCode)
-              .firstOrNull
-              ?.name;
-        }
       }
     }
+
+    final maleCount = int.tryParse(_maleGuestsCtrl.text);
+    final femaleCount = int.tryParse(_femaleGuestsCtrl.text);
 
     final updated = GuestRecord(
       id: widget.record.id,
@@ -549,7 +526,8 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       roomDetails: widget.record.roomDetails,
       roomIds: _isPostCheckout ? widget.record.roomIds : _selectedRoomIds.toList(),
       purpose: purposeValue,
-      transport: transportValue,
+      maleCount: maleCount,
+      femaleCount: femaleCount,
       status: widget.record.status,
       demographics: widget.record.demographics,
       leadCountry: _leadIsOverseas ? null : _leadCountry,
@@ -557,8 +535,6 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       leadProvince: provinceName,
       leadNationality:
           _leadIsOverseas ? null : _leadNationality,
-      leadPhilippinesRegion:
-          _leadIsOverseas || _leadCountry != 'Philippines' ? null : regionName,
       leadIsOverseas: _leadIsOverseas,
       leadBirthdate: _leadBirthdateCtrl.text.trim().isEmpty
           ? null
@@ -591,25 +567,37 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
     _checkInCtrl.clear();
     _checkOutCtrl.clear();
     _guestsCtrl.clear();
+    _maleGuestsCtrl.clear();
+    _femaleGuestsCtrl.clear();
     _purposeOtherCtrl.clear();
-    _transportOtherCtrl.clear();
     _leadBirthdateCtrl.clear();
     setState(() {
       _purpose = _purposes.first;
-      _transport = _transports.first;
       _showPurposeOther = false;
-      _showTransportOther = false;
       _lengthOfStay = '0 nights';
       _leadCountry = null;
       _leadNationality = null;
       _leadIsOverseas = false;
-      _selectedRegionCode = null;
       _selectedProvinceCode = null;
       _selectedCityCode = null;
       _leadSex = null;
       _selectedRoomIds.clear();
       _errors = {};
     });
+  }
+
+  void _recomputeMissingSexCount() {
+    final total = int.tryParse(_guestsCtrl.text.trim()) ?? 0;
+    if (total <= 0) return;
+    final male = int.tryParse(_maleGuestsCtrl.text);
+    final female = int.tryParse(_femaleGuestsCtrl.text);
+    if (male != null && female == null) {
+      final f = total - male;
+      _femaleGuestsCtrl.text = f >= 0 ? '$f' : _femaleGuestsCtrl.text;
+    } else if (female != null && male == null) {
+      final m = total - female;
+      _maleGuestsCtrl.text = m >= 0 ? '$m' : _maleGuestsCtrl.text;
+    }
   }
 
   // ─── Build ────────────────────────────────────────────────────────────────
@@ -815,6 +803,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                                   setState(() {});
                                   _clearFieldError('totalGuests');
                                   _validateRoomCapacity();
+                                  _recomputeMissingSexCount();
                                 },
                               ),
                             ),
@@ -888,47 +877,53 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                                 ),
                               ],
                               const SizedBox(height: 14),
-                              _FieldCol(
-                                label: 'Mode of Transportation *',
-                                errorText: _errors['transport'],
-                                child: _DropdownField(
-                                  value: _transport.isEmpty
-                                      ? null
-                                      : _transport,
-                                  items: _transports,
-                                  hint: 'Select transportation',
-                                  hasError:
-                                      _errors['transport'] != null,
-                                  onChanged: (v) {
-                                    setState(() {
-                                      _transport = v ?? '';
-                                      _showTransportOther =
-                                          v == 'Others';
-                                      if (!_showTransportOther) {
-                                        _transportOtherCtrl.clear();
-                                      }
-                                    });
-                                    _clearFieldError('transport');
-                                    _clearFieldError('transportOther');
-                                  },
-                                ),
-                              ),
-                              if (_showTransportOther) ...[
-                                const SizedBox(height: 10),
-                                _FieldCol(
-                                  label: 'Please specify *',
-                                  errorText: _errors['transportOther'],
-                                  child: _PlainTextField(
-                                    controller: _transportOtherCtrl,
-                                    hint: 'Specify transportation',
-                                    hasError:
-                                        _errors['transportOther'] !=
+                              Row(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: _FieldCol(
+                                      label: 'Male Guests (optional)',
+                                      errorText:
+                                          _errors['maleGuests'],
+                                      child: _NumberField(
+                                        controller: _maleGuestsCtrl,
+                                        hint: 'e.g. 5',
+                                        hasError: _errors[
+                                                'maleGuests'] !=
                                             null,
-                                    onChanged: (_) => _clearFieldError(
-                                        'transportOther'),
+                                        onChanged: (_) {
+                                          setState(() {});
+                                          _clearFieldError(
+                                              'maleGuests');
+                                          _recomputeMissingSexCount();
+                                        },
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _FieldCol(
+                                      label: 'Female Guests (optional)',
+                                      errorText:
+                                          _errors['femaleGuests'],
+                                      child: _NumberField(
+                                        controller: _femaleGuestsCtrl,
+                                        hint: 'e.g. 5',
+                                        hasError: _errors[
+                                                'femaleGuests'] !=
+                                            null,
+                                        onChanged: (_) {
+                                          setState(() {});
+                                          _clearFieldError(
+                                              'femaleGuests');
+                                          _recomputeMissingSexCount();
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ] else ...[
                               Row(
                                 crossAxisAlignment:
@@ -1000,58 +995,45 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                                       children: [
                                         _FieldCol(
                                           label:
-                                              'Mode of Transportation *',
+                                              'Male Guests (optional)',
                                           errorText:
-                                              _errors['transport'],
-                                          child: _DropdownField(
-                                            value: _transport.isEmpty
-                                                ? null
-                                                : _transport,
-                                            items: _transports,
-                                            hint:
-                                                'Select transportation',
+                                              _errors['maleGuests'],
+                                          child: _NumberField(
+                                            controller:
+                                                _maleGuestsCtrl,
+                                            hint: 'e.g. 5',
                                             hasError: _errors[
-                                                    'transport'] !=
+                                                    'maleGuests'] !=
                                                 null,
-                                            onChanged: (v) {
-                                              setState(() {
-                                                _transport = v ?? '';
-                                                _showTransportOther =
-                                                    v == 'Others';
-                                                if (!_showTransportOther) {
-                                                  _transportOtherCtrl
-                                                      .clear();
-                                                }
-                                              });
+                                            onChanged: (_) {
+                                              setState(() {});
                                               _clearFieldError(
-                                                  'transport');
-                                              _clearFieldError(
-                                                'transportOther',
-                                              );
+                                                  'maleGuests');
+                                              _recomputeMissingSexCount();
                                             },
                                           ),
                                         ),
-                                        if (_showTransportOther) ...[
-                                          const SizedBox(height: 10),
-                                          _FieldCol(
-                                            label: 'Please specify *',
-                                            errorText: _errors[
-                                                'transportOther'],
-                                            child: _PlainTextField(
-                                              controller:
-                                                  _transportOtherCtrl,
-                                              hint:
-                                                  'Specify transportation',
-                                              hasError: _errors[
-                                                      'transportOther'] !=
-                                                  null,
-                                              onChanged: (_) =>
-                                                  _clearFieldError(
-                                                    'transportOther',
-                                                  ),
-                                            ),
+                                        const SizedBox(height: 10),
+                                        _FieldCol(
+                                          label:
+                                              'Female Guests (optional)',
+                                          errorText: _errors[
+                                              'femaleGuests'],
+                                          child: _NumberField(
+                                            controller:
+                                                _femaleGuestsCtrl,
+                                            hint: 'e.g. 5',
+                                            hasError: _errors[
+                                                    'femaleGuests'] !=
+                                                null,
+                                            onChanged: (_) {
+                                              setState(() {});
+                                              _clearFieldError(
+                                                  'femaleGuests');
+                                              _recomputeMissingSexCount();
+                                            },
                                           ),
-                                        ],
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -1067,18 +1049,12 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                       // ── Lead Guest Information ──────────────────────
                       _LeadGuestCard(
                         leadCountry: _leadCountry,
-                        selectedRegionCode: _selectedRegionCode,
                         selectedProvinceCode: _selectedProvinceCode,
                         selectedCityCode: _selectedCityCode,
-                        regions: PsgcRepository.instance.regions,
-                        provinces: _selectedRegionCode != null
-                            ? PsgcRepository.instance.provincesFor(_selectedRegionCode!)
-                            : [],
+                        provinces: PsgcRepository.instance.allProvinces,
                         cities: _selectedProvinceCode != null
                             ? PsgcRepository.instance.citiesFor(_selectedProvinceCode!)
-                            : (_selectedRegionCode != null
-                                ? PsgcRepository.instance.citiesForRegion(_selectedRegionCode!)
-                                : []),
+                            : [],
                         leadNationality: _leadNationality,
                         leadIsOverseas: _leadIsOverseas,
                         leadBirthdate: _leadBirthdateCtrl,
@@ -1090,7 +1066,6 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                             _leadCountry = v;
                             if (v != 'Philippines') {
                               _leadNationality = null;
-                              _selectedRegionCode = null;
                               _selectedProvinceCode = null;
                               _selectedCityCode = null;
                             }
@@ -1103,17 +1078,9 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                             if (v) {
                               _leadCountry = null;
                               _leadNationality = null;
-                              _selectedRegionCode = null;
                               _selectedProvinceCode = null;
                               _selectedCityCode = null;
                             }
-                          });
-                        },
-                        onRegionChanged: (v) {
-                          setState(() {
-                            _selectedRegionCode = v;
-                            _selectedProvinceCode = null;
-                            _selectedCityCode = null;
                           });
                         },
                         onProvinceChanged: (v) {
@@ -1241,10 +1208,8 @@ class _GlobalErrorBanner extends StatelessWidget {
 class _LeadGuestCard extends StatelessWidget {
   const _LeadGuestCard({
     required this.leadCountry,
-    required this.selectedRegionCode,
     required this.selectedProvinceCode,
     required this.selectedCityCode,
-    required this.regions,
     required this.provinces,
     required this.cities,
     required this.leadNationality,
@@ -1255,7 +1220,6 @@ class _LeadGuestCard extends StatelessWidget {
     required this.errors,
     required this.onCountryChanged,
     required this.onOverseasToggled,
-    required this.onRegionChanged,
     required this.onProvinceChanged,
     required this.onCityChanged,
     required this.onNationalityChanged,
@@ -1264,10 +1228,8 @@ class _LeadGuestCard extends StatelessWidget {
   });
 
   final String? leadCountry;
-  final String? selectedRegionCode;
   final String? selectedProvinceCode;
   final String? selectedCityCode;
-  final List<Region> regions;
   final List<Province> provinces;
   final List<CityMunicipality> cities;
   final String? leadNationality;
@@ -1278,7 +1240,6 @@ class _LeadGuestCard extends StatelessWidget {
   final Map<String, String?> errors;
   final ValueChanged<String?> onCountryChanged;
   final ValueChanged<bool> onOverseasToggled;
-  final ValueChanged<String?> onRegionChanged;
   final ValueChanged<String?> onProvinceChanged;
   final ValueChanged<String?> onCityChanged;
   final ValueChanged<String?> onNationalityChanged;
@@ -1288,7 +1249,6 @@ class _LeadGuestCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 600;
-    final hasProvinces = provinces.isNotEmpty;
 
     return _SectionCard(
       title: 'Lead Guest Information',
@@ -1400,34 +1360,20 @@ class _LeadGuestCard extends StatelessWidget {
           ],
           const SizedBox(height: 14),
 
-          // ── Region / Province / City (Philippines only) ───────────────
+          // ── Province / City (Philippines only) ───────────────────────
           if (isPhilippines) ...[
             if (isMobile) ...[
               _FieldCol(
-                label: 'Region *',
+                label: 'Province *',
                 child: _DropdownField(
-                  value: selectedRegionCode,
-                  items: regions.map((r) => r.code).toList(),
-                  displayLabels: {for (final r in regions) r.code: r.name},
-                  hint: 'Select region',
-                  onChanged: onRegionChanged,
+                  value: selectedProvinceCode,
+                  items: provinces.map((p) => p.code).toList(),
+                  displayLabels: {for (final p in provinces) p.code: p.name},
+                  hint: 'Select province',
+                  onChanged: onProvinceChanged,
                 ),
               ),
-              if (hasProvinces) ...[
-                const SizedBox(height: 12),
-                _FieldCol(
-                  label: 'Province *',
-                  child: _DropdownField(
-                    value: selectedProvinceCode,
-                    items: provinces.map((p) => p.code).toList(),
-                    displayLabels: {for (final p in provinces) p.code: p.name},
-                    hint: 'Select province',
-                    onChanged: onProvinceChanged,
-                  ),
-                ),
-              ],
-              if ((hasProvinces && selectedProvinceCode != null) ||
-                  (!hasProvinces && selectedRegionCode != null)) ...[
+              if (selectedProvinceCode != null) ...[
                 const SizedBox(height: 12),
                 _FieldCol(
                   label: 'City / Municipality *',
@@ -1447,34 +1393,17 @@ class _LeadGuestCard extends StatelessWidget {
                   Expanded(
                     flex: 3,
                     child: _FieldCol(
-                      label: 'Region *',
+                      label: 'Province *',
                       child: _DropdownField(
-                        value: selectedRegionCode,
-                        items: regions.map((r) => r.code).toList(),
-                        displayLabels: {for (final r in regions) r.code: r.name},
-                        hint: 'Select region',
-                        onChanged: onRegionChanged,
+                        value: selectedProvinceCode,
+                        items: provinces.map((p) => p.code).toList(),
+                        displayLabels: {for (final p in provinces) p.code: p.name},
+                        hint: 'Select province',
+                        onChanged: onProvinceChanged,
                       ),
                     ),
                   ),
-                  if (hasProvinces) ...[
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 3,
-                      child: _FieldCol(
-                        label: 'Province *',
-                        child: _DropdownField(
-                          value: selectedProvinceCode,
-                          items: provinces.map((p) => p.code).toList(),
-                          displayLabels: {for (final p in provinces) p.code: p.name},
-                          hint: 'Select province',
-                          onChanged: onProvinceChanged,
-                        ),
-                      ),
-                    ),
-                  ],
-                  if ((hasProvinces && selectedProvinceCode != null) ||
-                      (!hasProvinces && selectedRegionCode != null)) ...[
+                  if (selectedProvinceCode != null) ...[
                     const SizedBox(width: 12),
                     Expanded(
                       flex: 3,

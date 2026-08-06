@@ -98,7 +98,6 @@ class BusinessGuestRecordApi extends BaseApi {
     String? checkInFrom,
     String? checkOutTo,
     String? purpose,
-    String? transport,
   }) async {
     if (ConnectivityService.instance.isOnline && hasToken) {
       try {
@@ -110,7 +109,6 @@ class BusinessGuestRecordApi extends BaseApi {
           checkInFrom: checkInFrom,
           checkOutTo: checkOutTo,
           purpose: purpose,
-          transport: transport,
         );
       } on ApiException catch (e) {
         if (e.statusCode == 401) {
@@ -123,7 +121,6 @@ class BusinessGuestRecordApi extends BaseApi {
             checkInFrom: checkInFrom,
             checkOutTo: checkOutTo,
             purpose: purpose,
-            transport: transport,
           );
         }
         return ApiResult.failure('Cloud error: ${e.message}');
@@ -139,7 +136,6 @@ class BusinessGuestRecordApi extends BaseApi {
       checkInFrom: checkInFrom,
       checkOutTo: checkOutTo,
       purpose: purpose,
-      transport: transport,
     );
   }
 
@@ -152,13 +148,13 @@ class BusinessGuestRecordApi extends BaseApi {
     required int totalGuests,
     List<String>? roomIds,
     required String purposeOfVisit,
-    required String transportationMode,
     required List<GuestBreakdownEntry> breakdowns,
+    int? maleCount,
+    int? femaleCount,
     String? leadCountry,
     String? leadMunicipality,
     String? leadProvince,
     String? leadNationality,
-    String? leadPhilippinesRegion,
     bool leadIsOverseas = false,
     String? leadBirthdate,
     String? leadSex,
@@ -174,13 +170,13 @@ class BusinessGuestRecordApi extends BaseApi {
           totalGuests:            totalGuests,
           roomIds:                roomIds,
           purposeOfVisit:         purposeOfVisit,
-          transportationMode:     transportationMode,
           breakdowns:             breakdowns,
+          maleCount:              maleCount,
+          femaleCount:            femaleCount,
           leadCountry:            leadCountry,
           leadMunicipality:       leadMunicipality,
           leadProvince:           leadProvince,
           leadNationality:        leadNationality,
-          leadPhilippinesRegion:  leadPhilippinesRegion,
           leadIsOverseas:         leadIsOverseas,
           leadBirthdate:          leadBirthdate,
           leadSex:                leadSex,
@@ -196,13 +192,13 @@ class BusinessGuestRecordApi extends BaseApi {
             totalGuests:            totalGuests,
             roomIds:                roomIds,
             purposeOfVisit:         purposeOfVisit,
-            transportationMode:     transportationMode,
             breakdowns:             breakdowns,
+            maleCount:              maleCount,
+            femaleCount:            femaleCount,
             leadCountry:            leadCountry,
             leadMunicipality:       leadMunicipality,
             leadProvince:           leadProvince,
             leadNationality:        leadNationality,
-            leadPhilippinesRegion:  leadPhilippinesRegion,
             leadIsOverseas:         leadIsOverseas,
             leadBirthdate:          leadBirthdate,
             leadSex:                leadSex,
@@ -221,13 +217,13 @@ class BusinessGuestRecordApi extends BaseApi {
       totalGuests:            totalGuests,
       roomIds:                roomIds,
       purposeOfVisit:         purposeOfVisit,
-      transportationMode:     transportationMode,
       breakdowns:             breakdowns,
+      maleCount:              maleCount,
+      femaleCount:            femaleCount,
       leadCountry:            leadCountry,
       leadMunicipality:       leadMunicipality,
       leadProvince:           leadProvince,
       leadNationality:        leadNationality,
-      leadPhilippinesRegion:  leadPhilippinesRegion,
       leadIsOverseas:         leadIsOverseas,
       leadBirthdate:          leadBirthdate,
       leadSex:                leadSex,
@@ -248,7 +244,6 @@ class BusinessGuestRecordApi extends BaseApi {
     String? checkInFrom,
     String? checkOutTo,
     String? purpose,
-    String? transport,
   }) async {
     debugPrint('🔍 _fetchOnline: businessId=$businessId page=$page pageSize=$pageSize');
 
@@ -261,7 +256,6 @@ class BusinessGuestRecordApi extends BaseApi {
     if (checkInFrom != null) queryParams['checkInFrom'] = checkInFrom;
     if (checkOutTo != null) queryParams['checkOutTo'] = checkOutTo;
     if (purpose != null && purpose != 'All') queryParams['purpose'] = purpose;
-    if (transport != null && transport != 'All') queryParams['transport'] = transport;
 
     final uri = Uri.parse('/api/business/guest-records').replace(queryParameters: queryParams);
     final response = await get(uri.toString());
@@ -366,7 +360,8 @@ class BusinessGuestRecordApi extends BaseApi {
           roomDetails:  roomDetails,
           roomIds:      roomIds,
           purpose:      row['purpose_of_visit']     as String? ?? '',
-          transport:    row['transportation_mode']  as String? ?? '',
+          maleCount:    (row['male_count']   as num?)?.toInt(),
+          femaleCount:  (row['female_count'] as num?)?.toInt(),
           status:       (row['status'] as String?) == 'archived'
               ? GuestRecordStatus.archived
               : GuestRecordStatus.active,
@@ -376,7 +371,6 @@ class BusinessGuestRecordApi extends BaseApi {
           leadMunicipality:       row['lead_city_municipality'] as String?,
           leadProvince:           row['lead_province'] as String?,
           leadNationality:        row['lead_nationality'] as String?,
-          leadPhilippinesRegion:  row['lead_philippines_region'] as String?,
           leadIsOverseas:         (row['lead_is_overseas'] as int?) == 1,
           leadBirthdate:          row['lead_birthdate'] as String?,
           leadSex:                _normaliseSex(row['lead_sex'] as String?),
@@ -401,7 +395,6 @@ class BusinessGuestRecordApi extends BaseApi {
     String? checkInFrom,
     String? checkOutTo,
     String? purpose,
-    String? transport,
   }) async {
     try {
       final db = await LocalDatabase.instance.database;
@@ -427,10 +420,6 @@ class BusinessGuestRecordApi extends BaseApi {
       if (purpose != null && purpose != 'All') {
         conditions.add('purpose_of_visit = ?');
         args.add(purpose);
-      }
-      if (transport != null && transport != 'All') {
-        conditions.add('transportation_mode = ?');
-        args.add(transport);
       }
 
       final whereClause = conditions.join(' AND ');
@@ -481,7 +470,8 @@ class BusinessGuestRecordApi extends BaseApi {
           roomDetails:  roomDetails,
           roomIds:      roomIds,
           purpose:      row['purpose_of_visit']     as String? ?? '',
-          transport:    row['transportation_mode']  as String? ?? '',
+          maleCount:    (row['male_count']   as num?)?.toInt(),
+          femaleCount:  (row['female_count'] as num?)?.toInt(),
           status:       (row['status'] as String?) == 'archived'
               ? GuestRecordStatus.archived
               : GuestRecordStatus.active,
@@ -491,7 +481,6 @@ class BusinessGuestRecordApi extends BaseApi {
           leadMunicipality:       row['lead_city_municipality'] as String?,
           leadProvince:           row['lead_province'] as String?,
           leadNationality:        row['lead_nationality'] as String?,
-          leadPhilippinesRegion:  row['lead_philippines_region'] as String?,
           leadIsOverseas:         (row['lead_is_overseas'] as int?) == 1,
           leadBirthdate:          row['lead_birthdate'] as String?,
           leadSex:                _normaliseSex(row['lead_sex'] as String?),
@@ -516,13 +505,13 @@ class BusinessGuestRecordApi extends BaseApi {
     required int totalGuests,
     List<String>? roomIds,
     required String purposeOfVisit,
-    required String transportationMode,
     required List<GuestBreakdownEntry> breakdowns,
+    int? maleCount,
+    int? femaleCount,
     String? leadCountry,
     String? leadMunicipality,
     String? leadProvince,
     String? leadNationality,
-    String? leadPhilippinesRegion,
     bool leadIsOverseas = false,
     String? leadBirthdate,
     String? leadSex,
@@ -531,6 +520,20 @@ class BusinessGuestRecordApi extends BaseApi {
   }) async {
     try {
       final businessId = SessionService.instance.current?.businessId;
+
+      // Male/female counts: optional. Derive the missing one from the other;
+      // if both are blank, fall back to the PSA 47.1%/52.9% split.
+      var maleCountInt = maleCount ?? 0;
+      var femaleCountInt = femaleCount ?? 0;
+      if (maleCountInt == 0 && femaleCountInt == 0) {
+        maleCountInt = (totalGuests * 0.471).round();
+        femaleCountInt = totalGuests - maleCountInt;
+      } else if (maleCountInt == 0) {
+        maleCountInt = totalGuests - femaleCountInt;
+      } else if (femaleCountInt == 0) {
+        femaleCountInt = totalGuests - maleCountInt;
+      }
+
       final payload = <String, dynamic>{
         'businessId':            businessId,
         'checkIn':               checkIn,
@@ -538,13 +541,13 @@ class BusinessGuestRecordApi extends BaseApi {
         'actualCheckOut':        actualCheckOut,
         'status':                status,
         'totalGuests':           totalGuests,
+        'maleCount':             maleCountInt,
+        'femaleCount':           femaleCountInt,
         'purposeOfVisit':        purposeOfVisit,
-        'transportationMode':    transportationMode,
         'leadCountry':           leadCountry,
         'leadMunicipality':      leadMunicipality,
         'leadProvince':          leadProvince,
         'leadNationality':       leadNationality,
-        'leadPhilippinesRegion': leadPhilippinesRegion,
         'leadIsOverseas':        leadIsOverseas,
         'leadSex':               leadSex?.toLowerCase(),
         'leadBirthdate':         leadBirthdate,
@@ -578,13 +581,13 @@ class BusinessGuestRecordApi extends BaseApi {
           'check_out':               checkOut,
           'actual_checkout':         actualCheckOut,
           'total_guests':            totalGuests,
+          'male_count':              maleCountInt,
+          'female_count':            femaleCountInt,
           'purpose_of_visit':        purposeOfVisit,
-          'transportation_mode':     transportationMode,
           'lead_country':            leadCountry,
           'lead_city_municipality':  leadMunicipality,
           'lead_province':           leadProvince,
           'lead_nationality':        leadNationality,
-          'lead_philippines_region': leadPhilippinesRegion,
           'lead_is_overseas':        leadIsOverseas ? 1 : 0,
           'lead_birthdate':          leadBirthdate,
           'lead_sex':                leadSex?.toLowerCase(),
@@ -626,13 +629,13 @@ class BusinessGuestRecordApi extends BaseApi {
     required int totalGuests,
     List<String>? roomIds,
     required String purposeOfVisit,
-    required String transportationMode,
     required List<GuestBreakdownEntry> breakdowns,
+    int? maleCount,
+    int? femaleCount,
     String? leadCountry,
     String? leadMunicipality,
     String? leadProvince,
     String? leadNationality,
-    String? leadPhilippinesRegion,
     bool leadIsOverseas = false,
     String? leadBirthdate,
     String? leadSex,
@@ -657,18 +660,31 @@ class BusinessGuestRecordApi extends BaseApi {
       final preserveCreate = currentState.isNotEmpty &&
           currentState.first['sync_status'] == LocalDatabase.syncPendingCreate;
 
+      // Male/female counts: optional. Derive the missing one from the other;
+      // if both are blank, fall back to the PSA 47.1%/52.9% split.
+      var maleCountInt = maleCount ?? 0;
+      var femaleCountInt = femaleCount ?? 0;
+      if (maleCountInt == 0 && femaleCountInt == 0) {
+        maleCountInt = (totalGuests * 0.471).round();
+        femaleCountInt = totalGuests - maleCountInt;
+      } else if (maleCountInt == 0) {
+        maleCountInt = totalGuests - femaleCountInt;
+      } else if (femaleCountInt == 0) {
+        femaleCountInt = totalGuests - maleCountInt;
+      }
+
       final localUpdate = <String, dynamic>{
         'check_in':                checkIn,
         'check_out':               checkOut,
         'actual_checkout':         actualCheckOut,
         'total_guests':            totalGuests,
+        'male_count':              maleCountInt,
+        'female_count':            femaleCountInt,
         'purpose_of_visit':        purposeOfVisit,
-        'transportation_mode':     transportationMode,
         'lead_country':            leadCountry,
         'lead_city_municipality':  leadMunicipality,
         'lead_province':           leadProvince,
         'lead_nationality':        leadNationality,
-        'lead_philippines_region': leadPhilippinesRegion,
         'lead_is_overseas':        leadIsOverseas ? 1 : 0,
         'lead_birthdate':          leadBirthdate,
         'lead_sex':                leadSex?.toLowerCase(),
@@ -765,13 +781,13 @@ class BusinessGuestRecordApi extends BaseApi {
           'actual_checkout':         row['actual_check_out'],
           'length_of_stay':          row['length_of_stay'] ?? 1,
           'total_guests':            row['total_guests'],
+          'male_count':              row['male_count'],
+          'female_count':            row['female_count'],
           'purpose_of_visit':        row['purpose_of_visit'],
-          'transportation_mode':     row['transportation_mode'],
           'lead_country':            row['lead_country'],
           'lead_city_municipality':  row['lead_city_municipality'],
           'lead_province':           row['lead_province'],
           'lead_nationality':        row['lead_nationality'],
-          'lead_philippines_region': row['lead_philippines_region'],
           'lead_is_overseas':        (row['lead_is_overseas'] == true || row['lead_is_overseas'] == 1) ? 1 : 0,
           'lead_birthdate':          row['lead_birthdate'],
           'lead_sex':                row['lead_sex'],
@@ -856,7 +872,6 @@ class BusinessGuestRecordApi extends BaseApi {
       {
         'lead_country':            isOverseas ? null : b.country,
         'lead_nationality':        isPhilippines ? b.nationality : null,
-        'lead_philippines_region': isPhilippines ? b.philippinesRegion : null,
         'lead_province':           isOverseas ? null : b.province,
         'lead_city_municipality':  isOverseas ? null : b.municipalityCity,
         'lead_is_overseas':        isOverseas ? 1 : 0,
@@ -1033,7 +1048,6 @@ class BusinessGuestRecordApi extends BaseApi {
       'isOverseas':        isOverseas,
       'country':            isOverseas ? null : b.country,
       'nationality':        isPhilippines ? b.nationality : null,
-      'philippinesRegion': isPhilippines ? b.philippinesRegion : null,
       'province':          isOverseas ? null : b.province,
       'municipalityCity':  isOverseas ? null : b.municipalityCity,
       'sex':                _mapSex(b.sex),
@@ -1073,7 +1087,8 @@ class BusinessGuestRecordApi extends BaseApi {
         roomDetails:  roomDetails,
         roomIds:      roomIds,
         purpose:      row['purpose_of_visit']     as String? ?? '',
-        transport:    row['transportation_mode']  as String? ?? '',
+        maleCount:    (row['male_count']   as num?)?.toInt(),
+        femaleCount:  (row['female_count'] as num?)?.toInt(),
         status:       statusStr == 'archived'
             ? GuestRecordStatus.archived
             : GuestRecordStatus.active,
@@ -1085,7 +1100,6 @@ class BusinessGuestRecordApi extends BaseApi {
         leadMunicipality:       row['lead_city_municipality'] as String?,
         leadProvince:           row['lead_province'] as String?,
         leadNationality:        row['lead_nationality'] as String?,
-        leadPhilippinesRegion:  row['lead_philippines_region'] as String?,
         leadIsOverseas:         (row['lead_is_overseas'] == true || row['lead_is_overseas'] == 1),
         leadBirthdate:          row['lead_birthdate'] as String?,
         leadSex:                _normaliseSex(row['lead_sex'] as String?),
@@ -1114,12 +1128,7 @@ class BusinessGuestRecordApi extends BaseApi {
       if (isOverseas) {
         countryKey = 'Overseas';
       } else {
-        final country = b['country'] as String? ?? 'Unknown';
-        final region  = b['philippines_region'] as String?;
-        countryKey    = (country == 'Philippines' &&
-                region != null && region != 'N/A')
-            ? 'PH – $region'
-            : country;
+        countryKey = b['country'] as String? ?? 'Unknown';
       }
       countries[countryKey] = (countries[countryKey] ?? 0) + count;
 
@@ -1127,12 +1136,6 @@ class BusinessGuestRecordApi extends BaseApi {
         country:           isOverseas ? null : b['country'] as String?,
         nationality:       (!isOverseas && b['country'] == 'Philippines')
             ? b['nationality'] as String?
-            : null,
-        philippinesRegion: (!isOverseas &&
-                b['country'] == 'Philippines' &&
-                (b['philippines_region'] as String?) != null &&
-                (b['philippines_region'] as String?) != 'N/A')
-            ? b['philippines_region'] as String?
             : null,
         province:          (!isOverseas ? b['province'] as String? : null),
         municipalityCity:  (!isOverseas ? b['municipality_city'] as String? : null),
@@ -1174,12 +1177,7 @@ class BusinessGuestRecordApi extends BaseApi {
       if (isOverseas) {
         countryKey = 'Overseas';
       } else {
-        final country = b['country'] as String? ?? 'Unknown';
-        final region  = b['philippines_region'] as String?;
-        countryKey    = (country == 'Philippines' &&
-                region != null && region != 'N/A')
-            ? 'PH – $region'
-            : country;
+        countryKey = b['country'] as String? ?? 'Unknown';
       }
       countries[countryKey] = (countries[countryKey] ?? 0) + count;
 
@@ -1187,12 +1185,6 @@ class BusinessGuestRecordApi extends BaseApi {
         country:           isOverseas ? null : b['country'] as String?,
         nationality:       (!isOverseas && b['country'] == 'Philippines')
             ? b['nationality'] as String?
-            : null,
-        philippinesRegion: (!isOverseas &&
-                b['country'] == 'Philippines' &&
-                (b['philippines_region'] as String?) != null &&
-                (b['philippines_region'] as String?) != 'N/A')
-            ? b['philippines_region'] as String?
             : null,
         province:          (!isOverseas ? b['province'] as String? : null),
         municipalityCity:  (!isOverseas ? b['municipality_city'] as String? : null),
@@ -1223,14 +1215,11 @@ class BusinessGuestRecordApi extends BaseApi {
 
     final isOverseas = (row['lead_is_overseas'] as int?) == 1;
     final country    = row['lead_country'] as String?;
-    final region     = row['lead_philippines_region'] as String?;
 
     final countries = <String, int>{};
     final String countryKey;
     if (isOverseas) {
       countryKey = 'Overseas';
-    } else if (country == 'Philippines' && region != null && region != 'N/A') {
-      countryKey = 'PH – $region';
     } else {
       countryKey = country ?? 'Unknown';
     }
@@ -1266,12 +1255,6 @@ class BusinessGuestRecordApi extends BaseApi {
         country:           isOverseas ? null : country,
         nationality:       (!isOverseas && country == 'Philippines')
             ? row['lead_nationality'] as String?
-            : null,
-        philippinesRegion: (!isOverseas &&
-                country == 'Philippines' &&
-                region != null &&
-                region != 'N/A')
-            ? region
             : null,
         province:          (!isOverseas ? row['lead_province'] as String? : null),
         municipalityCity:  (!isOverseas ? row['lead_city_municipality'] as String? : null),

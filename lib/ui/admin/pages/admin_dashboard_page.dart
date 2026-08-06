@@ -17,7 +17,6 @@ import '../../../core/constants/app_colors.dart';
 import '../../shared/layouts/admin_layout.dart';
 import '../../../api/admin_dashboard_api.dart';
 import '../../../api/base_api.dart';
-import '../../../core/services/session_service.dart';
 import '../../../router/app_routes.dart';
 
 // ─── Admin Dashboard Page ─────────────────────────────────────────────────────
@@ -185,14 +184,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       buf.writeln('Nationality,Tourists');
       for (final n in d.topNationalities) {
         buf.writeln('${_csvCell(n.nationality)},${n.count}');
-      }
-      buf.writeln();
-
-      // ── Top Local Regions ──────────────────────────────────────────────────
-      buf.writeln('TOP LOCAL REGIONS (Philippine Visitors)');
-      buf.writeln('Region,Tourists');
-      for (final r in d.topRegions) {
-        buf.writeln('${_csvCell(r.region)},${r.count}');
       }
       buf.writeln();
 
@@ -380,23 +371,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               data: d.topNationalities
                   .map((n) => [n.nationality, '${n.count}'])
                   .toList(),
-              cellStyle: const pw.TextStyle(fontSize: 10),
-              headerStyle: pw.TextStyle(
-                fontWeight: pw.FontWeight.bold,
-                fontSize: 10,
-              ),
-            ),
-            pw.SizedBox(height: 16),
-
-            // ── Top Local Regions ─────────────────────────────────────────────
-            pw.Text(
-              'Top Local Regions (Philippine Visitors)',
-              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
-            ),
-            pw.SizedBox(height: 8),
-            pw.Table.fromTextArray(
-              headers: ['Region', 'Tourists'],
-              data: d.topRegions.map((r) => [r.region, '${r.count}']).toList(),
               cellStyle: const pw.TextStyle(fontSize: 10),
               headerStyle: pw.TextStyle(
                 fontWeight: pw.FontWeight.bold,
@@ -742,7 +716,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                               genderDist: _dashData!.genderDistribution,
                               ageGroups: _dashData!.ageGroups,
                               topNationalities: _dashData!.topNationalities,
-                              topRegions: _dashData!.topRegions,
                               accommodationTypes: _dashData!.accommodationTypes,
                               purposeOfVisit: _dashData!.purposeOfVisit,
                               isNarrow: isNarrow,
@@ -1358,7 +1331,6 @@ class _DonutChartsRow extends StatelessWidget {
     required this.genderDist,
     required this.ageGroups,
     required this.topNationalities,
-    required this.topRegions,
     required this.accommodationTypes,
     required this.purposeOfVisit,
     required this.isNarrow,
@@ -1368,7 +1340,6 @@ class _DonutChartsRow extends StatelessWidget {
   final GenderDistribution genderDist;
   final List<AgeGroupCount> ageGroups;
   final List<NationalityCount> topNationalities;
-  final List<RegionCount> topRegions;
   final List<AccommodationTypeCount> accommodationTypes;
   final List<PurposeCount> purposeOfVisit;
   final bool isNarrow;
@@ -1380,9 +1351,8 @@ class _DonutChartsRow extends StatelessWidget {
       genderDist: genderDist,
       ageGroups: ageGroups,
     );
-    final countriesRegionsCard = _CountriesRegionsCard(
+    final countriesCard = _CountriesCard(
       topNationalities: topNationalities,
-      topRegions: topRegions,
     );
     final accommodationPurposeCard = _AccommodationPurposeCard(
       accommodationTypes: accommodationTypes,
@@ -1394,7 +1364,7 @@ class _DonutChartsRow extends StatelessWidget {
         children: [
           genderAgeCard,
           const SizedBox(height: 14),
-          countriesRegionsCard,
+          countriesCard,
           const SizedBox(height: 14),
           accommodationPurposeCard,
         ],
@@ -1409,7 +1379,7 @@ class _DonutChartsRow extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: countriesRegionsCard),
+              Expanded(child: countriesCard),
               const SizedBox(width: 14),
               Expanded(child: accommodationPurposeCard),
             ],
@@ -1423,7 +1393,7 @@ class _DonutChartsRow extends StatelessWidget {
       children: [
         Expanded(child: genderAgeCard),
         const SizedBox(width: 14),
-        Expanded(child: countriesRegionsCard),
+        Expanded(child: countriesCard),
         const SizedBox(width: 14),
         Expanded(child: accommodationPurposeCard),
       ],
@@ -1630,23 +1600,12 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
   }
 }
 
-// ─── Countries / Local Regions Card ──────────────────────────────────────────
+// ─── Countries Card ───────────────────────────────────────────────────────────
 
-class _CountriesRegionsCard extends StatefulWidget {
-  const _CountriesRegionsCard({
-    required this.topNationalities,
-    required this.topRegions,
-  });
+class _CountriesCard extends StatelessWidget {
+  const _CountriesCard({required this.topNationalities});
 
   final List<NationalityCount> topNationalities;
-  final List<RegionCount> topRegions;
-
-  @override
-  State<_CountriesRegionsCard> createState() => _CountriesRegionsCardState();
-}
-
-class _CountriesRegionsCardState extends State<_CountriesRegionsCard> {
-  int _tab = 0; // 0 = Countries, 1 = Local Regions
 
   static const _countryColors = [
     AppColors.chartGreen,
@@ -1656,94 +1615,40 @@ class _CountriesRegionsCardState extends State<_CountriesRegionsCard> {
     AppColors.chartGray,
   ];
 
-  static const _regionColors = [
-    AppColors.chartCyan,
-    AppColors.chartGreen,
-    AppColors.chartOrange,
-    AppColors.chartPurple,
-    AppColors.chartGray,
-  ];
-
   List<_Segment> get _segments {
-    if (_tab == 0) {
-      final list = widget.topNationalities;
-      if (list.isEmpty) {
-        return List.generate(
-          5,
-          (i) => _Segment(
-            value: 0.2,
-            color: _countryColors[i % _countryColors.length],
-            isEmpty: true,
-          ),
-        );
-      }
-      final total = list.fold<int>(0, (s, n) => s + n.count);
-      return list.asMap().entries.map((e) {
-        final ratio = total == 0 ? 1 / list.length : e.value.count / total;
-        return _Segment(
-          value: ratio,
-          color: _countryColors[e.key % _countryColors.length],
+    final list = topNationalities;
+    if (list.isEmpty) {
+      return List.generate(
+        5,
+        (i) => _Segment(
+          value: 0.2,
+          color: _countryColors[i % _countryColors.length],
+          isEmpty: true,
+        ),
+      );
+    }
+    final total = list.fold<int>(0, (s, n) => s + n.count);
+    return list.asMap().entries.map((e) {
+      final ratio = total == 0 ? 1 / list.length : e.value.count / total;
+      return _Segment(
+        value: ratio,
+        color: _countryColors[e.key % _countryColors.length],
+        label: e.value.nationality,
+        percentage: '${e.value.count} tourists',
+      );
+    }).toList();
+  }
+
+  List<_LegendItem> get _legend => topNationalities
+      .asMap()
+      .entries
+      .map(
+        (e) => _LegendItem(
           label: e.value.nationality,
-          percentage: '${e.value.count} tourists',
-        );
-      }).toList();
-    } else {
-      final list = widget.topRegions;
-      if (list.isEmpty) {
-        return List.generate(
-          5,
-          (i) => _Segment(
-            value: 0.2,
-            color: _regionColors[i % _regionColors.length],
-            isEmpty: true,
-          ),
-        );
-      }
-      final total = list.fold<int>(0, (s, r) => s + r.count);
-      return list.asMap().entries.map((e) {
-        final ratio = total == 0 ? 1 / list.length : e.value.count / total;
-        return _Segment(
-          value: ratio,
-          color: _regionColors[e.key % _regionColors.length],
-          label: e.value.region,
-          percentage: '${e.value.count} tourists',
-        );
-      }).toList();
-    }
-  }
-
-  List<_LegendItem> get _legend {
-    if (_tab == 0) {
-      return widget.topNationalities
-          .asMap()
-          .entries
-          .map(
-            (e) => _LegendItem(
-              label: e.value.nationality,
-              color: _countryColors[e.key % _countryColors.length],
-            ),
-          )
-          .toList();
-    }
-    return widget.topRegions
-        .asMap()
-        .entries
-        .map(
-          (e) => _LegendItem(
-            label: e.value.region,
-            color: _regionColors[e.key % _regionColors.length],
-          ),
-        )
-        .toList();
-  }
-
-  String? get _emptyHint {
-    if (_tab == 0 && widget.topNationalities.isEmpty)
-      return 'No data for this period';
-    if (_tab == 1 && widget.topRegions.isEmpty)
-      return 'No Philippine visitors for this period';
-    return null;
-  }
+          color: _countryColors[e.key % _countryColors.length],
+        ),
+      )
+      .toList();
 
   @override
   Widget build(BuildContext context) {
@@ -1751,41 +1656,25 @@ class _CountriesRegionsCardState extends State<_CountriesRegionsCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Text(
-                'Top 5',
-                style: const TextStyle(
-                  color: AppColors.textWhite,
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 8),
-              _ToggleCardTitle(
-                options: const ['Countries', 'Local Regions'],
-                selectedIndex: _tab,
-                onChanged: (i) => setState(() => _tab = i),
-              ),
-            ],
+          const Text(
+            'Top 5 Countries',
+            style: TextStyle(
+              color: AppColors.textWhite,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          if (_emptyHint != null) ...[
+          if (topNationalities.isEmpty) ...[
             const SizedBox(height: 6),
-            Text(
-              _emptyHint!,
-              style: const TextStyle(color: AppColors.textSubtle, fontSize: 11),
+            const Text(
+              'No data for this period',
+              style: TextStyle(color: AppColors.textSubtle, fontSize: 11),
             ),
           ],
           const SizedBox(height: 16),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 260),
-            transitionBuilder: (child, animation) =>
-                FadeTransition(opacity: animation, child: child),
-            child: _DonutContent(
-              key: ValueKey(_tab),
-              segments: _segments,
-              legend: _legend,
-            ),
+          _DonutContent(
+            segments: _segments,
+            legend: _legend,
           ),
         ],
       ),

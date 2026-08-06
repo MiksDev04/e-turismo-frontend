@@ -56,20 +56,6 @@ class NationalityCount {
 
 typedef CountryCount = NationalityCount;
 
-class TransportCount {
-  const TransportCount({required this.mode, required this.count});
-
-  final String mode;
-  final int count;
-}
-
-class RegionCount {
-  const RegionCount({required this.region, required this.count});
-
-  final String region;
-  final int count;
-}
-
 class AccommodationTypeCount {
   const AccommodationTypeCount({required this.type, required this.count});
 
@@ -102,9 +88,7 @@ class AdminDashboardData {
     required this.genderDistribution,
     required this.ageGroups,
     required this.topNationalities,
-    required this.transportModes,
     required this.compliance,
-    required this.topRegions,
     required this.accommodationTypes,
     required this.purposeOfVisit,
   });
@@ -113,9 +97,7 @@ class AdminDashboardData {
   final GenderDistribution genderDistribution;
   final List<AgeGroupCount> ageGroups;
   final List<NationalityCount> topNationalities;
-  final List<TransportCount> transportModes;
   final ComplianceData compliance;
-  final List<RegionCount> topRegions;
   final List<AccommodationTypeCount> accommodationTypes;
   final List<PurposeCount> purposeOfVisit;
 }
@@ -369,25 +351,6 @@ class AdminDashboardApi extends BaseApi {
             .take(5)
             .toList();
 
-    final regionMap = <String, int>{};
-    for (final breakdown in breakdowns) {
-      final region = (breakdown['philippines_region'] as String? ?? '').trim();
-      if (region.isEmpty) continue;
-      final label = _toTitleCase(region);
-      final recordId = breakdown['guest_record_id']?.toString() ?? '';
-      final guestDays = recordGuestDays[recordId] ?? 1;
-      regionMap[label] = (regionMap[label] ?? 0) + guestDays;
-    }
-    final topRegions =
-        (regionMap.entries
-                .map(
-                  (entry) => RegionCount(region: entry.key, count: entry.value),
-                )
-                .toList()
-              ..sort((a, b) => b.count.compareTo(a.count)))
-            .take(5)
-            .toList();
-
     final purposeMap = <String, int>{};
     for (final record in periodRecords) {
       final purpose = (record['purpose_of_visit'] as String? ?? '').trim();
@@ -442,12 +405,10 @@ class AdminDashboardApi extends BaseApi {
       ),
       ageGroups: ageGroups,
       topNationalities: topNationalities,
-      transportModes: const [],
       compliance: ComplianceData(
         compliant: activeAccommodations,
         nonCompliant: pendingRegistrations,
       ),
-      topRegions: topRegions,
       accommodationTypes: accommodationTypes,
       purposeOfVisit: purposeOfVisit,
     );
@@ -577,7 +538,7 @@ class AdminDashboardApi extends BaseApi {
       ..writeln()
       ..writeln(
         'Check In,Check Out,Total Guests,Guest Days,'
-        'Country,Region,Sex,Age Group,Guest Days',
+        'Country,Sex,Age Group,Guest Days',
       );
 
     final periodStart = parseDbDateTime(start);
@@ -593,7 +554,6 @@ class AdminDashboardApi extends BaseApi {
         record['total_guests'],
         guestDays,
         _csvCell(breakdown['country'] as String? ?? ''),
-        _csvCell(breakdown['philippines_region'] as String? ?? ''),
         breakdown['sex'],
         breakdown['age_group'],
         guestDays,

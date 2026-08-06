@@ -47,13 +47,6 @@ class CountryCount {
   final int count;
 }
 
-class RegionCount {
-  const RegionCount({required this.region, required this.count});
-
-  final String region;
-  final int count;
-}
-
 class MonthlyCount {
   const MonthlyCount({required this.month, required this.count});
 
@@ -80,7 +73,6 @@ class DashboardData {
     required this.stats,
     required this.sexDistribution,
     required this.topCountries,
-    required this.topRegions,
     required this.ageGroups,
     required this.purposeOfVisit,
   });
@@ -88,7 +80,6 @@ class DashboardData {
   final DashboardStats stats;
   final SexDistribution sexDistribution;
   final List<CountryCount> topCountries;
-  final List<RegionCount> topRegions;
   final List<AgeGroupCount> ageGroups;
   final List<PurposeCount> purposeOfVisit;
 }
@@ -492,7 +483,6 @@ class BusinessDashboardApi extends BaseApi {
         'purpose_of_visit',
         'lead_country',
         'lead_nationality',
-        'lead_philippines_region',
         'lead_is_overseas',
         'lead_birthdate',
         'lead_sex',
@@ -516,7 +506,6 @@ class BusinessDashboardApi extends BaseApi {
     final rows = await db.rawQuery(
       'SELECT id as guest_record_id, '
       '  lead_country as country, '
-      '  lead_philippines_region as philippines_region, '
       '  lead_sex as sex, '
       '  lead_is_overseas as is_overseas, '
       '  lead_birthdate, '
@@ -558,7 +547,6 @@ class BusinessDashboardApi extends BaseApi {
       breakdowns.add({
         'guest_record_id':     r['guest_record_id'],
         'country':             country,
-        'philippines_region':  r['philippines_region'],
         'sex':                 sex,
         'age_group':           ageGroup,
         'count':               1,
@@ -688,24 +676,6 @@ class BusinessDashboardApi extends BaseApi {
             .take(5)
             .toList();
 
-    // Top 5 local regions
-    final regionMap = <String, int>{};
-    for (final b in breakdowns) {
-      final region = _stringValue(b, 'philippines_region');
-      if (region != null && region.isNotEmpty) {
-        final recordId = _stringValue(b, 'guest_record_id') ?? '';
-        final guestDays = recordGuestDays[recordId] ?? 1;
-        regionMap[region] = (regionMap[region] ?? 0) + guestDays;
-      }
-    }
-    final topRegions =
-        (regionMap.entries
-                .map((e) => RegionCount(region: e.key, count: e.value))
-                .toList()
-              ..sort((a, b) => b.count.compareTo(a.count)))
-            .take(5)
-            .toList();
-
     // Purpose of visit
     final purposeMap = <String, int>{};
     for (final record in periodRecords) {
@@ -731,7 +701,6 @@ class BusinessDashboardApi extends BaseApi {
         other: genderOther,
       ),
       topCountries: topCountries,
-      topRegions: topRegions,
       ageGroups: ageGroups,
       purposeOfVisit: purposeOfVisit,
     );
@@ -935,7 +904,7 @@ class BusinessDashboardApi extends BaseApi {
       ..writeln()
       ..writeln(
         'Check In,Check Out,Total Guests,Guest Days,'
-        'Country,Region,Sex,Age Group,Guest Days',
+        'Country,Sex,Age Group,Guest Days',
       );
 
     final periodStart = parseDbDateTime(start);
@@ -953,7 +922,6 @@ class BusinessDashboardApi extends BaseApi {
         _intValue(rec, 'total_guests') ?? 0,
         guestDays,
         _csvCell(_stringValue(b, 'country') ?? 'Unknown'),
-        _csvCell(_stringValue(b, 'philippines_region') ?? ''),
         _stringValue(b, 'sex') ?? '',
         _stringValue(b, 'age_group') ?? '',
         guestDays,

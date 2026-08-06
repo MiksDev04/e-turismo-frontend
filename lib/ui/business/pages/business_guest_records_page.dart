@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/database/local_database.dart';
-import '../../../core/services/session_service.dart';
 import '../../../core/services/offline_service.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../shared/widgets/paginator.dart';
@@ -39,7 +38,6 @@ class GuestBreakdownEntry {
   const GuestBreakdownEntry({
     this.country,
     this.nationality,
-    this.philippinesRegion,
     this.province,
     this.municipalityCity,
     required this.sex,
@@ -50,7 +48,6 @@ class GuestBreakdownEntry {
 
   final String? country;
   final String? nationality;
-  final String? philippinesRegion;
   final String? province;
   final String? municipalityCity;
   final String sex;
@@ -93,15 +90,15 @@ class GuestRecord {
     this.roomDetails = const [],
     this.roomIds = const [],
     required this.purpose,
-    required this.transport,
     required this.status,
     required this.demographics,
+    this.maleCount,
+    this.femaleCount,
     this.createdAt,
     this.leadCountry,
     this.leadMunicipality,
     this.leadProvince,
     this.leadNationality,
-    this.leadPhilippinesRegion,
     this.leadIsOverseas = false,
     this.leadBirthdate,
     this.leadSex,
@@ -117,15 +114,15 @@ class GuestRecord {
   final List<GuestRoom> roomDetails;
   final List<String> roomIds;
   final String purpose;
-  final String transport;
   final GuestRecordStatus status;
   final GuestDemographics? demographics;
+  final int? maleCount;
+  final int? femaleCount;
   final String? createdAt;
   final String? leadCountry;
   final String? leadMunicipality;
   final String? leadProvince;
   final String? leadNationality;
-  final String? leadPhilippinesRegion;
   final bool leadIsOverseas;
   final String? leadBirthdate;
   final String? leadSex;
@@ -168,13 +165,9 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
   DateTime? _checkInFrom;
   DateTime? _checkOutTo;
   String? _selectedPurpose;
-  String? _selectedTransport;
 
   final List<String> _purposeOptions = [
     'All', 'Leisure', 'Business', 'Education', 'Medical', 'Religious', 'Others',
-  ];
-  final List<String> _transportOptions = [
-    'All', 'Private Car', 'Bus', 'Van', 'Motorcycle', 'Tricycle', 'Others',
   ];
 
   static const List<int> _pageSizeOptions = [10, 20, 30];
@@ -266,7 +259,6 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       checkInFrom: _checkInFrom?.toIso8601String().split('T').first,
       checkOutTo: _checkOutTo?.toIso8601String().split('T').first,
       purpose: _selectedPurpose,
-      transport: _selectedTransport,
     );
     if (!mounted) return;
     if (result.isSuccess) {
@@ -347,13 +339,13 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       totalGuests:            updated.guests,
       roomIds:                updated.roomIds,
       purposeOfVisit:         updated.purpose,
-      transportationMode:     updated.transport,
+      maleCount:              updated.maleCount,
+      femaleCount:            updated.femaleCount,
       breakdowns:             updated.demographics?.breakdowns ?? [],
       leadCountry:            updated.leadCountry,
       leadMunicipality:       updated.leadMunicipality,
       leadProvince:           updated.leadProvince,
       leadNationality:        updated.leadNationality,
-      leadPhilippinesRegion:  updated.leadPhilippinesRegion,
       leadIsOverseas:         updated.leadIsOverseas,
       leadBirthdate:          updated.leadBirthdate,
       leadSex:                updated.leadSex,
@@ -546,13 +538,13 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       totalGuests:            record.guests,
       roomIds:                roomIds,
       purposeOfVisit:         record.purpose,
-      transportationMode:     record.transport,
+      maleCount:              record.maleCount,
+      femaleCount:            record.femaleCount,
       breakdowns:             record.demographics?.breakdowns ?? [],
       leadCountry:            record.leadCountry,
       leadMunicipality:       record.leadMunicipality,
       leadProvince:           record.leadProvince,
       leadNationality:        record.leadNationality,
-      leadPhilippinesRegion:  record.leadPhilippinesRegion,
       leadIsOverseas:         record.leadIsOverseas,
       leadBirthdate:          record.leadBirthdate,
       leadSex:                record.leadSex,
@@ -591,7 +583,6 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       _checkInFrom      = null;
       _checkOutTo       = null;
       _selectedPurpose  = null;
-      _selectedTransport = null;
       _currentPage      = 0;
     });
     _loadRecords();
@@ -644,17 +635,11 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
                           checkInFrom:       _checkInFrom,
                           checkOutTo:        _checkOutTo,
                           selectedPurpose:   _selectedPurpose,
-                          selectedTransport: _selectedTransport,
                           purposeOptions:    _purposeOptions,
-                          transportOptions:  _transportOptions,
                           onCheckInFromTap:  () => _pickDate(context, true),
                           onCheckOutToTap:   () => _pickDate(context, false),
                           onPurposeChanged:  (v) {
                             setState(() => _selectedPurpose = v);
-                            _reload();
-                          },
-                          onTransportChanged: (v) {
-                            setState(() => _selectedTransport = v);
                             _reload();
                           },
                           onClearAll: _clearAllFilters,
@@ -868,13 +853,10 @@ class _FiltersSection extends StatelessWidget {
     required this.checkInFrom,
     required this.checkOutTo,
     required this.selectedPurpose,
-    required this.selectedTransport,
     required this.purposeOptions,
-    required this.transportOptions,
     required this.onCheckInFromTap,
     required this.onCheckOutToTap,
     required this.onPurposeChanged,
-    required this.onTransportChanged,
     required this.onClearAll,
     required this.isNarrow,
   });
@@ -882,21 +864,17 @@ class _FiltersSection extends StatelessWidget {
   final DateTime? checkInFrom;
   final DateTime? checkOutTo;
   final String? selectedPurpose;
-  final String? selectedTransport;
   final List<String> purposeOptions;
-  final List<String> transportOptions;
   final VoidCallback onCheckInFromTap;
   final VoidCallback onCheckOutToTap;
   final ValueChanged<String?> onPurposeChanged;
-  final ValueChanged<String?> onTransportChanged;
   final VoidCallback onClearAll;
   final bool isNarrow;
 
   bool get _hasActiveFilters =>
       checkInFrom != null ||
       checkOutTo != null ||
-      (selectedPurpose != null && selectedPurpose != 'All') ||
-      (selectedTransport != null && selectedTransport != 'All');
+      (selectedPurpose != null && selectedPurpose != 'All');
 
   @override
   Widget build(BuildContext context) {
@@ -924,28 +902,12 @@ class _FiltersSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _DropFilter(
-                  label: 'Purpose',
-                  value: selectedPurpose,
-                  items: purposeOptions,
-                  onChanged: onPurposeChanged,
-                  icon: Icons.work_outline,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _DropFilter(
-                  label: 'Transportation',
-                  value: selectedTransport,
-                  items: transportOptions,
-                  onChanged: onTransportChanged,
-                  icon: Icons.directions_car_outlined,
-                ),
-              ),
-            ],
+          _DropFilter(
+            label: 'Purpose',
+            value: selectedPurpose,
+            items: purposeOptions,
+            onChanged: onPurposeChanged,
+            icon: Icons.work_outline,
           ),
           if (_hasActiveFilters) ...[
             const SizedBox(height: 10),
@@ -981,16 +943,6 @@ class _FiltersSection extends StatelessWidget {
             items: purposeOptions,
             onChanged: onPurposeChanged,
             icon: Icons.work_outline,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _DropFilter(
-            label: 'Transportation',
-            value: selectedTransport,
-            items: transportOptions,
-            onChanged: onTransportChanged,
-            icon: Icons.directions_car_outlined,
           ),
         ),
         if (_hasActiveFilters) ...[
@@ -1902,7 +1854,8 @@ class _StayInfoGrid extends StatelessWidget {
       (Icons.people_outline,        'Total Guests',      '${record.guests}'),
       (Icons.meeting_room_outlined, 'Rooms Occupied',    roomsDisplay),
       (Icons.work_outline,          'Purpose of Visit',  record.purpose),
-      (Icons.directions_car_outlined, 'Mode of Transport', record.transport),
+      (Icons.male_outlined,         'Male Guests',       record.maleCount?.toString() ?? '-'),
+      (Icons.female_outlined,       'Female Guests',     record.femaleCount?.toString() ?? '-'),
     ];
 
     const spacing = 12.0;
@@ -1944,7 +1897,6 @@ class _LeadGuestDemoGrid extends StatelessWidget {
       (Icons.cake_outlined,             'Birthdate',         record.leadBirthdate ?? '-'),
       (Icons.flag_outlined,             'Country',           record.leadCountry ?? '-'),
       (Icons.account_balance_outlined,  'Nationality',       record.leadNationality ?? '-'),
-      (Icons.public_outlined,           'Region',            record.leadPhilippinesRegion ?? '-'),
       (Icons.map_outlined,              'Province',          record.leadProvince ?? '-'),
       (Icons.location_city_outlined,    'City/Municipality', record.leadMunicipality ?? '-'),
       (Icons.flight_outlined,           'Is Overseas',       record.leadIsOverseas ? 'Yes' : 'No'),
@@ -2122,10 +2074,6 @@ class _BreakdownTable extends StatelessWidget {
                           label: 'Nationality',
                           value: _displayNationality(b),
                         ),
-                        _BreakdownInfoChip(
-                          label: 'Region',
-                          value: b.philippinesRegion ?? '—',
-                        ),
                         _BreakdownInfoChip(label: 'Province', value: b.province ?? '—'),
                         _BreakdownInfoChip(label: 'Municipality', value: b.municipalityCity ?? '—'),
                         _BreakdownInfoChip(label: 'Is Overseas', value: yesNoLabel),
@@ -2173,7 +2121,6 @@ class _BreakdownTable extends StatelessWidget {
                         _TCell('Sex',          isHeader: true),
                         _TCell('Country',      isHeader: true),
                         _TCell('Nationality',  isHeader: true),
-                        _TCell('Region',       isHeader: true),
                         _TCell('Province',     isHeader: true),
                         _TCell('Municipality', isHeader: true),
                         _TCell('Is Overseas',  isHeader: true),
@@ -2187,7 +2134,6 @@ class _BreakdownTable extends StatelessWidget {
                           _TCell(b.sex),
                           _TCell(_displayCountry(b)),
                           _TCell(_displayNationality(b)),
-                          _TCell(b.philippinesRegion ?? '—'),
                           _TCell(b.province ?? '—'),
                           _TCell(b.municipalityCity ?? '—'),
                           _TCellBadge(

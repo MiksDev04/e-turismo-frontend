@@ -65,6 +65,47 @@ class PsgcRepository {
   List<Province> provincesFor(String regionCode) =>
       _provincesByRegion[regionCode] ?? [];
 
+  /// Flattens every province across all regions into one list. Regions that
+  /// have no provinces (e.g. NCR) are represented by a pseudo-province using
+  /// the region's code so their cities remain selectable via [citiesFor].
+  List<Province> get allProvinces {
+    final result = <Province>[];
+    final seen = <String>{};
+    for (final entry in _provincesByRegion.entries) {
+      if (entry.value.isEmpty) {
+        final region = _regionByCode(entry.key);
+        if (region != null && seen.add(region.code)) {
+          result.add(Province(code: region.code, name: region.name));
+        }
+        continue;
+      }
+      for (final p in entry.value) {
+        if (seen.add(p.code)) result.add(p);
+      }
+    }
+    result.sort((a, b) => a.name.compareTo(b.name));
+    return result;
+  }
+
+  Region? _regionByCode(String code) {
+    for (final r in _regions) {
+      if (r.code == code) return r;
+    }
+    return null;
+  }
+
+  String? findProvinceCodeAnywhere(String name) {
+    final normalised = name.trim().toLowerCase();
+    for (final p in allProvinces) {
+      if (p.name.trim().toLowerCase() == normalised) return p.code;
+    }
+    // Fallback: try with "City of" prefix
+    for (final p in allProvinces) {
+      if ('City of ${p.name}'.trim().toLowerCase() == normalised) return p.code;
+    }
+    return null;
+  }
+
   List<CityMunicipality> citiesFor(String provinceCode) =>
       _citiesByProvince[provinceCode] ?? [];
 

@@ -51,12 +51,12 @@ class GuestEntryData {
     required this.totalGuests,
     required this.roomIds,
     required this.purposeOfVisit,
-    required this.transportationMode,
+    this.maleCount,
+    this.femaleCount,
     this.leadCountry,
     this.leadMunicipality,
     this.leadProvince,
     this.leadNationality,
-    this.leadPhilippinesRegion,
     this.leadIsOverseas = false,
     this.leadBirthdate,
     this.leadSex,
@@ -68,12 +68,12 @@ class GuestEntryData {
   final int totalGuests;
   final List<String> roomIds;
   final String purposeOfVisit;
-  final String transportationMode;
+  final int? maleCount;
+  final int? femaleCount;
   final String? leadCountry;
   final String? leadMunicipality;
   final String? leadProvince;
   final String? leadNationality;
-  final String? leadPhilippinesRegion;
   final bool leadIsOverseas;
   final DateTime? leadBirthdate;
   final String? leadSex;
@@ -197,12 +197,12 @@ class BusinessGuestEntryApi extends BaseApi {
           checkOut:           checkOutStr,
           totalGuests:        data.totalGuests,
           purposeOfVisit:     data.purposeOfVisit,
-          transportationMode: data.transportationMode,
+          maleCount:          data.maleCount,
+          femaleCount:        data.femaleCount,
           leadCountry:        data.leadCountry,
           leadMunicipality:   data.leadMunicipality,
           leadProvince:       data.leadProvince,
           leadNationality:    data.leadNationality,
-          leadRegion:         data.leadPhilippinesRegion,
           leadIsOverseas:     data.leadIsOverseas,
           leadBirthdate:      leadBirthStr,
           leadSex:            data.leadSex,
@@ -227,12 +227,12 @@ class BusinessGuestEntryApi extends BaseApi {
         'totalGuests': data.totalGuests,
         'roomIds': data.roomIds,
         'purposeOfVisit': data.purposeOfVisit,
-        'transportationMode': data.transportationMode,
+        'maleCount': data.maleCount,
+        'femaleCount': data.femaleCount,
         'leadCountry': data.leadCountry,
         'leadMunicipality': data.leadMunicipality,
         'leadProvince': data.leadProvince,
         'leadNationality': data.leadNationality,
-        'leadPhilippinesRegion': data.leadPhilippinesRegion,
         'leadIsOverseas': data.leadIsOverseas,
         'leadBirthdate': leadBirthStr,
         'leadSex': data.leadSex,
@@ -302,12 +302,12 @@ class BusinessGuestEntryApi extends BaseApi {
         checkOut:           checkOutStr,
         totalGuests:        data.totalGuests,
         purposeOfVisit:     data.purposeOfVisit,
-        transportationMode: data.transportationMode,
+        maleCount:          data.maleCount,
+        femaleCount:        data.femaleCount,
         leadCountry:        data.leadCountry,
         leadMunicipality:   data.leadMunicipality,
         leadProvince:       data.leadProvince,
         leadNationality:    data.leadNationality,
-        leadRegion:         data.leadPhilippinesRegion,
         leadIsOverseas:     data.leadIsOverseas,
         leadBirthdate:      leadBirthStr,
         leadSex:            data.leadSex,
@@ -335,12 +335,12 @@ class BusinessGuestEntryApi extends BaseApi {
     required String checkOut,
     required int totalGuests,
     required String purposeOfVisit,
-    required String transportationMode,
+    int? maleCount,
+    int? femaleCount,
     String? leadCountry,
     String? leadMunicipality,
     String? leadProvince,
     String? leadNationality,
-    String? leadRegion,
     bool leadIsOverseas = false,
     String? leadBirthdate,
     String? leadSex,
@@ -356,6 +356,19 @@ class BusinessGuestEntryApi extends BaseApi {
     final dIn  = parseDbDateTime(checkIn);
     final dOut = parseDbDateTime(checkOut);
     final lengthOfStay = dOut.difference(dIn).inDays.clamp(1, 999);
+
+    // Male/female counts: optional. Derive the missing one from the other;
+    // if both are blank, fall back to the PSA 47.1%/52.9% split.
+    var maleCountVal = maleCount ?? 0;
+    var femaleCountVal = femaleCount ?? 0;
+    if (maleCountVal == 0 && femaleCountVal == 0) {
+      maleCountVal = (totalGuests * 0.471).round();
+      femaleCountVal = totalGuests - maleCountVal;
+    } else if (maleCountVal == 0) {
+      maleCountVal = totalGuests - femaleCountVal;
+    } else if (femaleCountVal == 0) {
+      femaleCountVal = totalGuests - maleCountVal;
+    }
 
     // Ensure the profile and business exist locally to satisfy foreign key constraints
     if (current != null) {
@@ -433,13 +446,13 @@ class BusinessGuestEntryApi extends BaseApi {
         'check_out':               checkOut,
         'length_of_stay':          lengthOfStay,
         'total_guests':            totalGuests,
+        'male_count':              maleCountVal,
+        'female_count':            femaleCountVal,
         'purpose_of_visit':        purposeOfVisit,
-        'transportation_mode':     transportationMode,
         'lead_country':            leadCountry,
         'lead_city_municipality':  leadMunicipality,
         'lead_province':           leadProvince,
         'lead_nationality':        leadNationality,
-        'lead_philippines_region': leadRegion,
         'lead_is_overseas':        leadIsOverseas ? 1 : 0,
         'lead_birthdate':          leadBirthdate,
         'lead_sex':                leadSex?.toLowerCase(),

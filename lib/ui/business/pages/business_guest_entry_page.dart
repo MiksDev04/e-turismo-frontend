@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/services/session_service.dart';
 import '../../../core/services/offline_service.dart';
 import '../../../core/services/psgc_repository.dart';
 import '../../../core/models/psgc_models.dart';
@@ -29,15 +28,6 @@ const _purposeOptions = [
   'Education',
   'Medical',
   'Religious',
-  'Others',
-];
-
-const _transportOptions = [
-  'Private Car',
-  'Bus',
-  'Van',
-  'Motorcycle',
-  'Tricycle',
   'Others',
 ];
 
@@ -129,12 +119,11 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
   DateTime? _checkIn;
   DateTime? _checkOut;
   final _totalGuestsCtrl = TextEditingController();
+  final _maleGuestsCtrl = TextEditingController();
+  final _femaleGuestsCtrl = TextEditingController();
   String? _purpose;
-  String? _transport;
   final _purposeOtherCtrl = TextEditingController();
-  final _transportOtherCtrl = TextEditingController();
   bool _showPurposeOther = false;
-  bool _showTransportOther = false;
   bool _isSaving = false;
 
   // ── Room selection ──────────────────────────────────────────────────────────
@@ -146,7 +135,6 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
   String? _leadCountry;
   String? _leadNationality;
   bool _leadIsOverseas = false;
-  String? _selectedRegionCode;
   String? _selectedProvinceCode;
   String? _selectedCityCode;
   DateTime? _leadBirthdate;
@@ -172,8 +160,9 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
   void dispose() {
     _connectivitySub?.cancel();
     _totalGuestsCtrl.dispose();
+    _maleGuestsCtrl.dispose();
+    _femaleGuestsCtrl.dispose();
     _purposeOtherCtrl.dispose();
-    _transportOtherCtrl.dispose();
     super.dispose();
   }
 
@@ -273,6 +262,20 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
     });
   }
 
+  void _recomputeMissingSexCount() {
+    final total = int.tryParse(_totalGuestsCtrl.text) ?? 0;
+    if (total <= 0) return;
+    final male = int.tryParse(_maleGuestsCtrl.text);
+    final female = int.tryParse(_femaleGuestsCtrl.text);
+    if (male != null && female == null) {
+      final f = total - male;
+      _femaleGuestsCtrl.text = f >= 0 ? '$f' : _femaleGuestsCtrl.text;
+    } else if (female != null && male == null) {
+      final m = total - female;
+      _maleGuestsCtrl.text = m >= 0 ? '$m' : _maleGuestsCtrl.text;
+    }
+  }
+
   void _showSnackBar(String message, {Color? color}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -288,17 +291,15 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
       _checkIn = null;
       _checkOut = null;
       _totalGuestsCtrl.clear();
+      _maleGuestsCtrl.clear();
+      _femaleGuestsCtrl.clear();
       _purpose = null;
-      _transport = null;
       _purposeOtherCtrl.clear();
-      _transportOtherCtrl.clear();
       _showPurposeOther = false;
-      _showTransportOther = false;
       _selectedRoomIds.clear();
       _leadCountry = null;
       _leadNationality = null;
       _leadIsOverseas = false;
-      _selectedRegionCode = null;
       _selectedProvinceCode = null;
       _selectedCityCode = null;
       _leadBirthdate = null;
@@ -364,13 +365,30 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
       hasError = true;
     }
 
-    if (_transport == null) {
-      errors['transport'] = 'Please select a mode of transportation.';
-      hasError = true;
-    } else if (_transport == 'Others' &&
-        _transportOtherCtrl.text.trim().isEmpty) {
-      errors['transportOther'] = 'Please specify the transportation.';
-      hasError = true;
+    if (guests != null && guests > 0) {
+      final male = int.tryParse(_maleGuestsCtrl.text);
+      final female = int.tryParse(_femaleGuestsCtrl.text);
+
+      if ((male != null && male < 0) || (female != null && female < 0)) {
+        errors['maleGuests'] = 'Counts cannot be negative.';
+        hasError = true;
+      } else if (male != null && male > guests) {
+        errors['maleGuests'] =
+            'Male count ($male) exceeds total guests ($guests).';
+        hasError = true;
+      } else if (female != null && female > guests) {
+        errors['femaleGuests'] =
+            'Female count ($female) exceeds total guests ($guests).';
+        hasError = true;
+      } else if (male != null &&
+          female != null &&
+          male + female != guests) {
+        errors['maleGuests'] =
+            'Male + female ($male + $female) must equal total guests ($guests).';
+        errors['femaleGuests'] =
+            'Male + female ($male + $female) must equal total guests ($guests).';
+        hasError = true;
+      }
     }
 
     // ── Lead guest validation ─────────────────────────────────────────────
@@ -418,24 +436,13 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
     final purposeValue = _purpose == 'Others'
         ? _purposeOtherCtrl.text.trim()
         : _purpose!;
-    final transportValue = _transport == 'Others'
-        ? _transportOtherCtrl.text.trim()
-        : _transport!;
 
-    String? regionName;
     String? provinceName;
     String? cityName;
     if (_isPhilippines) {
       final repo = PsgcRepository.instance;
-      if (_selectedRegionCode != null) {
-        regionName = repo.regions
-            .where((r) => r.code == _selectedRegionCode)
-            .firstOrNull
-            ?.name;
-      }
       if (_selectedProvinceCode != null) {
-        provinceName = repo
-            .provincesFor(_selectedRegionCode ?? '')
+        provinceName = repo.allProvinces
             .where((p) => p.code == _selectedProvinceCode)
             .firstOrNull
             ?.name;
@@ -448,15 +455,11 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
             .where((c) => c.code == _selectedCityCode)
             .firstOrNull
             ?.name;
-        if (cityName == null && _selectedRegionCode != null) {
-          cityName = repo
-              .citiesForRegion(_selectedRegionCode!)
-              .where((c) => c.code == _selectedCityCode)
-              .firstOrNull
-              ?.name;
-        }
       }
     }
+
+    final maleCount = int.tryParse(_maleGuestsCtrl.text);
+    final femaleCount = int.tryParse(_femaleGuestsCtrl.text);
 
     final result = await _api.saveGuestEntry(
       GuestEntryData(
@@ -466,12 +469,12 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
         totalGuests: _totalGuests,
         roomIds: _selectedRoomIds.toList(),
         purposeOfVisit: purposeValue,
-        transportationMode: transportValue,
+        maleCount: maleCount,
+        femaleCount: femaleCount,
         leadCountry: !_leadIsOverseas ? _leadCountry : null,
         leadMunicipality: cityName,
         leadProvince: provinceName,
         leadNationality: _isPhilippines ? _leadNationality : null,
-        leadPhilippinesRegion: _isPhilippines ? regionName : null,
         leadIsOverseas: _leadIsOverseas,
         leadBirthdate: _leadBirthdate,
         leadSex: _leadSex,
@@ -615,12 +618,11 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                     checkOut: _checkOut,
                     nights: _nightsCount,
                     totalGuestsCtrl: _totalGuestsCtrl,
+                    maleGuestsCtrl: _maleGuestsCtrl,
+                    femaleGuestsCtrl: _femaleGuestsCtrl,
                     purpose: _purpose,
-                    transport: _transport,
                     showPurposeOther: _showPurposeOther,
-                    showTransportOther: _showTransportOther,
                     purposeOtherCtrl: _purposeOtherCtrl,
-                    transportOtherCtrl: _transportOtherCtrl,
                     vacantRooms: _vacantRooms,
                     selectedRoomIds: _selectedRoomIds,
                     isLoadingRooms: _isLoadingRooms,
@@ -636,19 +638,21 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                       _clearFieldError('purpose');
                       _clearFieldError('purposeOther');
                     },
-                    onTransportChanged: (v) {
-                      setState(() {
-                        _transport = v;
-                        _showTransportOther = v == 'Others';
-                        if (!_showTransportOther) _transportOtherCtrl.clear();
-                      });
-                      _clearFieldError('transport');
-                      _clearFieldError('transportOther');
-                    },
                     onGuestsChanged: (_) {
                       setState(() {});
                       _clearFieldError('totalGuests');
                       _validateRoomCapacity();
+                      _recomputeMissingSexCount();
+                    },
+                    onMaleGuestsChanged: (_) {
+                      setState(() {});
+                      _clearFieldError('maleGuests');
+                      _recomputeMissingSexCount();
+                    },
+                    onFemaleGuestsChanged: (_) {
+                      setState(() {});
+                      _clearFieldError('femaleGuests');
+                      _recomputeMissingSexCount();
                     },
                     onRoomToggled: (roomId) {
                       setState(() {
@@ -663,25 +667,17 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                     },
                     onPurposeOtherChanged: (_) =>
                         _clearFieldError('purposeOther'),
-                    onTransportOtherChanged: (_) =>
-                        _clearFieldError('transportOther'),
                   ),
                   const SizedBox(height: 16),
 
                   _LeadGuestCard(
                     leadCountry: _leadCountry,
-                    selectedRegionCode: _selectedRegionCode,
                     selectedProvinceCode: _selectedProvinceCode,
                     selectedCityCode: _selectedCityCode,
-                    regions: PsgcRepository.instance.regions,
-                    provinces: _selectedRegionCode != null
-                        ? PsgcRepository.instance.provincesFor(_selectedRegionCode!)
-                        : [],
+                    provinces: PsgcRepository.instance.allProvinces,
                     cities: _selectedProvinceCode != null
                         ? PsgcRepository.instance.citiesFor(_selectedProvinceCode!)
-                        : (_selectedRegionCode != null
-                            ? PsgcRepository.instance.citiesForRegion(_selectedRegionCode!)
-                            : []),
+                        : [],
                     leadNationality: _leadNationality,
                     leadIsOverseas: _leadIsOverseas,
                     leadBirthdate: _leadBirthdate,
@@ -693,7 +689,6 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                         _leadCountry = v;
                         if (v != 'Philippines') {
                           _leadNationality = null;
-                          _selectedRegionCode = null;
                           _selectedProvinceCode = null;
                           _selectedCityCode = null;
                         }
@@ -706,17 +701,9 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                         if (v) {
                           _leadCountry = null;
                           _leadNationality = null;
-                          _selectedRegionCode = null;
                           _selectedProvinceCode = null;
                           _selectedCityCode = null;
                         }
-                      });
-                    },
-                    onRegionChanged: (v) {
-                      setState(() {
-                        _selectedRegionCode = v;
-                        _selectedProvinceCode = null;
-                        _selectedCityCode = null;
                       });
                     },
                     onProvinceChanged: (v) {
@@ -857,12 +844,11 @@ class _StayInfoCard extends StatelessWidget {
     required this.checkOut,
     required this.nights,
     required this.totalGuestsCtrl,
+    required this.maleGuestsCtrl,
+    required this.femaleGuestsCtrl,
     required this.purpose,
-    required this.transport,
     required this.showPurposeOther,
-    required this.showTransportOther,
     required this.purposeOtherCtrl,
-    required this.transportOtherCtrl,
     required this.vacantRooms,
     required this.selectedRoomIds,
     required this.isLoadingRooms,
@@ -870,23 +856,22 @@ class _StayInfoCard extends StatelessWidget {
     required this.onPickCheckIn,
     required this.onPickCheckOut,
     required this.onPurposeChanged,
-    required this.onTransportChanged,
     required this.onGuestsChanged,
+    required this.onMaleGuestsChanged,
+    required this.onFemaleGuestsChanged,
     required this.onRoomToggled,
     required this.onPurposeOtherChanged,
-    required this.onTransportOtherChanged,
   });
 
   final DateTime? checkIn;
   final DateTime? checkOut;
   final int nights;
   final TextEditingController totalGuestsCtrl;
+  final TextEditingController maleGuestsCtrl;
+  final TextEditingController femaleGuestsCtrl;
   final String? purpose;
-  final String? transport;
   final bool showPurposeOther;
-  final bool showTransportOther;
   final TextEditingController purposeOtherCtrl;
-  final TextEditingController transportOtherCtrl;
   final List<RoomInfo> vacantRooms;
   final Set<String> selectedRoomIds;
   final bool isLoadingRooms;
@@ -894,11 +879,11 @@ class _StayInfoCard extends StatelessWidget {
   final VoidCallback onPickCheckIn;
   final VoidCallback onPickCheckOut;
   final ValueChanged<String?> onPurposeChanged;
-  final ValueChanged<String?> onTransportChanged;
   final ValueChanged<String> onGuestsChanged;
+  final ValueChanged<String> onMaleGuestsChanged;
+  final ValueChanged<String> onFemaleGuestsChanged;
   final ValueChanged<String> onRoomToggled;
   final ValueChanged<String> onPurposeOtherChanged;
-  final ValueChanged<String> onTransportOtherChanged;
 
   String _fmt(DateTime? dt) {
     if (dt == null) return '';
@@ -1042,30 +1027,36 @@ class _StayInfoCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 14),
-            _FieldCol(
-              label: 'Mode of Transportation *',
-              errorText: errors['transport'],
-              child: _EntryDropdownField(
-                value: transport,
-                items: _transportOptions,
-                hint: 'Select transportation',
-                hasError: errors['transport'] != null,
-                onChanged: onTransportChanged,
-              ),
-            ),
-            if (showTransportOther) ...[
-              const SizedBox(height: 10),
-              _FieldCol(
-                label: 'Please specify *',
-                errorText: errors['transportOther'],
-                child: _EntryTextField(
-                  controller: transportOtherCtrl,
-                  hint: 'Specify transportation',
-                  hasError: errors['transportOther'] != null,
-                  onChanged: onTransportOtherChanged,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _FieldCol(
+                    label: 'Male Guests (optional)',
+                    errorText: errors['maleGuests'],
+                    child: _EntryNumberField(
+                      controller: maleGuestsCtrl,
+                      hint: 'e.g. 5',
+                      hasError: errors['maleGuests'] != null,
+                      onChanged: onMaleGuestsChanged,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _FieldCol(
+                    label: 'Female Guests (optional)',
+                    errorText: errors['femaleGuests'],
+                    child: _EntryNumberField(
+                      controller: femaleGuestsCtrl,
+                      hint: 'e.g. 5',
+                      hasError: errors['femaleGuests'] != null,
+                      onChanged: onFemaleGuestsChanged,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ] else ...[
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1107,29 +1098,26 @@ class _StayInfoCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _FieldCol(
-                        label: 'Mode of Transportation *',
-                        errorText: errors['transport'],
-                        child: _EntryDropdownField(
-                          value: transport,
-                          items: _transportOptions,
-                          hint: 'Select transportation',
-                          hasError: errors['transport'] != null,
-                          onChanged: onTransportChanged,
+                        label: 'Male Guests (optional)',
+                        errorText: errors['maleGuests'],
+                        child: _EntryNumberField(
+                          controller: maleGuestsCtrl,
+                          hint: 'e.g. 5',
+                          hasError: errors['maleGuests'] != null,
+                          onChanged: onMaleGuestsChanged,
                         ),
                       ),
-                      if (showTransportOther) ...[
-                        const SizedBox(height: 10),
-                        _FieldCol(
-                          label: 'Please specify *',
-                          errorText: errors['transportOther'],
-                          child: _EntryTextField(
-                            controller: transportOtherCtrl,
-                            hint: 'Specify transportation',
-                            hasError: errors['transportOther'] != null,
-                            onChanged: onTransportOtherChanged,
-                          ),
+                      const SizedBox(height: 10),
+                      _FieldCol(
+                        label: 'Female Guests (optional)',
+                        errorText: errors['femaleGuests'],
+                        child: _EntryNumberField(
+                          controller: femaleGuestsCtrl,
+                          hint: 'e.g. 5',
+                          hasError: errors['femaleGuests'] != null,
+                          onChanged: onFemaleGuestsChanged,
                         ),
-                      ],
+                      ),
                     ],
                   ),
                 ),
@@ -1387,10 +1375,8 @@ class _RoomSelector extends StatelessWidget {
 class _LeadGuestCard extends StatelessWidget {
   const _LeadGuestCard({
     required this.leadCountry,
-    required this.selectedRegionCode,
     required this.selectedProvinceCode,
     required this.selectedCityCode,
-    required this.regions,
     required this.provinces,
     required this.cities,
     required this.leadNationality,
@@ -1401,7 +1387,6 @@ class _LeadGuestCard extends StatelessWidget {
     required this.errors,
     required this.onCountryChanged,
     required this.onOverseasToggled,
-    required this.onRegionChanged,
     required this.onProvinceChanged,
     required this.onCityChanged,
     required this.onNationalityChanged,
@@ -1410,10 +1395,8 @@ class _LeadGuestCard extends StatelessWidget {
   });
 
   final String? leadCountry;
-  final String? selectedRegionCode;
   final String? selectedProvinceCode;
   final String? selectedCityCode;
-  final List<Region> regions;
   final List<Province> provinces;
   final List<CityMunicipality> cities;
   final String? leadNationality;
@@ -1424,7 +1407,6 @@ class _LeadGuestCard extends StatelessWidget {
   final Map<String, String?> errors;
   final ValueChanged<String?> onCountryChanged;
   final ValueChanged<bool> onOverseasToggled;
-  final ValueChanged<String?> onRegionChanged;
   final ValueChanged<String?> onProvinceChanged;
   final ValueChanged<String?> onCityChanged;
   final ValueChanged<String?> onNationalityChanged;
@@ -1441,7 +1423,6 @@ class _LeadGuestCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 600;
-    final hasProvinces = provinces.isNotEmpty;
 
     return _SectionCard(
       title: 'Lead Guest Information',
@@ -1545,34 +1526,20 @@ class _LeadGuestCard extends StatelessWidget {
           ],
           const SizedBox(height: 14),
 
-          // ── Region / Province / City (Philippines only) ───────────────
+          // ── Province / City (Philippines only) ────────────────────────
           if (isPhilippines) ...[
             if (isMobile) ...[
               _FieldCol(
-                label: 'Region *',
+                label: 'Province *',
                 child: _EntryDropdownField(
-                  value: selectedRegionCode,
-                  items: regions.map((r) => r.code).toList(),
-                  displayLabels: {for (final r in regions) r.code: r.name},
-                  hint: 'Select region',
-                  onChanged: onRegionChanged,
+                  value: selectedProvinceCode,
+                  items: provinces.map((p) => p.code).toList(),
+                  displayLabels: {for (final p in provinces) p.code: p.name},
+                  hint: 'Select province',
+                  onChanged: onProvinceChanged,
                 ),
               ),
-              if (hasProvinces) ...[
-                const SizedBox(height: 12),
-                _FieldCol(
-                  label: 'Province *',
-                  child: _EntryDropdownField(
-                    value: selectedProvinceCode,
-                    items: provinces.map((p) => p.code).toList(),
-                    displayLabels: {for (final p in provinces) p.code: p.name},
-                    hint: 'Select province',
-                    onChanged: onProvinceChanged,
-                  ),
-                ),
-              ],
-              if ((hasProvinces && selectedProvinceCode != null) ||
-                  (!hasProvinces && selectedRegionCode != null)) ...[
+              if (selectedProvinceCode != null) ...[
                 const SizedBox(height: 12),
                 _FieldCol(
                   label: 'City / Municipality *',
@@ -1592,34 +1559,17 @@ class _LeadGuestCard extends StatelessWidget {
                   Expanded(
                     flex: 3,
                     child: _FieldCol(
-                      label: 'Region *',
+                      label: 'Province *',
                       child: _EntryDropdownField(
-                        value: selectedRegionCode,
-                        items: regions.map((r) => r.code).toList(),
-                        displayLabels: {for (final r in regions) r.code: r.name},
-                        hint: 'Select region',
-                        onChanged: onRegionChanged,
+                        value: selectedProvinceCode,
+                        items: provinces.map((p) => p.code).toList(),
+                        displayLabels: {for (final p in provinces) p.code: p.name},
+                        hint: 'Select province',
+                        onChanged: onProvinceChanged,
                       ),
                     ),
                   ),
-                  if (hasProvinces) ...[
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 3,
-                      child: _FieldCol(
-                        label: 'Province *',
-                        child: _EntryDropdownField(
-                          value: selectedProvinceCode,
-                          items: provinces.map((p) => p.code).toList(),
-                          displayLabels: {for (final p in provinces) p.code: p.name},
-                          hint: 'Select province',
-                          onChanged: onProvinceChanged,
-                        ),
-                      ),
-                    ),
-                  ],
-                  if ((hasProvinces && selectedProvinceCode != null) ||
-                      (!hasProvinces && selectedRegionCode != null)) ...[
+                  if (selectedProvinceCode != null) ...[
                     const SizedBox(width: 12),
                     Expanded(
                       flex: 3,

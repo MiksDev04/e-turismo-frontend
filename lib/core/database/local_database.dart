@@ -26,7 +26,7 @@ class LocalDatabase {
   static const String _kDbName = 'tourism_local.db';
 
   // ── schema version ─────────────────────────────────────────────────────────
-  static const int _kDbVersion = 10;
+  static const int _kDbVersion = 11;
 
   // ── table names ────────────────────────────────────────────────────────────
   static const String tableLocalProfiles   = 'local_profiles';
@@ -120,11 +120,13 @@ class LocalDatabase {
         await db.execute('''
           INSERT INTO $tableGuestRecords (
             id, business_id, check_in, check_out, total_guests,
-            purpose_of_visit, transportation_mode,
+            male_count, female_count, purpose_of_visit,
             status, is_deleted, created_at, sync_status, local_updated_at
           )
           SELECT id, business_id, check_in, check_out, total_guests,
-                 purpose_of_visit, transportation_mode,
+                 CAST(ROUND(total_guests * 0.471) AS INTEGER),
+                 total_guests - CAST(ROUND(total_guests * 0.471) AS INTEGER),
+                 purpose_of_visit,
                  status, is_deleted, created_at, sync_status, local_updated_at
           FROM ${tableGuestRecords}_old
         ''');
@@ -211,16 +213,18 @@ class LocalDatabase {
         await db.execute('''
           INSERT INTO $tableGuestRecords (
             id, business_id, check_in, check_out, length_of_stay, total_guests,
-            purpose_of_visit, transportation_mode,
+            male_count, female_count, purpose_of_visit,
             lead_country, lead_city_municipality, lead_province,
-            lead_nationality, lead_philippines_region, lead_is_overseas,
+            lead_nationality, lead_is_overseas,
             lead_birthdate, lead_sex,
             status, is_deleted, created_at, sync_status, local_updated_at
           )
           SELECT id, business_id, check_in, check_out, length_of_stay, total_guests,
-                 purpose_of_visit, transportation_mode,
+                 CAST(ROUND(total_guests * 0.471) AS INTEGER),
+                 total_guests - CAST(ROUND(total_guests * 0.471) AS INTEGER),
+                 purpose_of_visit,
                  lead_country, lead_municipality, lead_province,
-                 lead_nationality, lead_philippines_region, lead_is_overseas,
+                 lead_nationality, lead_is_overseas,
                  lead_birthdate, lead_sex,
                  status, is_deleted, created_at, sync_status, local_updated_at
           FROM ${tableGuestRecords}_old
@@ -299,6 +303,35 @@ class LocalDatabase {
       final grrCols = grrInfo.map((c) => c['name'] as String).toSet();
       if (!grrCols.contains('deleted_at')) {
         await db.execute("ALTER TABLE $tableGuestRecordRooms ADD COLUMN deleted_at TEXT");
+      }
+    }
+
+    // v10 → v11: Remove transportation_mode + lead_philippines_region,
+    //            add male_count/female_count (backfilled with the PSA
+    //            47.1%/52.9% split for existing rows).
+    if (oldVersion < 11) {
+      final grInfo = await db.rawQuery("PRAGMA table_info($tableGuestRecords)");
+      final grCols = grInfo.map((c) => c['name'] as String).toSet();
+
+      if (!grCols.contains('male_count')) {
+        await db.execute("ALTER TABLE $tableGuestRecords ADD COLUMN male_count INTEGER NOT NULL DEFAULT 0");
+      }
+      if (!grCols.contains('female_count')) {
+        await db.execute("ALTER TABLE $tableGuestRecords ADD COLUMN female_count INTEGER NOT NULL DEFAULT 0");
+      }
+
+      await db.execute(
+        'UPDATE $tableGuestRecords SET '
+        'male_count = CAST(ROUND(total_guests * 0.471) AS INTEGER), '
+        'female_count = total_guests - CAST(ROUND(total_guests * 0.471) AS INTEGER) '
+        'WHERE male_count = 0 AND female_count = 0',
+      );
+
+      if (grCols.contains('transportation_mode')) {
+        await db.execute("ALTER TABLE $tableGuestRecords DROP COLUMN transportation_mode");
+      }
+      if (grCols.contains('lead_philippines_region')) {
+        await db.execute("ALTER TABLE $tableGuestRecords DROP COLUMN lead_philippines_region");
       }
     }
   }
@@ -383,13 +416,13 @@ class LocalDatabase {
       actual_checkout         TEXT,
       length_of_stay          INTEGER NOT NULL DEFAULT 1,
       total_guests            INTEGER NOT NULL,
+      male_count              INTEGER NOT NULL DEFAULT 0,
+      female_count            INTEGER NOT NULL DEFAULT 0,
       purpose_of_visit        TEXT NOT NULL,
-      transportation_mode     TEXT NOT NULL,
       lead_country            TEXT,
       lead_city_municipality  TEXT,
       lead_province           TEXT,
       lead_nationality        TEXT,
-      lead_philippines_region TEXT,
       lead_is_overseas        INTEGER NOT NULL DEFAULT 0,
       lead_birthdate          TEXT,
       lead_sex                TEXT,
