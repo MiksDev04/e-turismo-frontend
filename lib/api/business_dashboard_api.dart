@@ -611,7 +611,7 @@ class BusinessDashboardApi extends BaseApi {
         final nights = effectiveCheckOut.difference(checkIn).inDays;
         final guestCount = (_intValue(r, 'total_guests')) ?? 0;
 
-        totalNights += (nights < 1 ? 1 : nights) * guestCount;
+        totalNights += nights * guestCount;
         totalGuests += guestCount;
       }
 
@@ -845,7 +845,7 @@ class BusinessDashboardApi extends BaseApi {
       if (effectiveCheckOut.isBefore(checkIn)) continue;
 
       final nights = effectiveCheckOut.difference(checkIn).inDays;
-      final spreadDays = nights < 1 ? 1 : nights;
+      final spreadDays = nights + 1;
       final spreadEnd = DateTime(
         checkIn.year,
         checkIn.month,
@@ -979,9 +979,10 @@ class BusinessDashboardApi extends BaseApi {
 
   /// Compute guest-days for a record within [rangeStart, rangeEnd].
   ///
-  /// A guest is counted on every calendar day of presence — check-in up to
-  /// (but excluding) the effective check-out, which is `actual_check_out`
-  /// when present, otherwise `check_out`. Same-day stays count a single day.
+  /// A guest is counted on every calendar day of presence — check-in through
+  /// the effective check-out (inclusive), which is `actual_check_out` when
+  /// present, otherwise `check_out`. Check-in Aug 6 / check-out Aug 8 counts
+  /// 3 days; same-day stays count a single day.
   int _recordGuestDays(
     Map<String, dynamic> record,
     DateTime rangeStart,
@@ -1012,7 +1013,7 @@ class BusinessDashboardApi extends BaseApi {
     if (effectiveCheckOut.isBefore(checkIn)) return 0;
 
     final nights = effectiveCheckOut.difference(checkIn).inDays;
-    final spreadDays = nights < 1 ? 1 : nights;
+    final spreadDays = nights + 1;
     final spreadEnd = DateTime(
       checkIn.year,
       checkIn.month,
