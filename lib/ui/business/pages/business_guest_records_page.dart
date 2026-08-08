@@ -563,6 +563,27 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
         isError: true,
       );
     }
+
+    // The junction rows were marked pending_update above so a failed cloud
+    // update keeps them queued. Now that the record was archived successfully,
+    // clear the pending marker so no stale pending rows linger locally.
+    if (updateResult.isSuccess && !kIsWeb) {
+      try {
+        final db = await LocalDatabase.instance.database;
+        await db.update(
+          LocalDatabase.tableGuestRecordRooms,
+          {
+            'sync_status':      LocalDatabase.syncSynced,
+            'local_updated_at': null,
+          },
+          where:     'guest_record_id = ?',
+          whereArgs: [record.id],
+        );
+      } catch (e) {
+        debugPrint('⚠️ Failed to mark junction rows synced during checkout: $e');
+      }
+    }
+
     _loadRecords();
   }
 

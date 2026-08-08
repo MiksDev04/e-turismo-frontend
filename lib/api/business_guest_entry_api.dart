@@ -259,8 +259,8 @@ class BusinessGuestEntryApi extends BaseApi {
 
         // Also mark assigned rooms as synced — the backend already set them
         // to occupied via POST /guest-entries, so no pending push is needed.
-        if (data.roomIds != null && data.roomIds!.isNotEmpty) {
-          for (final roomId in data.roomIds!) {
+        if (data.roomIds.isNotEmpty) {
+          for (final roomId in data.roomIds) {
             await db.update(
               LocalDatabase.tableLocalRooms,
               {
@@ -271,6 +271,20 @@ class BusinessGuestEntryApi extends BaseApi {
             );
           }
         }
+
+        // The junction rows were written with pending_create together with the
+        // parent record; the cloud now holds them, so clear the pending marker
+        // to avoid stale pending rows that would otherwise linger until the
+        // guest-records page or a sync pull rebuilt them.
+        await db.update(
+          LocalDatabase.tableGuestRecordRooms,
+          {
+            'sync_status':      LocalDatabase.syncSynced,
+            'local_updated_at': null,
+          },
+          where:     'guest_record_id = ?',
+          whereArgs: [guestRecordId],
+        );
       }
 
       return GuestEntryResult.ok(syncedToCloud: true);

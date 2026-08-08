@@ -463,12 +463,19 @@ class SyncService {
       }
 
       try {
-        // Read room IDs from junction table (only currently assigned — removed
-        // links are soft-deleted and must not be re-uploaded)
+        // Read room IDs from junction table. For a normal create, only the
+        // currently assigned links (deleted_at IS NULL) are uploaded. For a
+        // checkout record, include ALL links (active + soft-deleted) so the
+        // cloud create preserves the full room history — the backend inserts
+        // them as 'completed' when actualCheckOut is set and never touches
+        // room status, so this is safe.
+        final isCheckout = (record['actual_checkout'] as String?)?.isNotEmpty ?? false;
         final roomLinks = await db.query(
           LocalDatabase.tableGuestRecordRooms,
           columns: ['room_id'],
-          where: 'guest_record_id = ? AND deleted_at IS NULL',
+          where: isCheckout
+              ? 'guest_record_id = ?'
+              : 'guest_record_id = ? AND deleted_at IS NULL',
           whereArgs: [recordId],
         );
         final roomIds = roomLinks.map((r) => r['room_id'] as String).toList();
@@ -501,6 +508,7 @@ class SyncService {
             where: 'id = ?',
             whereArgs: [recordId],
           );
+          await _markJunctionSynced(db, recordId);
           debugPrint('✅ _pushPendingCreates: synced $recordId');
         } else if (response.statusCode == 401) {
           debugPrint(
@@ -526,6 +534,7 @@ class SyncService {
             where: 'id = ?',
             whereArgs: [recordId],
           );
+          await _markJunctionSynced(db, recordId);
           debugPrint(
             '♻️ _pushPendingCreates: $recordId already existed on server — marking synced',
           );
@@ -621,6 +630,7 @@ class SyncService {
             where: 'id = ?',
             whereArgs: [recordId],
           );
+          await _markJunctionSynced(db, recordId);
           debugPrint('✅ _pushPendingUpdates: synced $recordId');
         } else if (response.statusCode == 401) {
           debugPrint(
@@ -951,7 +961,11 @@ class SyncService {
             );
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
-          // Also sync room_status via the dedicated status endpoint
+          // Also sync room_status via the dedicated status endpoint. Only
+          // mark the room synced when BOTH the main PUT and the status PUT
+          // succeed — otherwise the status change would be lost forever (e.g.
+          // a room left occupied on the cloud after an offline checkout).
+          var statusSynced = true;
           try {
             final statusPayload = {'roomStatus': record['room_status']};
             final statusResponse = await http
@@ -966,25 +980,31 @@ class SyncService {
                     'PUT rooms/$roomId/status timed out',
                   ),
                 );
-            if (statusResponse.statusCode >= 200 && statusResponse.statusCode < 300) {
+            statusSynced = statusResponse.statusCode >= 200 && statusResponse.statusCode < 300;
+            if (statusSynced) {
               debugPrint('✅ _pushPendingRoomUpdates: synced room status for $roomId');
             } else {
               debugPrint('⚠️ _pushPendingRoomUpdates: room status sync failed for $roomId — ${statusResponse.statusCode}');
             }
           } catch (e) {
+            statusSynced = false;
             debugPrint('⚠️ _pushPendingRoomUpdates: room status sync exception for $roomId — $e');
           }
 
-          await db.update(
-            LocalDatabase.tableLocalRooms,
-            {
-              'sync_status':      LocalDatabase.syncSynced,
-              'local_updated_at': DateTime.now().toUtc().toIso8601String(),
-            },
-            where: 'id = ?',
-            whereArgs: [roomId],
-          );
-          debugPrint('✅ _pushPendingRoomUpdates: synced $roomId');
+          if (statusSynced) {
+            await db.update(
+              LocalDatabase.tableLocalRooms,
+              {
+                'sync_status':      LocalDatabase.syncSynced,
+                'local_updated_at': DateTime.now().toUtc().toIso8601String(),
+              },
+              where: 'id = ?',
+              whereArgs: [roomId],
+            );
+            debugPrint('✅ _pushPendingRoomUpdates: synced $roomId');
+          } else {
+            debugPrint('⚠️ _pushPendingRoomUpdates: keeping room $roomId pending — status sync failed');
+          }
         } else if (response.statusCode == 401) {
           debugPrint('🔐 _pushPendingRoomUpdates: 401 — token expired');
           await _tryRefreshToken();
@@ -1367,6 +1387,22 @@ class SyncService {
     } catch (_) {
       return false;
     }
+  }
+
+  /// Marks a guest record's junction rows as synced after the record's own
+  /// create/update was pushed successfully. The pull phase also rebuilds these
+  /// rows from the cloud, but clearing them here keeps the local DB consistent
+  /// immediately — even if the final pull is interrupted.
+  Future<void> _markJunctionSynced(Database db, String recordId) async {
+    await db.update(
+      LocalDatabase.tableGuestRecordRooms,
+      {
+        'sync_status':      LocalDatabase.syncSynced,
+        'local_updated_at': null,
+      },
+      where:     'guest_record_id = ?',
+      whereArgs: [recordId],
+    );
   }
 
   Future<int> _countPending() async {
