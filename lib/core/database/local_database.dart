@@ -26,7 +26,7 @@ class LocalDatabase {
   static const String _kDbName = 'tourism_local.db';
 
   // ── schema version ─────────────────────────────────────────────────────────
-  static const int _kDbVersion = 11;
+  static const int _kDbVersion = 12;
 
   // ── table names ────────────────────────────────────────────────────────────
   static const String tableLocalProfiles   = 'local_profiles';
@@ -333,6 +333,26 @@ class LocalDatabase {
       if (grCols.contains('lead_philippines_region')) {
         await db.execute("ALTER TABLE $tableGuestRecords DROP COLUMN lead_philippines_region");
       }
+    }
+
+    // v11 → v12: Backfill created_at/updated_at on local_guest_record_rooms.
+    // The backend used to omit grr.created_at/updated_at from the
+    // guest-records response, so junction rows written by the pull/refresh
+    // paths were left NULL (or borrowed the parent record's timestamps).
+    // Borrow the parent record's timestamps for any NULLs so no junction
+    // row is left without audit times; fresh syncs now carry the real values.
+    if (oldVersion < 12) {
+      await db.execute(
+        'UPDATE $tableGuestRecordRooms '
+        'SET '
+        "created_at = COALESCE(created_at, "
+        "  (SELECT created_at FROM $tableGuestRecords "
+        "   WHERE id = $tableGuestRecordRooms.guest_record_id)), "
+        "updated_at = COALESCE(updated_at, "
+        "  (SELECT updated_at FROM $tableGuestRecords "
+        "   WHERE id = $tableGuestRecordRooms.guest_record_id)) "
+        'WHERE created_at IS NULL OR updated_at IS NULL',
+      );
     }
   }
 
