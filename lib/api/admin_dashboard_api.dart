@@ -302,10 +302,12 @@ class AdminDashboardApi extends BaseApi {
 
     // Build per-record guest-days map for the period
     final recordGuestDays = <String, int>{};
+    final recordTotalGuests = <String, int>{};
     for (final r in periodRecords) {
       final id = r['id']?.toString();
       if (id != null) {
         recordGuestDays[id] = _recordGuestDays(r, periodStart, periodEnd);
+        recordTotalGuests[id] = (r['total_guests'] as num?)?.toInt() ?? 0;
       }
     }
 
@@ -340,7 +342,13 @@ class AdminDashboardApi extends BaseApi {
       final ageGroup = (breakdown['age_group'] as String? ?? '').trim();
       if (ageGroup.isEmpty) continue;
       final label = _toTitleCase(ageGroup);
-      ageGroupMap[label] = (ageGroupMap[label] ?? 0) + 1;
+      // Age is known only for the lead guest (1 person per record), weighted by
+      // the days they spent inside the period.
+      final recordId = breakdown['guest_record_id']?.toString() ?? '';
+      final guestDays = recordGuestDays[recordId] ?? 1;
+      final totalGuests = recordTotalGuests[recordId] ?? 0;
+      final days = totalGuests > 0 ? guestDays ~/ totalGuests : 1;
+      ageGroupMap[label] = (ageGroupMap[label] ?? 0) + days;
     }
     final ageGroups =
         ageGroupMap.entries

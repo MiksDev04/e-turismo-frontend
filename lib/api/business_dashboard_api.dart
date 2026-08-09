@@ -637,10 +637,12 @@ class BusinessDashboardApi extends BaseApi {
   }) {
     // Build per-record guest-days map for the period
     final recordGuestDays = <String, int>{};
+    final recordTotalGuests = <String, int>{};
     for (final r in periodRecords) {
       final id = _stringValue(r, 'id');
       if (id != null) {
         recordGuestDays[id] = _recordGuestDays(r, periodStart, periodEnd);
+        recordTotalGuests[id] = _intValue(r, 'total_guests') ?? 0;
       }
     }
 
@@ -670,13 +672,17 @@ class BusinessDashboardApi extends BaseApi {
       if (unaccounted > 0) genderOther += unaccounted * days;
     }
 
-    // Age group distribution — each guest record counts once (lead guest's age),
-    // since only the lead guest has a known birthdate. Shared by online/offline.
+    // Age group distribution — age is known only for the lead guest (1 person
+    // per record), weighted by the days they spent inside the period.
     final ageGroupMap = <String, int>{};
     for (final b in breakdowns) {
       final ageGroup = _stringValue(b, 'age_group')?.trim() ?? '';
       if (ageGroup.isEmpty) continue;
-      ageGroupMap[ageGroup] = (ageGroupMap[ageGroup] ?? 0) + 1;
+      final recordId = _stringValue(b, 'guest_record_id') ?? '';
+      final guestDays = recordGuestDays[recordId] ?? 1;
+      final totalGuests = recordTotalGuests[recordId] ?? 0;
+      final days = totalGuests > 0 ? guestDays ~/ totalGuests : 1;
+      ageGroupMap[ageGroup] = (ageGroupMap[ageGroup] ?? 0) + days;
     }
     final ageGroups =
         ageGroupMap.entries
