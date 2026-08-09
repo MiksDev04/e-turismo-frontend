@@ -480,6 +480,8 @@ class BusinessDashboardApi extends BaseApi {
         'check_out',
         'actual_checkout',
         'total_guests',
+        'male_count',
+        'female_count',
         'purpose_of_visit',
         'lead_country',
         'lead_nationality',
@@ -630,29 +632,39 @@ class BusinessDashboardApi extends BaseApi {
       }
     }
 
-    // Sex distribution
+    // Sex distribution uses each record's male_count / female_count (all guests
+    // in the party) weighted by guest-days, not just the lead guest's sex.
     int male = 0, female = 0, genderOther = 0;
-    for (final b in breakdowns) {
-      final sex = _stringValue(b, 'sex')?.toLowerCase() ?? '';
-      final recordId = _stringValue(b, 'guest_record_id') ?? '';
-      final guestDays = recordGuestDays[recordId] ?? 1;
-      if (sex == 'male') {
-        male += guestDays;
-      } else if (sex == 'female') {
-        female += guestDays;
-      } else {
-        genderOther += guestDays;
+    for (final record in periodRecords) {
+      final id = _stringValue(record, 'id') ?? '';
+      final guestDays = recordGuestDays[id] ?? 1;
+      final totalGuests = _intValue(record, 'total_guests') ?? 0;
+      if (totalGuests <= 0) continue;
+      final days = guestDays ~/ totalGuests;
+      var maleCount = _intValue(record, 'male_count') ?? 0;
+      var femaleCount = _intValue(record, 'female_count') ?? 0;
+      if (maleCount + femaleCount == 0) {
+        // Defensive fallback for legacy/anomalous rows: count the lead guest only.
+        final sex = (_stringValue(record, 'lead_sex') ?? '').toLowerCase();
+        if (sex == 'female') {
+          femaleCount = 1;
+        } else {
+          maleCount = 1;
+        }
       }
+      male += maleCount * days;
+      female += femaleCount * days;
+      final unaccounted = totalGuests - maleCount - femaleCount;
+      if (unaccounted > 0) genderOther += unaccounted * days;
     }
 
-    // Age group distribution
+    // Age group distribution — each guest record counts once (lead guest's age),
+    // since only the lead guest has a known birthdate. Shared by online/offline.
     final ageGroupMap = <String, int>{};
     for (final b in breakdowns) {
       final ageGroup = _stringValue(b, 'age_group')?.trim() ?? '';
       if (ageGroup.isEmpty) continue;
-      final recordId = _stringValue(b, 'guest_record_id') ?? '';
-      final guestDays = recordGuestDays[recordId] ?? 1;
-      ageGroupMap[ageGroup] = (ageGroupMap[ageGroup] ?? 0) + guestDays;
+      ageGroupMap[ageGroup] = (ageGroupMap[ageGroup] ?? 0) + 1;
     }
     final ageGroups =
         ageGroupMap.entries
@@ -916,17 +928,45 @@ class BusinessDashboardApi extends BaseApi {
       final rec = recordMap[recordId];
       if (rec == null) continue;
       final guestDays = _recordGuestDays(rec, periodStart, periodEnd);
-      final row = [
-        _stringValue(rec, 'check_in') ?? '',
-        _stringValue(rec, 'check_out') ?? '',
-        _intValue(rec, 'total_guests') ?? 0,
-        guestDays,
-        _csvCell(_stringValue(b, 'country') ?? 'Unknown'),
-        _stringValue(b, 'sex') ?? '',
-        _stringValue(b, 'age_group') ?? '',
-        guestDays,
-      ];
-      buf.writeln(row.join(','));
+      final totalGuests = _intValue(rec, 'total_guests') ?? 0;
+      if (totalGuests <= 0) continue;
+      final days = guestDays ~/ totalGuests;
+      var maleCount = _intValue(rec, 'male_count') ?? 0;
+      var femaleCount = _intValue(rec, 'female_count') ?? 0;
+      if (maleCount + femaleCount == 0) {
+        // Defensive fallback for legacy/anomalous rows: count the lead guest only.
+        final sex = (_stringValue(rec, 'lead_sex') ?? '').toLowerCase();
+        if (sex == 'female') {
+          femaleCount = 1;
+        } else {
+          maleCount = 1;
+        }
+      }
+
+      final checkIn = _stringValue(rec, 'check_in') ?? '';
+      final checkOut = _stringValue(rec, 'check_out') ?? '';
+      final country = _csvCell(_stringValue(b, 'country') ?? 'Unknown');
+      final ageGroup = _stringValue(b, 'age_group') ?? '';
+
+      if (maleCount > 0) {
+        final sexDays = maleCount * days;
+        buf.writeln(
+          [checkIn, checkOut, maleCount, sexDays, country, 'Male', ageGroup, sexDays].join(','),
+        );
+      }
+      if (femaleCount > 0) {
+        final sexDays = femaleCount * days;
+        buf.writeln(
+          [checkIn, checkOut, femaleCount, sexDays, country, 'Female', ageGroup, sexDays].join(','),
+        );
+      }
+      final unaccounted = totalGuests - maleCount - femaleCount;
+      if (unaccounted > 0) {
+        final sexDays = unaccounted * days;
+        buf.writeln(
+          [checkIn, checkOut, unaccounted, sexDays, country, 'Other', ageGroup, sexDays].join(','),
+        );
+      }
     }
 
     return buf.toString();

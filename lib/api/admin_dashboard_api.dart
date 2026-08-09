@@ -300,18 +300,30 @@ class AdminDashboardApi extends BaseApi {
       }
     }
 
+    // Sex distribution uses each record's male_count / female_count (all guests
+    // in the party) weighted by guest-days, not just the lead guest's sex.
     int male = 0, female = 0, other = 0;
-    for (final breakdown in breakdowns) {
-      final sex = (breakdown['sex'] as String? ?? '').toLowerCase();
-      final recordId = breakdown['guest_record_id']?.toString() ?? '';
-      final guestDays = recordGuestDays[recordId] ?? 1;
-      if (sex == 'male') {
-        male += guestDays;
-      } else if (sex == 'female') {
-        female += guestDays;
-      } else {
-        other += guestDays;
+    for (final record in periodRecords) {
+      final id = record['id']?.toString() ?? '';
+      final guestDays = recordGuestDays[id] ?? 1;
+      final totalGuests = (record['total_guests'] as num?)?.toInt() ?? 0;
+      if (totalGuests <= 0) continue;
+      final days = guestDays ~/ totalGuests;
+      var maleCount = (record['male_count'] as num?)?.toInt() ?? 0;
+      var femaleCount = (record['female_count'] as num?)?.toInt() ?? 0;
+      if (maleCount + femaleCount == 0) {
+        // Defensive fallback for legacy/anomalous rows: count the lead guest only.
+        final sex = (record['lead_sex'] as String? ?? '').toLowerCase();
+        if (sex == 'female') {
+          femaleCount = 1;
+        } else {
+          maleCount = 1;
+        }
       }
+      male += maleCount * days;
+      female += femaleCount * days;
+      final unaccounted = totalGuests - maleCount - femaleCount;
+      if (unaccounted > 0) other += unaccounted * days;
     }
 
     final ageGroupMap = <String, int>{};
@@ -319,9 +331,7 @@ class AdminDashboardApi extends BaseApi {
       final ageGroup = (breakdown['age_group'] as String? ?? '').trim();
       if (ageGroup.isEmpty) continue;
       final label = _toTitleCase(ageGroup);
-      final recordId = breakdown['guest_record_id']?.toString() ?? '';
-      final guestDays = recordGuestDays[recordId] ?? 1;
-      ageGroupMap[label] = (ageGroupMap[label] ?? 0) + guestDays;
+      ageGroupMap[label] = (ageGroupMap[label] ?? 0) + 1;
     }
     final ageGroups =
         ageGroupMap.entries
@@ -548,17 +558,45 @@ class AdminDashboardApi extends BaseApi {
       final record = recordMap[breakdown['guest_record_id'].toString()];
       if (record == null) continue;
       final guestDays = _recordGuestDays(record, periodStart, periodEnd);
-      final row = [
-        record['check_in'],
-        record['check_out'],
-        record['total_guests'],
-        guestDays,
-        _csvCell(breakdown['country'] as String? ?? ''),
-        breakdown['sex'],
-        breakdown['age_group'],
-        guestDays,
-      ];
-      buffer.writeln(row.join(','));
+      final totalGuests = (record['total_guests'] as num?)?.toInt() ?? 0;
+      if (totalGuests <= 0) continue;
+      final days = guestDays ~/ totalGuests;
+      var maleCount = (record['male_count'] as num?)?.toInt() ?? 0;
+      var femaleCount = (record['female_count'] as num?)?.toInt() ?? 0;
+      if (maleCount + femaleCount == 0) {
+        // Defensive fallback for legacy/anomalous rows: count the lead guest only.
+        final sex = (record['lead_sex'] as String? ?? '').toLowerCase();
+        if (sex == 'female') {
+          femaleCount = 1;
+        } else {
+          maleCount = 1;
+        }
+      }
+
+      final checkIn = record['check_in'];
+      final checkOut = record['check_out'];
+      final country = _csvCell(breakdown['country'] as String? ?? '');
+      final ageGroup = breakdown['age_group'];
+
+      if (maleCount > 0) {
+        final sexDays = maleCount * days;
+        buffer.writeln([
+          checkIn, checkOut, maleCount, sexDays, country, 'Male', ageGroup, sexDays,
+        ].join(','));
+      }
+      if (femaleCount > 0) {
+        final sexDays = femaleCount * days;
+        buffer.writeln([
+          checkIn, checkOut, femaleCount, sexDays, country, 'Female', ageGroup, sexDays,
+        ].join(','));
+      }
+      final unaccounted = totalGuests - maleCount - femaleCount;
+      if (unaccounted > 0) {
+        final sexDays = unaccounted * days;
+        buffer.writeln([
+          checkIn, checkOut, unaccounted, sexDays, country, 'Other', ageGroup, sexDays,
+        ].join(','));
+      }
     }
 
     return buffer.toString();
