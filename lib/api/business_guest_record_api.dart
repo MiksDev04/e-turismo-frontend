@@ -580,7 +580,6 @@ class BusinessGuestRecordApi extends BaseApi {
           'check_in':                checkIn,
           'check_out':               checkOut,
           'actual_checkout':         actualCheckOut,
-          'length_of_stay':          _calcLengthOfStay(checkIn, checkOut, actualCheckOut),
           'total_guests':            totalGuests,
           'male_count':              maleCountInt,
           'female_count':            femaleCountInt,
@@ -678,7 +677,6 @@ class BusinessGuestRecordApi extends BaseApi {
         'check_in':                checkIn,
         'check_out':               checkOut,
         'actual_checkout':         actualCheckOut,
-        'length_of_stay':          _calcLengthOfStay(checkIn, checkOut, actualCheckOut),
         'total_guests':            totalGuests,
         'male_count':              maleCountInt,
         'female_count':            femaleCountInt,
@@ -781,7 +779,6 @@ class BusinessGuestRecordApi extends BaseApi {
           'check_in':                row['check_in'],
           'check_out':               row['check_out'],
           'actual_checkout':         row['actual_check_out'],
-          'length_of_stay':          row['length_of_stay'] ?? 1,
           'total_guests':            row['total_guests'],
           'male_count':              row['male_count'],
           'female_count':            row['female_count'],
@@ -1289,19 +1286,6 @@ class BusinessGuestRecordApi extends BaseApi {
       return '$n night${n == 1 ? '' : 's'}';
     } catch (_) {
       return '—';
-    }
-  }
-
-  int _calcLengthOfStay(String checkIn, String checkOut, String? actualCheckOut) {
-    try {
-      final inDate  = parseDbDateTime(checkIn);
-      final outDate = parseDbDateTime(actualCheckOut ?? checkOut);
-      final n       = DateTime(outDate.year, outDate.month, outDate.day)
-          .difference(DateTime(inDate.year, inDate.month, inDate.day))
-          .inDays;
-      return n < 1 ? 1 : n;
-    } catch (_) {
-      return 1;
     }
   }
 

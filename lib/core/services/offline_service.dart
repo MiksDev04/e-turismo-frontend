@@ -1527,7 +1527,6 @@ class SyncService {
       'check_in':                row['check_in'],
       'check_out':               row['check_out'],
       'actual_checkout':         row['actual_check_out'],
-      'length_of_stay':          row['length_of_stay'] ?? 1,
       'total_guests':            row['total_guests'],
       'male_count':              row['male_count'],
       'female_count':            row['female_count'],

@@ -137,7 +137,7 @@ class LocalDatabase {
       await db.execute('DROP TABLE IF EXISTS local_guest_breakdowns');
     }
 
-    // v2 → v3: Add capacity to local_rooms, length_of_stay to guest_records,
+    // v2 → v3: Add capacity to local_rooms,
     //          create guest_record_rooms junction table.
     if (oldVersion < 3) {
       // 1. Add capacity column to local_rooms if missing
@@ -147,18 +147,11 @@ class LocalDatabase {
         await db.execute("ALTER TABLE $tableLocalRooms ADD COLUMN capacity INTEGER NOT NULL DEFAULT 1");
       }
 
-      // 2. Add length_of_stay column to guest_records if missing
-      final grInfo = await db.rawQuery("PRAGMA table_info($tableGuestRecords)");
-      final grCols = grInfo.map((c) => c['name'] as String).toSet();
-      if (!grCols.contains('length_of_stay')) {
-        await db.execute("ALTER TABLE $tableGuestRecords ADD COLUMN length_of_stay INTEGER NOT NULL DEFAULT 1");
-      }
-
-      // 3. Create junction table for guest record ↔ room
+      // 2. Create junction table for guest record ↔ room
       await db.execute(_sqlCreateGuestRecordRooms);
       await db.execute(_sqlIndexGuestRecordRoomsRecord);
 
-      // 4. Drop legacy breakdowns table if still around
+      // 3. Drop legacy breakdowns table if still around
       await db.execute('DROP TABLE IF EXISTS local_guest_breakdowns');
     }
 
@@ -212,14 +205,14 @@ class LocalDatabase {
         await db.execute(_sqlCreateGuestRecords);
         await db.execute('''
           INSERT INTO $tableGuestRecords (
-            id, business_id, check_in, check_out, length_of_stay, total_guests,
+            id, business_id, check_in, check_out, total_guests,
             male_count, female_count, purpose_of_visit,
             lead_country, lead_city_municipality, lead_province,
             lead_nationality, lead_is_overseas,
             lead_birthdate, lead_sex,
             status, is_deleted, created_at, sync_status, local_updated_at
           )
-          SELECT id, business_id, check_in, check_out, length_of_stay, total_guests,
+          SELECT id, business_id, check_in, check_out, total_guests,
                  CAST(ROUND(total_guests * 0.471) AS INTEGER),
                  total_guests - CAST(ROUND(total_guests * 0.471) AS INTEGER),
                  purpose_of_visit,
@@ -434,7 +427,6 @@ class LocalDatabase {
       check_in                TEXT NOT NULL,
       check_out               TEXT NOT NULL,
       actual_checkout         TEXT,
-      length_of_stay          INTEGER NOT NULL DEFAULT 1,
       total_guests            INTEGER NOT NULL,
       male_count              INTEGER NOT NULL DEFAULT 0,
       female_count            INTEGER NOT NULL DEFAULT 0,

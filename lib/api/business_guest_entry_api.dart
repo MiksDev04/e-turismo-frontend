@@ -6,7 +6,6 @@ import 'package:sqflite/sqflite.dart';
 import 'package:app/core/database/local_database.dart';
 import 'package:app/core/services/offline_service.dart';
 import 'package:app/core/services/session_service.dart';
-import 'package:app/core/utils/datetime_utils.dart';
 import 'base_api.dart';
 
 class GuestEntryResult {
@@ -366,11 +365,6 @@ class BusinessGuestEntryApi extends BaseApi {
     final db = await LocalDatabase.instance.database;
     final current = SessionService.instance.current;
 
-    // Compute length_of_stay from dates
-    final dIn  = parseDbDateTime(checkIn);
-    final dOut = parseDbDateTime(checkOut);
-    final lengthOfStay = dOut.difference(dIn).inDays.clamp(1, 999);
-
     // Male/female counts: optional. Derive the missing one from the other;
     // if both are blank, fall back to the PSA 47.1%/52.9% split.
     var maleCountVal = maleCount ?? 0;
@@ -458,7 +452,6 @@ class BusinessGuestEntryApi extends BaseApi {
         'business_id':             businessId,
         'check_in':                checkIn,
         'check_out':               checkOut,
-        'length_of_stay':          lengthOfStay,
         'total_guests':            totalGuests,
         'male_count':              maleCountVal,
         'female_count':            femaleCountVal,
