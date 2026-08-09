@@ -26,7 +26,7 @@ class LocalDatabase {
   static const String _kDbName = 'tourism_local.db';
 
   // ── schema version ─────────────────────────────────────────────────────────
-  static const int _kDbVersion = 12;
+  static const int _kDbVersion = 13;
 
   // ── table names ────────────────────────────────────────────────────────────
   static const String tableLocalProfiles   = 'local_profiles';
@@ -346,6 +346,18 @@ class LocalDatabase {
         "   WHERE id = $tableGuestRecordRooms.guest_record_id)) "
         'WHERE created_at IS NULL OR updated_at IS NULL',
       );
+    }
+
+    // v12 → v13: Drop the now-unused length_of_stay column from
+    // local_guest_records. It was a denormalized copy of the nights
+    // between check_in/check_out; every consumer recomputes it live and
+    // the backend MySQL column is already dropped. Removes the orphan.
+    if (oldVersion < 13) {
+      final grInfo = await db.rawQuery("PRAGMA table_info($tableGuestRecords)");
+      final grCols = grInfo.map((c) => c['name'] as String).toSet();
+      if (grCols.contains('length_of_stay')) {
+        await db.execute("ALTER TABLE $tableGuestRecords DROP COLUMN length_of_stay");
+      }
     }
   }
 
