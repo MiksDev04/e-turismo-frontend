@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -14,21 +14,17 @@ import '../../../api/business_room_api.dart';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-String _displayCountry(GuestBreakdownEntry b) {
-  if (b.isOverseas) return '—';
-  return b.country ?? 'Unspecified';
-}
-
-String _displayNationality(GuestBreakdownEntry b) {
-  if (b.isOverseas) return '—';
-  return b.nationality ?? '—';
-}
-
-String _displayYesNo(bool value) => value ? 'Yes' : 'No';
-
 String _roomsDisplay(GuestRecord r) => r.roomDetails.isNotEmpty
     ? r.roomDetails.map((x) => 'Room ${x.roomNumber}').join(', ')
     : 'None';
+
+String _dateOnly(String v) => v.length >= 10 ? v.substring(0, 10) : v;
+
+String _actualCheckOutDate(GuestRecord r) {
+  final v = r.actualCheckOut;
+  if (v == null || v.isEmpty) return '—';
+  return v.substring(0, 10);
+}
 
 // ─── Models ───────────────────────────────────────────────────────────────────
 
@@ -689,6 +685,7 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
                             _GuestTable(
                               records:  _records,
                               isNarrow: isNarrow,
+                              isArchived: _activeFilter == _Filter.archived,
                               onEdit:   _onEdit,
                               onCheckOut: _onCheckOut,
                             ),
@@ -746,72 +743,6 @@ class _OfflineBanner extends StatelessWidget {
             child: Text(
               'You\'re offline — showing locally saved records.',
               style: TextStyle(color: Color(0xFF8A9BB5), fontSize: 12),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Back-Online Banner ───────────────────────────────────────────────────────
-// Shown once when the device comes back online.
-// Gives the user a manual "Refresh" tap rather than forcing an auto-reload.
-
-class _OnlineBanner extends StatelessWidget {
-  const _OnlineBanner({required this.onRefresh, required this.onDismiss});
-
-  final VoidCallback onRefresh;
-  final VoidCallback onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.primaryCyan.withOpacity(0.08),
-        border: Border(
-          bottom: BorderSide(color: AppColors.primaryCyan.withOpacity(0.25)),
-        ),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.wifi_rounded, color: AppColors.primaryCyan, size: 14),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text(
-              'Back online! Records may have updated.',
-              style: TextStyle(color: AppColors.primaryCyan, fontSize: 12),
-            ),
-          ),
-          GestureDetector(
-            onTap: onRefresh,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.primaryCyan.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                    color: AppColors.primaryCyan.withOpacity(0.4)),
-              ),
-              child: const Text(
-                'Refresh',
-                style: TextStyle(
-                  color: AppColors.primaryCyan,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: onDismiss,
-            child: const Icon(
-              Icons.close_rounded,
-              color: AppColors.primaryCyan,
-              size: 14,
             ),
           ),
         ],
@@ -1363,12 +1294,14 @@ class _GuestTable extends StatelessWidget {
   const _GuestTable({
     required this.records,
     required this.isNarrow,
+    required this.isArchived,
     required this.onEdit,
     required this.onCheckOut,
   });
 
   final List<GuestRecord> records;
   final bool isNarrow;
+  final bool isArchived;
   final ValueChanged<GuestRecord> onEdit;
   final ValueChanged<GuestRecord> onCheckOut;
 
@@ -1383,7 +1316,7 @@ class _GuestTable extends StatelessWidget {
       child: Column(
         children: [
           if (!isNarrow) ...[
-            _TableHeader(),
+            _TableHeader(isArchived: isArchived),
             const Divider(color: AppColors.cardBorder, height: 1),
           ],
           if (records.isEmpty)
@@ -1402,9 +1335,9 @@ class _GuestTable extends StatelessWidget {
               return Column(
                 children: [
                   if (isNarrow)
-                    _RecordCard(record: r, onEdit: onEdit, onCheckOut: onCheckOut)
+                    _RecordCard(record: r, isArchived: isArchived, onEdit: onEdit, onCheckOut: onCheckOut)
                   else
-                    _RecordRow(record: r, onEdit: onEdit, onCheckOut: onCheckOut),
+                    _RecordRow(record: r, isArchived: isArchived, onEdit: onEdit, onCheckOut: onCheckOut),
                   if (!isLast)
                     const Divider(color: AppColors.cardBorder, height: 1),
                 ],
@@ -1419,19 +1352,26 @@ class _GuestTable extends StatelessWidget {
 // ─── Table Header ─────────────────────────────────────────────────────────────
 
 class _TableHeader extends StatelessWidget {
+  const _TableHeader({required this.isArchived});
+
+  final bool isArchived;
+
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         children: [
-          Expanded(flex: 3, child: _HeaderCell('Check-in')),
-          Expanded(flex: 3, child: _HeaderCell('Check-out')),
-          Expanded(flex: 2, child: _HeaderCell('Nights')),
-          Expanded(flex: 1, child: _HeaderCell('Guests')),
-          Expanded(flex: 3, child: _HeaderCell('Room(s)')),
-          Expanded(flex: 2, child: _HeaderCell('Purpose')),
-          Expanded(flex: 3, child: _HeaderCell('Actions')),
+          const Expanded(flex: 3, child: _HeaderCell('Check-in')),
+          Expanded(
+            flex: 3,
+            child: _HeaderCell(isArchived ? 'Actual Check-out' : 'Check-out'),
+          ),
+          const Expanded(flex: 2, child: _HeaderCell('Nights')),
+          const Expanded(flex: 1, child: _HeaderCell('Guests')),
+          const Expanded(flex: 3, child: _HeaderCell('Room(s)')),
+          const Expanded(flex: 2, child: _HeaderCell('Purpose')),
+          const Expanded(flex: 3, child: _HeaderCell('Actions')),
         ],
       ),
     );
@@ -1458,9 +1398,10 @@ class _HeaderCell extends StatelessWidget {
 // ─── Table Row (wide) ─────────────────────────────────────────────────────────
 
 class _RecordRow extends StatelessWidget {
-  const _RecordRow({required this.record, required this.onEdit, required this.onCheckOut});
+  const _RecordRow({required this.record, required this.isArchived, required this.onEdit, required this.onCheckOut});
 
   final GuestRecord record;
+  final bool isArchived;
   final ValueChanged<GuestRecord> onEdit;
   final ValueChanged<GuestRecord> onCheckOut;
 
@@ -1485,7 +1426,7 @@ class _RecordRow extends StatelessWidget {
           Expanded(
             flex: 3,
             child: Text(
-              r.checkOut,
+              isArchived ? _actualCheckOutDate(r) : r.checkOut,
               style: const TextStyle(color: AppColors.textGray, fontSize: 13),
             ),
           ),
@@ -1540,9 +1481,10 @@ class _RecordRow extends StatelessWidget {
 // ─── Record Card (narrow) ─────────────────────────────────────────────────────
 
 class _RecordCard extends StatelessWidget {
-  const _RecordCard({required this.record, required this.onEdit, required this.onCheckOut});
+  const _RecordCard({required this.record, required this.isArchived, required this.onEdit, required this.onCheckOut});
 
   final GuestRecord record;
+  final bool isArchived;
   final ValueChanged<GuestRecord> onEdit;
   final ValueChanged<GuestRecord> onCheckOut;
 
@@ -1570,7 +1512,7 @@ class _RecordCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${r.checkOut}  •  ${r.nights}',
+                      '${isArchived ? _actualCheckOutDate(r) : r.checkOut}  •  ${r.nights}',
                       style: const TextStyle(
                         color: AppColors.textGray,
                         fontSize: 12,
@@ -1728,7 +1670,6 @@ class _RecordDetailModal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final demo     = record.demographics;
     final isNarrow = MediaQuery.of(context).size.width < 560;
 
     return Dialog(
@@ -1867,10 +1808,10 @@ class _StayInfoGrid extends StatelessWidget {
         : '${record.rooms}';
 
     final items = [
-      (Icons.login,                 'Check-in',          record.checkIn),
-      (Icons.logout,                'Check-out (Planned)', record.checkOut),
+      (Icons.login,                 'Check-in',          _dateOnly(record.checkIn)),
+      (Icons.logout,                'Check-out (Planned)', _dateOnly(record.checkOut)),
       if (record.actualCheckOut != null)
-        (Icons.event_available,     'Actual Check-out',  record.actualCheckOut!),
+        (Icons.event_available,     'Actual Check-out',  _dateOnly(record.actualCheckOut!)),
       (Icons.nights_stay_outlined,  'Length of Stay',    record.nights),
       (Icons.people_outline,        'Total Guests',      '${record.guests}'),
       (Icons.meeting_room_outlined, 'Rooms Occupied',    roomsDisplay),
@@ -2011,250 +1952,6 @@ class _ModalSectionLabel extends StatelessWidget {
         fontSize: 12.5,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.2,
-      ),
-    );
-  }
-}
-
-// ─── Breakdown Table ──────────────────────────────────────────────────────────
-
-class _BreakdownTable extends StatelessWidget {
-  const _BreakdownTable({required this.breakdowns});
-  final List<GuestBreakdownEntry> breakdowns;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isNarrow = constraints.maxWidth < 520;
-
-        if (isNarrow) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: breakdowns.map((b) {
-              final isOverseas  = b.isOverseas;
-              final yesNoLabel  = _displayYesNo(isOverseas);
-              final yesNoColor  = isOverseas
-                  ? const Color(0xFF3B82F6)
-                  : const Color(0xFF10B981);
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.inputBackground,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.cardBorder),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _displayCountry(b),
-                            style: const TextStyle(
-                              color: AppColors.textWhite,
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: yesNoColor.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: yesNoColor.withOpacity(0.35),
-                            ),
-                          ),
-                          child: Text(
-                            yesNoLabel,
-                            style: TextStyle(
-                              color: yesNoColor,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        _BreakdownInfoChip(label: 'Age', value: b.ageGroup),
-                        _BreakdownInfoChip(label: 'Sex', value: b.sex),
-                        _BreakdownInfoChip(label: 'Country', value: _displayCountry(b)),
-                        _BreakdownInfoChip(
-                          label: 'Nationality',
-                          value: _displayNationality(b),
-                        ),
-                        _BreakdownInfoChip(label: 'Province', value: b.province ?? '—'),
-                        _BreakdownInfoChip(label: 'Municipality', value: b.municipalityCity ?? '—'),
-                        _BreakdownInfoChip(label: 'Is Overseas', value: yesNoLabel),
-                        _BreakdownInfoChip(label: 'Count', value: '${b.count}'),
-                      ],
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-          );
-        }
-
-        return Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.cardBorder),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 700),
-                child: Table(
-                  border: TableBorder.symmetric(
-                    inside: BorderSide(color: AppColors.cardBorder, width: 0.5),
-                  ),
-                  columnWidths: const {
-                    0: FlexColumnWidth(1),
-                    1: FlexColumnWidth(1),
-                    2: FlexColumnWidth(1.2),
-                    3: FlexColumnWidth(1.2),
-                    4: FlexColumnWidth(1.2),
-                    5: FlexColumnWidth(1.2),
-                    6: FlexColumnWidth(1.5),
-                    7: FlexColumnWidth(1),
-                    8: FlexColumnWidth(0.7),
-                  },
-                  children: [
-                    TableRow(
-                      decoration: BoxDecoration(color: AppColors.inputBackground),
-                      children: const [
-                        _TCell('Age Group',    isHeader: true),
-                        _TCell('Sex',          isHeader: true),
-                        _TCell('Country',      isHeader: true),
-                        _TCell('Nationality',  isHeader: true),
-                        _TCell('Province',     isHeader: true),
-                        _TCell('Municipality', isHeader: true),
-                        _TCell('Is Overseas',  isHeader: true),
-                        _TCell('Count',        isHeader: true),
-                      ],
-                    ),
-                    ...breakdowns.map(
-                      (b) => TableRow(
-                        children: [
-                          _TCell(b.ageGroup),
-                          _TCell(b.sex),
-                          _TCell(_displayCountry(b)),
-                          _TCell(_displayNationality(b)),
-                          _TCell(b.province ?? '—'),
-                          _TCell(b.municipalityCity ?? '—'),
-                          _TCellBadge(
-                            label: _displayYesNo(b.isOverseas),
-                            color: b.isOverseas
-                                ? const Color(0xFF3B82F6)
-                                : const Color(0xFF10B981),
-                          ),
-                          _TCell('${b.count}'),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _BreakdownInfoChip extends StatelessWidget {
-  const _BreakdownInfoChip({required this.label, required this.value});
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.cardBorder),
-      ),
-      child: RichText(
-        text: TextSpan(
-          children: [
-            TextSpan(
-              text: '$label: ',
-              style: const TextStyle(color: AppColors.textSubtle, fontSize: 12),
-            ),
-            TextSpan(
-              text: value,
-              style: const TextStyle(color: AppColors.textGray, fontSize: 12),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TCell extends StatelessWidget {
-  const _TCell(this.text, {this.isHeader = false});
-  final String text;
-  final bool isHeader;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: isHeader ? AppColors.textGray : AppColors.textWhite,
-          fontSize: 11.5,
-          fontWeight: isHeader ? FontWeight.w600 : FontWeight.w400,
-        ),
-      ),
-    );
-  }
-}
-
-class _TCellBadge extends StatelessWidget {
-  const _TCellBadge({required this.label, required this.color});
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withOpacity(0.35)),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 10.5,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
       ),
     );
   }

@@ -354,7 +354,7 @@ class BusinessGuestRecordApi extends BaseApi {
           checkIn:      checkIn,
           checkOut:     checkOut,
           actualCheckOut: row['actual_checkout'] as String?,
-          nights:       _calcNights(checkIn, checkOut),
+          nights:       _calcNights(checkIn, checkOut, row['actual_checkout'] as String?),
           guests:       (row['total_guests']       as int?) ?? 0,
           rooms:        roomDetails.length,
           roomDetails:  roomDetails,
@@ -464,7 +464,7 @@ class BusinessGuestRecordApi extends BaseApi {
           checkIn:      checkIn,
           checkOut:     checkOut,
           actualCheckOut: row['actual_checkout'] as String?,
-          nights:       _calcNights(checkIn, checkOut),
+          nights:       _calcNights(checkIn, checkOut, row['actual_checkout'] as String?),
           guests:       (row['total_guests']       as int?) ?? 0,
           rooms:        roomDetails.length,
           roomDetails:  roomDetails,
@@ -580,6 +580,7 @@ class BusinessGuestRecordApi extends BaseApi {
           'check_in':                checkIn,
           'check_out':               checkOut,
           'actual_checkout':         actualCheckOut,
+          'length_of_stay':          _calcLengthOfStay(checkIn, checkOut, actualCheckOut),
           'total_guests':            totalGuests,
           'male_count':              maleCountInt,
           'female_count':            femaleCountInt,
@@ -677,6 +678,7 @@ class BusinessGuestRecordApi extends BaseApi {
         'check_in':                checkIn,
         'check_out':               checkOut,
         'actual_checkout':         actualCheckOut,
+        'length_of_stay':          _calcLengthOfStay(checkIn, checkOut, actualCheckOut),
         'total_guests':            totalGuests,
         'male_count':              maleCountInt,
         'female_count':            femaleCountInt,
@@ -1081,7 +1083,7 @@ class BusinessGuestRecordApi extends BaseApi {
         checkIn:      checkIn,
         checkOut:     checkOut,
         actualCheckOut: row['actual_check_out'] as String?,
-        nights:       _calcNights(checkIn, checkOut),
+        nights:       _calcNights(checkIn, checkOut, row['actual_check_out'] as String?),
         guests:       (row['total_guests']       as int?) ?? 0,
         rooms:        roomsList.length,
         roomDetails:  roomDetails,
@@ -1277,14 +1279,29 @@ class BusinessGuestRecordApi extends BaseApi {
   // Value mappers
   // ===========================================================================
 
-  String _calcNights(String checkIn, String checkOut) {
+  String _calcNights(String checkIn, String checkOut, [String? actualCheckOut]) {
     try {
       final inDate  = parseDbDateTime(checkIn);
-      final outDate = parseDbDateTime(checkOut);
-      final n       = outDate.difference(inDate).inDays;
+      final outDate = parseDbDateTime(actualCheckOut ?? checkOut);
+      final n       = DateTime(outDate.year, outDate.month, outDate.day)
+          .difference(DateTime(inDate.year, inDate.month, inDate.day))
+          .inDays;
       return '$n night${n == 1 ? '' : 's'}';
     } catch (_) {
       return '—';
+    }
+  }
+
+  int _calcLengthOfStay(String checkIn, String checkOut, String? actualCheckOut) {
+    try {
+      final inDate  = parseDbDateTime(checkIn);
+      final outDate = parseDbDateTime(actualCheckOut ?? checkOut);
+      final n       = DateTime(outDate.year, outDate.month, outDate.day)
+          .difference(DateTime(inDate.year, inDate.month, inDate.day))
+          .inDays;
+      return n < 1 ? 1 : n;
+    } catch (_) {
+      return 1;
     }
   }
 
