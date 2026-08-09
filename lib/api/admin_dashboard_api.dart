@@ -56,6 +56,13 @@ class NationalityCount {
 
 typedef CountryCount = NationalityCount;
 
+class ProvinceCount {
+  const ProvinceCount({required this.province, required this.count});
+
+  final String province;
+  final int count;
+}
+
 class AccommodationTypeCount {
   const AccommodationTypeCount({required this.type, required this.count});
 
@@ -88,6 +95,7 @@ class AdminDashboardData {
     required this.genderDistribution,
     required this.ageGroups,
     required this.topNationalities,
+    required this.provinces,
     required this.compliance,
     required this.accommodationTypes,
     required this.purposeOfVisit,
@@ -97,6 +105,7 @@ class AdminDashboardData {
   final GenderDistribution genderDistribution;
   final List<AgeGroupCount> ageGroups;
   final List<NationalityCount> topNationalities;
+  final List<ProvinceCount> provinces;
   final ComplianceData compliance;
   final List<AccommodationTypeCount> accommodationTypes;
   final List<PurposeCount> purposeOfVisit;
@@ -361,6 +370,23 @@ class AdminDashboardApi extends BaseApi {
             .take(5)
             .toList();
 
+    final provinceMap = <String, int>{};
+    for (final breakdown in breakdowns) {
+      final province = (breakdown['province'] as String? ?? '').trim();
+      if (province.isEmpty) continue;
+      final label = _toTitleCase(province);
+      final recordId = breakdown['guest_record_id']?.toString() ?? '';
+      final guestDays = recordGuestDays[recordId] ?? 1;
+      provinceMap[label] = (provinceMap[label] ?? 0) + guestDays;
+    }
+    final provinces =
+        (provinceMap.entries
+                .map((entry) => ProvinceCount(province: entry.key, count: entry.value))
+                .toList()
+              ..sort((a, b) => b.count.compareTo(a.count)))
+            .take(5)
+            .toList();
+
     final purposeMap = <String, int>{};
     for (final record in periodRecords) {
       final purpose = (record['purpose_of_visit'] as String? ?? '').trim();
@@ -415,6 +441,7 @@ class AdminDashboardApi extends BaseApi {
       ),
       ageGroups: ageGroups,
       topNationalities: topNationalities,
+      provinces: provinces,
       compliance: ComplianceData(
         compliant: activeAccommodations,
         nonCompliant: pendingRegistrations,

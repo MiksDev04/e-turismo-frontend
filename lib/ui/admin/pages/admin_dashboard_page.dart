@@ -187,6 +187,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       }
       buf.writeln();
 
+      // ── Top Provinces ──────────────────────────────────────────────────────
+      buf.writeln('TOP 5 PROVINCES');
+      buf.writeln('Province,Tourists');
+      for (final p in d.provinces) {
+        buf.writeln('${_csvCell(p.province)},${p.count}');
+      }
+      buf.writeln();
+
       // ── Accommodation Types ────────────────────────────────────────────────
       buf.writeln('ACCOMMODATION TYPES');
       buf.writeln('Type,Tourists');
@@ -370,6 +378,25 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               headers: ['Nationality', 'Tourists'],
               data: d.topNationalities
                   .map((n) => [n.nationality, '${n.count}'])
+                  .toList(),
+              cellStyle: const pw.TextStyle(fontSize: 10),
+              headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 10,
+              ),
+            ),
+            pw.SizedBox(height: 16),
+
+            // ── Top Provinces ─────────────────────────────────────────────────
+            pw.Text(
+              'Top 5 Provinces',
+              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.SizedBox(height: 8),
+            pw.Table.fromTextArray(
+              headers: ['Province', 'Tourists'],
+              data: d.provinces
+                  .map((p) => [p.province, '${p.count}'])
                   .toList(),
               cellStyle: const pw.TextStyle(fontSize: 10),
               headerStyle: pw.TextStyle(
@@ -716,6 +743,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                               genderDist: _dashData!.genderDistribution,
                               ageGroups: _dashData!.ageGroups,
                               topNationalities: _dashData!.topNationalities,
+                              provinces: _dashData!.provinces,
                               accommodationTypes: _dashData!.accommodationTypes,
                               purposeOfVisit: _dashData!.purposeOfVisit,
                               isNarrow: isNarrow,
@@ -1331,6 +1359,7 @@ class _DonutChartsRow extends StatelessWidget {
     required this.genderDist,
     required this.ageGroups,
     required this.topNationalities,
+    required this.provinces,
     required this.accommodationTypes,
     required this.purposeOfVisit,
     required this.isNarrow,
@@ -1340,6 +1369,7 @@ class _DonutChartsRow extends StatelessWidget {
   final GenderDistribution genderDist;
   final List<AgeGroupCount> ageGroups;
   final List<NationalityCount> topNationalities;
+  final List<ProvinceCount> provinces;
   final List<AccommodationTypeCount> accommodationTypes;
   final List<PurposeCount> purposeOfVisit;
   final bool isNarrow;
@@ -1353,6 +1383,7 @@ class _DonutChartsRow extends StatelessWidget {
     );
     final countriesCard = _CountriesCard(
       topNationalities: topNationalities,
+      provinces: provinces,
     );
     final accommodationPurposeCard = _AccommodationPurposeCard(
       accommodationTypes: accommodationTypes,
@@ -1600,12 +1631,23 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
   }
 }
 
-// ─── Countries Card ───────────────────────────────────────────────────────────
+// ─── Countries / Provinces Card ───────────────────────────────────────────────
 
-class _CountriesCard extends StatelessWidget {
-  const _CountriesCard({required this.topNationalities});
+class _CountriesCard extends StatefulWidget {
+  const _CountriesCard({
+    required this.topNationalities,
+    required this.provinces,
+  });
 
   final List<NationalityCount> topNationalities;
+  final List<ProvinceCount> provinces;
+
+  @override
+  State<_CountriesCard> createState() => _CountriesCardState();
+}
+
+class _CountriesCardState extends State<_CountriesCard> {
+  int _tab = 0; // 0 = Country, 1 = Province
 
   static const _countryColors = [
     AppColors.chartGreen,
@@ -1615,40 +1657,75 @@ class _CountriesCard extends StatelessWidget {
     AppColors.chartGray,
   ];
 
+  static const _provinceColors = [
+    AppColors.chartBlue,
+    AppColors.chartGreen,
+    AppColors.chartOrange,
+    AppColors.chartPurple,
+    AppColors.chartCyan,
+    AppColors.chartGray,
+  ];
+
   List<_Segment> get _segments {
-    final list = topNationalities;
+    final list = _tab == 0
+        ? widget.topNationalities
+            .map((n) => (label: n.nationality, count: n.count))
+            .toList()
+        : widget.provinces
+            .map((p) => (label: p.province, count: p.count))
+            .toList();
     if (list.isEmpty) {
       return List.generate(
         5,
         (i) => _Segment(
           value: 0.2,
-          color: _countryColors[i % _countryColors.length],
+          color: (_tab == 0 ? _countryColors : _provinceColors)[
+              i % (_tab == 0 ? _countryColors : _provinceColors).length],
           isEmpty: true,
         ),
       );
     }
-    final total = list.fold<int>(0, (s, n) => s + n.count);
+    final total = list.fold<int>(0, (s, e) => s + e.count);
     return list.asMap().entries.map((e) {
       final ratio = total == 0 ? 1 / list.length : e.value.count / total;
       return _Segment(
         value: ratio,
-        color: _countryColors[e.key % _countryColors.length],
-        label: e.value.nationality,
+        color: (_tab == 0 ? _countryColors : _provinceColors)[
+            e.key % (_tab == 0 ? _countryColors : _provinceColors).length],
+        label: e.value.label,
         percentage: '${e.value.count} tourists',
       );
     }).toList();
   }
 
-  List<_LegendItem> get _legend => topNationalities
-      .asMap()
-      .entries
-      .map(
-        (e) => _LegendItem(
-          label: e.value.nationality,
-          color: _countryColors[e.key % _countryColors.length],
-        ),
-      )
-      .toList();
+  List<_LegendItem> get _legend {
+    final list = _tab == 0
+        ? widget.topNationalities
+            .map((n) => (label: n.nationality, count: n.count))
+            .toList()
+        : widget.provinces
+            .map((p) => (label: p.province, count: p.count))
+            .toList();
+    return list
+        .asMap()
+        .entries
+        .map(
+          (e) => _LegendItem(
+            label: e.value.label,
+            color: (_tab == 0 ? _countryColors : _provinceColors)[
+                e.key % (_tab == 0 ? _countryColors : _provinceColors).length],
+          ),
+        )
+        .toList();
+  }
+
+  String? get _emptyHint {
+    final empty = _tab == 0
+        ? widget.topNationalities.isEmpty
+        : widget.provinces.isEmpty;
+    if (empty) return 'No data for this period';
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1656,25 +1733,28 @@ class _CountriesCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Top 5 Countries',
-            style: TextStyle(
-              color: AppColors.textWhite,
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-            ),
+          _ToggleCardTitle(
+            options: const ['Country', 'Province'],
+            selectedIndex: _tab,
+            onChanged: (i) => setState(() => _tab = i),
           ),
-          if (topNationalities.isEmpty) ...[
+          if (_emptyHint != null) ...[
             const SizedBox(height: 6),
-            const Text(
-              'No data for this period',
-              style: TextStyle(color: AppColors.textSubtle, fontSize: 11),
+            Text(
+              _emptyHint!,
+              style: const TextStyle(color: AppColors.textSubtle, fontSize: 11),
             ),
           ],
           const SizedBox(height: 16),
-          _DonutContent(
-            segments: _segments,
-            legend: _legend,
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            transitionBuilder: (child, animation) =>
+                FadeTransition(opacity: animation, child: child),
+            child: _DonutContent(
+              key: ValueKey(_tab),
+              segments: _segments,
+              legend: _legend,
+            ),
           ),
         ],
       ),

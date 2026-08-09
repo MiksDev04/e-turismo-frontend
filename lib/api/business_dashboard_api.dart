@@ -47,6 +47,13 @@ class CountryCount {
   final int count;
 }
 
+class ProvinceCount {
+  const ProvinceCount({required this.province, required this.count});
+
+  final String province;
+  final int count;
+}
+
 class MonthlyCount {
   const MonthlyCount({required this.month, required this.count});
 
@@ -73,6 +80,7 @@ class DashboardData {
     required this.stats,
     required this.sexDistribution,
     required this.topCountries,
+    required this.provinces,
     required this.ageGroups,
     required this.purposeOfVisit,
   });
@@ -80,6 +88,7 @@ class DashboardData {
   final DashboardStats stats;
   final SexDistribution sexDistribution;
   final List<CountryCount> topCountries;
+  final List<ProvinceCount> provinces;
   final List<AgeGroupCount> ageGroups;
   final List<PurposeCount> purposeOfVisit;
 }
@@ -484,6 +493,7 @@ class BusinessDashboardApi extends BaseApi {
         'female_count',
         'purpose_of_visit',
         'lead_country',
+        'lead_province',
         'lead_nationality',
         'lead_is_overseas',
         'lead_birthdate',
@@ -508,6 +518,7 @@ class BusinessDashboardApi extends BaseApi {
     final rows = await db.rawQuery(
       'SELECT id as guest_record_id, '
       '  lead_country as country, '
+      '  lead_province as province, '
       '  lead_sex as sex, '
       '  lead_is_overseas as is_overseas, '
       '  lead_birthdate, '
@@ -549,6 +560,7 @@ class BusinessDashboardApi extends BaseApi {
       breakdowns.add({
         'guest_record_id':     r['guest_record_id'],
         'country':             country,
+        'province':            r['province'],
         'sex':                 sex,
         'age_group':           ageGroup,
         'count':               1,
@@ -688,6 +700,23 @@ class BusinessDashboardApi extends BaseApi {
             .take(5)
             .toList();
 
+    // Top 5 provinces (domestic leads only — lead_province is null for foreign)
+    final provinceMap = <String, int>{};
+    for (final b in breakdowns) {
+      final province = _stringValue(b, 'province')?.trim() ?? '';
+      if (province.isEmpty) continue;
+      final recordId = _stringValue(b, 'guest_record_id') ?? '';
+      final guestDays = recordGuestDays[recordId] ?? 1;
+      provinceMap[province] = (provinceMap[province] ?? 0) + guestDays;
+    }
+    final provinces =
+        (provinceMap.entries
+                .map((e) => ProvinceCount(province: e.key, count: e.value))
+                .toList()
+              ..sort((a, b) => b.count.compareTo(a.count)))
+            .take(5)
+            .toList();
+
     // Purpose of visit
     final purposeMap = <String, int>{};
     for (final record in periodRecords) {
@@ -713,6 +742,7 @@ class BusinessDashboardApi extends BaseApi {
         other: genderOther,
       ),
       topCountries: topCountries,
+      provinces: provinces,
       ageGroups: ageGroups,
       purposeOfVisit: purposeOfVisit,
     );
