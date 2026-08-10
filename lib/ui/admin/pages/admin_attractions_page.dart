@@ -1546,7 +1546,7 @@ class _SearchBar extends StatelessWidget {
         onChanged: onChanged,
         style: const TextStyle(color: AppColors.textWhite, fontSize: 13),
         decoration: const InputDecoration(
-          hintText: 'Search by name or owner...',
+          hintText: 'Search by name or user...',
           hintStyle: TextStyle(color: AppColors.textSubtle, fontSize: 13),
           prefixIcon: Icon(
             Icons.search_rounded,
@@ -1632,7 +1632,7 @@ class _TableHeader extends StatelessWidget {
             flex: 3,
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
-              child: _HeaderCell('Owner'),
+              child: _HeaderCell('User'),
             ),
           ),
           Expanded(
@@ -1881,7 +1881,7 @@ class _AttractionCard extends StatelessWidget {
           const SizedBox(height: 12),
           _CardDetail(label: 'Type(s)', value: item.attractionTypeLabel),
           const SizedBox(height: 6),
-          _CardDetail(label: 'Owner', value: item.owner),
+          _CardDetail(label: 'User', value: item.owner),
           const SizedBox(height: 6),
           _CardDetail(label: 'Contact', value: item.contact),
           const SizedBox(height: 12),
