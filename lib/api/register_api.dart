@@ -76,6 +76,7 @@ class RegisterApi {
     required String email,
     required String phoneNumber,
     required String password,
+    required String purpose,
   }) async {
     try {
       final uri = Uri.parse(_sendConfirmationUrl);
@@ -88,6 +89,7 @@ class RegisterApi {
           'email': email,
           'phoneNumber': phoneNumber,
           'password': password,
+          'purpose': purpose,
         }),
       );
 
@@ -104,9 +106,15 @@ class RegisterApi {
     }
   }
 
-  Future<bool> checkConfirmationStatus(String email) async {
+  Future<bool> checkConfirmationStatus(
+    String email, {
+    required String purpose,
+  }) async {
     try {
-      final uri = Uri.parse('$_confirmationStatusUrl?email=${Uri.encodeComponent(email)}');
+      final uri = Uri.parse(
+        '$_confirmationStatusUrl?email=${Uri.encodeComponent(email)}'
+        '&purpose=${Uri.encodeComponent(purpose)}',
+      );
       final response = await http.get(
         uri,
         headers: _headers,
@@ -248,6 +256,83 @@ class RegisterApi {
     }
   }
 
+  Future<RegisterResult> registerAttraction({
+    required String fullName,
+    required String username,
+    required String email,
+    required String password,
+    required String phoneNumber,
+    required String attractionName,
+    required List<String> attractionTypes,
+    required String street,
+    required String barangay,
+    required PlatformFile validIdFile,
+  }) async {
+    try {
+      final validationError = _validateAttraction(
+        fullName: fullName,
+        username: username,
+        email: email,
+        phoneNumber: phoneNumber,
+        attractionName: attractionName,
+        attractionTypes: attractionTypes,
+        password: password,
+        street: street,
+        barangay: barangay,
+      );
+      if (validationError != null) return RegisterResult.err(validationError);
+
+      final uri = Uri.parse(_baseUrl);
+      final request = http.MultipartRequest('POST', uri);
+
+      request.headers['X-API-Key'] = _apiKey;
+
+      request.fields['fullName'] = fullName;
+      request.fields['username'] = username.trim().toLowerCase();
+      request.fields['email'] = email;
+      request.fields['password'] = password;
+      request.fields['phoneNumber'] = phoneNumber;
+      request.fields['purpose'] = 'attraction_registration';
+      request.fields['attractionName'] = attractionName;
+      request.fields['attractionTypes'] = jsonEncode(attractionTypes);
+      request.fields['street'] = street;
+      request.fields['barangay'] = barangay;
+
+      if (kIsWeb) {
+        if (validIdFile.bytes != null) {
+          request.files.add(http.MultipartFile.fromBytes(
+            'valid_id',
+            validIdFile.bytes!,
+            filename: validIdFile.name,
+            contentType: _getMediaType(validIdFile.name),
+          ));
+        }
+      } else {
+        if (validIdFile.path != null) {
+          request.files.add(await http.MultipartFile.fromPath(
+            'valid_id',
+            validIdFile.path!,
+            contentType: _getMediaType(validIdFile.name),
+          ));
+        }
+      }
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        debugPrint('✅ Attraction registration successful via Node.js API');
+        return const RegisterResult.ok();
+      } else {
+        final data = jsonDecode(response.body);
+        return RegisterResult.err(data['message'] ?? 'Registration failed.');
+      }
+    } catch (e) {
+      debugPrint('❌ Attraction registration error: $e');
+      return RegisterResult.err('An unexpected error occurred: $e');
+    }
+  }
+
   MediaType _getMediaType(String fileName) {
     final ext = fileName.split('.').last.toLowerCase();
     switch (ext) {
@@ -296,7 +381,7 @@ class RegisterApi {
   }) {
     final usernameRe = RegExp(r'^[a-zA-Z0-9_]{3,20}$');
     final emailRe = RegExp(r'^[\w.+\-]+@[\w\-]+\.[a-zA-Z]{2,}$');
-    final phoneRe = RegExp(r'^(09|\+639)\d{9}$');
+    final phoneRe = RegExp(r'^09\d{9}$');
     const allowedBusinessLines = {
       'hotel',
       'resort',
@@ -346,6 +431,61 @@ class RegisterApi {
       return 'City / Municipality is required.';
     if (province.trim().isEmpty) return 'Province is required.';
     if (region.trim().isEmpty) return 'Region is required.';
+    return null;
+  }
+
+  String? _validateAttraction({
+    required String fullName,
+    required String username,
+    required String email,
+    required String phoneNumber,
+    required String attractionName,
+    required List<String> attractionTypes,
+    required String password,
+    required String street,
+    required String barangay,
+  }) {
+    final usernameRe = RegExp(r'^[a-zA-Z0-9_]{3,20}$');
+    final emailRe = RegExp(r'^[\w.+\-]+@[\w\-]+\.[a-zA-Z]{2,}$');
+    final phoneRe = RegExp(r'^09\d{9}$');
+    const allowedAttractionTypes = {
+      'ecotourism',
+      'natural_attractions',
+      'cultural',
+      'religious',
+      'historical_heritage_sites',
+      'agri_tourism',
+      'farm_tourism_sites',
+    };
+    final strippedPhone = phoneNumber.replaceAll(RegExp(r'[-\s]'), '');
+
+    if (fullName.trim().isEmpty) return 'Full name is required.';
+    if (username.trim().isEmpty) return 'Username is required.';
+    if (!usernameRe.hasMatch(username.trim())) {
+      return 'Username must be 3-20 characters using letters, numbers, or underscores.';
+    }
+    if (!emailRe.hasMatch(email.trim())) return 'Enter a valid email address.';
+    if (!phoneRe.hasMatch(strippedPhone)) return 'Invalid phone number format.';
+    if (attractionName.trim().isEmpty) return 'Attraction name is required.';
+    if (password.isEmpty) return 'Password is required.';
+    if (password.length < 8) {
+      return 'Password must be at least 8 characters long.';
+    }
+    if (!RegExp(r'[A-Z]').hasMatch(password)) {
+      return 'Password must contain at least one uppercase letter.';
+    }
+    if (!RegExp(r'[0-9]').hasMatch(password)) {
+      return 'Password must contain at least one number.';
+    }
+    if (!RegExp(r"[!@#$%^&*()\-_=+\[\]{};:',.<>?/\\|`~@]").hasMatch(password)) {
+      return 'Password must contain at least one special character (e.g. @, #, !).';
+    }
+    if (attractionTypes.isEmpty) return 'Select at least one attraction type.';
+    if (attractionTypes.any((type) => !allowedAttractionTypes.contains(type))) {
+      return 'Invalid attraction type selected.';
+    }
+    if (street.trim().isEmpty) return 'Street is required.';
+    if (barangay.trim().isEmpty) return 'Barangay is required.';
     return null;
   }
 }

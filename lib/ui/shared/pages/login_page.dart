@@ -369,18 +369,42 @@ class _LoginCardState extends State<_LoginCard> {
               ? const _LoadingButton()
               : _SignInButton(onPressed: _handleSignIn),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
 
-          Center(
-            child: GestureDetector(
-              onTap: () =>
+          const Text(
+            'Don\'t have an account?',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.textSubtle,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: OutlinedButton.icon(
+              onPressed: () =>
                   Navigator.pushReplacementNamed(context, AppRoutes.register),
-              child: const Text(
-                'Register your accommodation establishment →',
+              icon: const Icon(
+                Icons.person_add_alt_1_outlined,
+                size: 18,
+                color: AppColors.primaryCyan,
+              ),
+              label: const Text(
+                'Create an account →',
                 style: TextStyle(
                   color: AppColors.primaryCyan,
                   fontSize: 13.5,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primaryCyan,
+                side: const BorderSide(color: AppColors.primaryCyan, width: 1),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
                 ),
               ),
             ),
