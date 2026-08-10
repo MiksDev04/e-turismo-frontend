@@ -11,6 +11,7 @@ import 'package:app/ui/shared/pages/admin_setup_page.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import 'package:app/ui/admin/pages/admin_dashboard_page.dart';
 import 'package:app/ui/admin/pages/admin_accommodations_page.dart';
+import 'package:app/ui/admin/pages/admin_attractions_page.dart';
 import 'package:app/ui/admin/pages/admin_reports_page.dart';
 import 'package:app/ui/admin/pages/admin_messages_page.dart';
 import 'package:app/ui/admin/pages/admin_compliance_page.dart';
@@ -21,6 +22,8 @@ import 'package:app/ui/business/pages/business_guest_records_page.dart';
 import 'package:app/ui/business/pages/business_rooms_page.dart';
 import 'package:app/ui/business/pages/business_messages_page.dart';
 import 'package:app/ui/business/pages/business_profile_page.dart';
+
+import 'package:app/ui/attraction/pages/attraction_home_page.dart';
 
 import 'package:app/ui/shared/layouts/admin_layout.dart';
 import 'package:app/ui/shared/layouts/business_layout.dart';
@@ -48,10 +51,11 @@ class _RouteMeta {
 const _adminRouteMeta = {
   AppRoutes.adminDashboard: _RouteMeta('Dashboard', 0),
   AppRoutes.adminAccommodations: _RouteMeta('Accommodations', 1),
-  AppRoutes.adminReports: _RouteMeta('Reports', 2),
-  AppRoutes.adminMessages: _RouteMeta('Messages', 3),
-  AppRoutes.adminCompliance: _RouteMeta('Compliance', 4),
-  AppRoutes.adminProfile: _RouteMeta('Profile', 5),
+  AppRoutes.adminAttractions: _RouteMeta('Attractions', 2),
+  AppRoutes.adminReports: _RouteMeta('Reports', 3),
+  AppRoutes.adminMessages: _RouteMeta('Messages', 4),
+  AppRoutes.adminCompliance: _RouteMeta('Compliance', 5),
+  AppRoutes.adminProfile: _RouteMeta('Profile', 6),
 };
 
 const _businessRouteMeta = {
@@ -72,6 +76,7 @@ abstract final class _RoutePermissions {
     AppRoutes.adminSetup: {},
     AppRoutes.adminDashboard: {'admin'},
     AppRoutes.adminAccommodations: {'admin'},
+    AppRoutes.adminAttractions: {'admin'},
     AppRoutes.adminMessages: {'admin'},
     AppRoutes.adminReports: {'admin'},
     AppRoutes.adminCompliance: {'admin'},
@@ -82,6 +87,7 @@ abstract final class _RoutePermissions {
     AppRoutes.businessRooms: {'business'},
     AppRoutes.businessMessages: {'business'},
     AppRoutes.businessProfile: {'business'},
+    AppRoutes.attractionHome: {'attraction'},
   };
 
   /// Returns null if allowed, or a sentinel string if blocked.
@@ -120,15 +126,19 @@ abstract final class AppRouter {
     if (routeName == AppRoutes.login || routeName == AppRoutes.register) {
       final session = SessionService.instance.current;
       if (session != null) {
-        final route = session.role == 'admin'
-            ? AppRoutes.adminDashboard
-            : AppRoutes.businessDashboard;
-        return _fade(
-          session.role == 'admin'
-              ? const AdminDashboardPage()
-              : const BusinessDashboardPage(),
-          RouteSettings(name: route),
-        );
+        final String route;
+        final Widget page;
+        if (session.role == 'admin') {
+          route = AppRoutes.adminDashboard;
+          page = const AdminDashboardPage();
+        } else if (session.role == 'attraction') {
+          route = AppRoutes.attractionHome;
+          page = const AttractionHomePage();
+        } else {
+          route = AppRoutes.businessDashboard;
+          page = const BusinessDashboardPage();
+        }
+        return _fade(page, RouteSettings(name: route));
       }
     }
 
@@ -175,6 +185,10 @@ abstract final class AppRouter {
         const AdminAccommodationsPage(),
         settings,
       ),
+      AppRoutes.adminAttractions => _fade(
+        const AdminAttractionsPage(),
+        settings,
+      ),
       AppRoutes.adminMessages => _fade(const AdminMessagesPage(), settings),
       AppRoutes.adminReports => _fade(const AdminReportsPage(), settings),
       AppRoutes.adminProfile => _fade(const AdminProfilePage(), settings),
@@ -200,6 +214,10 @@ abstract final class AppRouter {
         settings,
       ),
       AppRoutes.businessProfile => _fade(const BusinessProfilePage(), settings),
+      AppRoutes.attractionHome => _fade(
+        const AttractionHomePage(),
+        settings,
+      ),
       _ => _fade(const _RedirectToInitialWidget(), settings),
     };
   }
@@ -226,6 +244,9 @@ abstract final class AppRouter {
         onNavSelected: (_) {},
         child: errorPage,
       );
+    } else if (session.role == 'attraction') {
+      // No dedicated layout yet — fall back to a bare scaffold.
+      return Scaffold(body: errorPage);
     } else {
       final meta =
           _businessRouteMeta[routeName] ?? const _RouteMeta('Error', -1);
@@ -334,9 +355,14 @@ class _InitialRouterState extends State<_InitialRouter> {
   void _routeBasedOnSession(session) {
     if (!mounted) return;
     if (session != null) {
-      final route = session.role == 'admin'
-          ? AppRoutes.adminDashboard
-          : AppRoutes.businessDashboard;
+      final String route;
+      if (session.role == 'admin') {
+        route = AppRoutes.adminDashboard;
+      } else if (session.role == 'attraction') {
+        route = AppRoutes.attractionHome;
+      } else {
+        route = AppRoutes.businessDashboard;
+      }
       _go(route);
     } else {
       _go(AppRoutes.login);
@@ -474,11 +500,16 @@ class _RedirectToInitialWidgetState extends State<_RedirectToInitialWidget> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final session = SessionService.instance.current;
-      final route = session == null
-          ? AppRoutes.login
-          : session.role == 'admin'
-          ? AppRoutes.adminDashboard
-          : AppRoutes.businessDashboard;
+      final String route;
+      if (session == null) {
+        route = AppRoutes.login;
+      } else if (session.role == 'admin') {
+        route = AppRoutes.adminDashboard;
+      } else if (session.role == 'attraction') {
+        route = AppRoutes.attractionHome;
+      } else {
+        route = AppRoutes.businessDashboard;
+      }
       Navigator.of(context).pushNamedAndRemoveUntil(route, (route) => false);
     });
   }

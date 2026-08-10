@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app/core/constants/app_colors.dart';
 import 'package:app/ui/shared/widgets/admin_sidebar.dart';
 import 'package:app/ui/shared/widgets/admin_header.dart';
-import 'package:app/router/app_routes.dart';
+import 'package:app/ui/shared/widgets/admin_nav_items.dart';
 // ─── Admin Layout ─────────────────────────────────────────────────────────────
 //
 // Usage:
@@ -100,41 +100,6 @@ class AdminBottomNavBar extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onItemSelected;
 
-
-  // Reuse the same nav items from AdminSidebar
-  static const _navItems = [
-    NavItem(
-      icon: Icons.dashboard_rounded,
-      label: 'Dashboard',
-      index: 0,
-      route: AppRoutes.adminDashboard,
-    ),
-    NavItem(
-      icon: Icons.apartment_rounded,
-      label: 'Accommodations',
-      index: 1,
-      route: AppRoutes.adminAccommodations,
-    ),
-    NavItem(
-      icon: Icons.bar_chart_rounded,
-      label: 'Report',
-      index: 2,
-      route: AppRoutes.adminReports,
-    ),
-    NavItem(
-      icon: Icons.chat_bubble_outline_rounded,
-      label: 'Messages',
-      index: 3,
-      route: AppRoutes.adminMessages,
-    ),
-    NavItem(
-      icon: Icons.shield_outlined,
-      label: 'Compliance',
-      index: 4,
-      route: AppRoutes.adminCompliance,
-    ),
-  ];
-
   @override
   Widget build(BuildContext context) {
 
@@ -148,7 +113,7 @@ class AdminBottomNavBar extends StatelessWidget {
       child: SafeArea(
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: _navItems.map((item) {
+          children: AdminNavItems.items.map((item) {
             final isSelected = selectedIndex == item.index;
             return _BottomNavTile(
               item: item,

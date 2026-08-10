@@ -242,7 +242,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
   Widget build(BuildContext context) {
     return AdminLayout(
       title: 'Reports',
-      selectedIndex: 2,
+      selectedIndex: 3,
       onNavSelected: (_) {},
       child: _fetchError != null
           ? ErrorPage(statusCode: _errorCode ?? 500, onRetry: _fetchBatches)

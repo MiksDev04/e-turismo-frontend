@@ -1,23 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app/core/constants/app_colors.dart';
 import 'package:app/core/services/session_service.dart';
-import 'package:app/router/app_routes.dart';
-
-// ─── Nav Item Model ───────────────────────────────────────────────────────────
-
-class NavItem {
-  const NavItem({
-    required this.icon,
-    required this.label,
-    required this.index,
-    required this.route,
-  });
-
-  final IconData icon;
-  final String label;
-  final int index;
-  final String route;
-}
+import 'package:app/ui/shared/widgets/admin_nav_items.dart';
 
 // ─── Admin Sidebar ────────────────────────────────────────────────────────────
 
@@ -30,39 +14,6 @@ class AdminSidebar extends StatelessWidget {
 
   final int selectedIndex;
   final ValueChanged<int> onItemSelected;
-
-  static const _navItems = [
-    NavItem(
-      icon: Icons.dashboard_rounded,
-      label: 'Dashboard',
-      index: 0,
-      route: AppRoutes.adminDashboard,
-    ),
-    NavItem(
-      icon: Icons.apartment_rounded,
-      label: 'Accommodations',
-      index: 1,
-      route: AppRoutes.adminAccommodations,
-    ),
-    NavItem(
-      icon: Icons.bar_chart_rounded,
-      label: 'Report',
-      index: 2,
-      route: AppRoutes.adminReports,
-    ),
-    NavItem(
-      icon: Icons.chat_bubble_outline_rounded,
-      label: 'Messages',
-      index: 3,
-      route: AppRoutes.adminMessages,
-    ),
-    NavItem(
-      icon: Icons.shield_outlined,
-      label: 'Compliance',
-      index: 4,
-      route: AppRoutes.adminCompliance,
-    ),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -82,7 +33,7 @@ class AdminSidebar extends StatelessWidget {
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              children: _navItems
+              children: AdminNavItems.items
                   .map(
                     (item) => _NavTile(
                       item: item,

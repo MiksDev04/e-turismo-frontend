@@ -314,12 +314,15 @@ class MessagesApi extends BaseApi {
   Future<String> sendToSelected({
     required String senderId,
     required List<String> businessIds,
+    List<String>? attractionIds,
     required MessageType messageType,
     required String subject,
     required String content,
   }) async {
     final response = await post('/api/messages/send-selected', {
       'businessIds': businessIds,
+      if (attractionIds != null && attractionIds.isNotEmpty)
+        'attractionIds': attractionIds,
       'messageType': messageType.dbValue,
       'subject': subject,
       'content': content,

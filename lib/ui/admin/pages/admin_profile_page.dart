@@ -9,6 +9,7 @@ import 'package:app/ui/shared/pages/error_page.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/session_service.dart';
 import '../../shared/layouts/admin_layout.dart';
+import '../../shared/widgets/admin_nav_items.dart';
 import '../../../api/admin_profile_api.dart';
 
 // ─── Admin Profile Page ───────────────────────────────────────────────────────
@@ -225,7 +226,7 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
   Widget build(BuildContext context) {
     return AdminLayout(
       title: 'Profile',
-      selectedIndex: 5,
+      selectedIndex: AdminNavItems.profileIndex,
       onNavSelected: (_) {},
       child: _fetchError != null
           ? ErrorPage(statusCode: _errorCode ?? 500, onRetry: _loadProfile)

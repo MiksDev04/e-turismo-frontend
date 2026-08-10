@@ -8,7 +8,7 @@ import 'package:app/core/services/offline_service.dart'
 import 'package:app/core/database/local_database.dart';
 import 'base_api.dart';
 
-enum Role { business, admin }
+enum Role { business, admin, attraction }
 
 class LoginResult {
   final bool success;
@@ -48,6 +48,7 @@ class LoginApi extends BaseApi {
       final data = jsonDecode(response.body);
       final user = data['user'];
       final biz = data['business'];
+      final att = data['attraction'];
       final token = data['token'];
 
       final current = SessionService.instance.current;
@@ -63,13 +64,21 @@ class LoginApi extends BaseApi {
         businessId: biz?['id']?.toString(),
         businessName: biz?['business_name'],
         status: biz?['status'],
+        attractionId: att?['id']?.toString(),
+        attractionName: att?['attraction_name'],
+        attractionType: att?['attraction_type'] is String
+            ? (jsonDecode(att!['attraction_type'] as String) as List)
+                .cast<String>()
+            : (att?['attraction_type'] as List?)?.cast<String>(),
       );
 
       await SessionService.instance.save(updated);
       await SessionService.instance.loadAndCache();
 
-      // Refresh cache for future offline logins too (not available on web)
-      if (!kIsWeb) {
+      // Refresh cache for future offline logins (business only — web is
+      // excluded and attraction/admin accounts are online-only)
+      final roleStr = user['role'] as String?;
+      if (!kIsWeb && roleStr == 'business') {
         await OfflineAuthService.instance.cacheProfile(
         id: user['id'].toString(),
         username: user['username'],
@@ -122,6 +131,20 @@ class LoginApi extends BaseApi {
           );
         }
 
+        // 1b. Attraction accounts are online-only — mirror the admin block.
+        final attractionCheck = await db.query(
+          LocalDatabase.tableLocalProfiles,
+          where: '(username = ? OR email = ?) AND role = ?',
+          whereArgs: [username, username, 'attraction'],
+          limit: 1,
+        );
+
+        if (attractionCheck.isNotEmpty) {
+          return LoginResult.err(
+            'Attraction login requires an internet connection. Please connect to the internet to sign in.',
+          );
+        }
+
         // 2. Otherwise, attempt to verify business user credentials.
         final profile = await OfflineAuthService.instance.verifyOfflineLogin(
           username: username,
@@ -134,9 +157,11 @@ class LoginApi extends BaseApi {
 
         final roleStr = profile['role'] as String? ?? 'business';
         // Redundant but safe: check role again
-        if (roleStr == 'admin') {
+        if (roleStr == 'admin' || roleStr == 'attraction') {
           return LoginResult.err(
-            'Admin login is only supported online. Please connect to the internet to sign in.',
+            roleStr == 'admin'
+                ? 'Admin login is only supported online. Please connect to the internet to sign in.'
+                : 'Attraction login is only supported online. Please connect to the internet to sign in.',
           );
         }
 
@@ -202,10 +227,15 @@ class LoginApi extends BaseApi {
       final data = handleResponse(response);
       final user = data['user'];
       final biz = data['business'];
+      final att = data['attraction'];
       final token = data['token'];
 
       final roleStr = user['role'] as String;
-      final role = roleStr == 'admin' ? Role.admin : Role.business;
+      final role = roleStr == 'admin'
+          ? Role.admin
+          : roleStr == 'attraction'
+              ? Role.attraction
+              : Role.business;
 
       final session = SessionData(
         userId: user['id'].toString(),
@@ -238,10 +268,17 @@ class LoginApi extends BaseApi {
         ownerFirstName: biz?['owner_first_name'],
         ownerLastName: biz?['owner_last_name'],
         ownerMiddleName: biz?['owner_middle_name'],
+        attractionId: att?['id']?.toString(),
+        attractionName: att?['attraction_name'],
+        attractionType: att?['attraction_type'] is String
+            ? (jsonDecode(att!['attraction_type'] as String) as List)
+                .cast<String>()
+            : (att?['attraction_type'] as List?)?.cast<String>(),
       );
 
-      // Cache for future offline login (not available on web)
-      if (!kIsWeb) {
+      // Cache for future offline login (business only — web is excluded and
+      // attraction/admin accounts are online-only)
+      if (!kIsWeb && roleStr == 'business') {
         await OfflineAuthService.instance.cacheProfile(
         id: user['id'].toString(),
         username: user['username'],

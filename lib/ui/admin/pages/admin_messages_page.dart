@@ -144,7 +144,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
 Widget build(BuildContext context) {
   return AdminLayout(
     title: 'Messages',
-    selectedIndex: 3,
+    selectedIndex: 4,
     onNavSelected: (_) {},
     child: _fetchError != null
         ? ErrorPage(statusCode: _errorCode ?? 500, onRetry: _loadMessages)

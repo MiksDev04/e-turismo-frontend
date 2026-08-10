@@ -201,6 +201,8 @@ class _LoginCardState extends State<_LoginCard> {
     if (result.success) {
       if (result.role == Role.admin) {
         Navigator.pushReplacementNamed(context, AppRoutes.adminDashboard);
+      } else if (result.role == Role.attraction) {
+        Navigator.pushReplacementNamed(context, AppRoutes.attractionHome);
       } else {
         Navigator.pushReplacementNamed(context, AppRoutes.businessDashboard);
       }

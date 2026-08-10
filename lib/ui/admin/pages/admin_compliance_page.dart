@@ -236,7 +236,7 @@ class _AdminCompliancePageState extends State<AdminCompliancePage> {
   Widget build(BuildContext context) {
     return AdminLayout(
       title: 'Compliance',
-      selectedIndex: 4,
+      selectedIndex: 5,
       onNavSelected: (_) {},
       child: _fetchError != null
           ? ErrorPage(statusCode: _errorCode ?? 500, onRetry: _load)

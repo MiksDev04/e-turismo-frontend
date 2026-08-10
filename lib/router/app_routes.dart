@@ -6,6 +6,7 @@ abstract final class AppRoutes {
   static const adminSetup = '/admin/setup';
   static const adminDashboard = '/admin/dashboard';
   static const adminAccommodations = '/admin/accommodations';
+  static const adminAttractions = '/admin/attractions';
   static const adminMessages = '/admin/messages';
   static const adminReports = '/admin/reports';
   static const adminCompliance = '/admin/compliance';
@@ -16,4 +17,5 @@ abstract final class AppRoutes {
   static const businessRooms = '/business/rooms';
   static const businessMessages = '/business/messages';
   static const businessProfile = '/business/profile';
+  static const attractionHome = '/attraction/home';
 }
