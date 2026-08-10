@@ -23,10 +23,11 @@ import 'package:app/ui/business/pages/business_rooms_page.dart';
 import 'package:app/ui/business/pages/business_messages_page.dart';
 import 'package:app/ui/business/pages/business_profile_page.dart';
 
-import 'package:app/ui/attraction/pages/attraction_home_page.dart';
+import 'package:app/ui/attraction/pages/attraction_dashboard_page.dart';
 
 import 'package:app/ui/shared/layouts/admin_layout.dart';
 import 'package:app/ui/shared/layouts/business_layout.dart';
+import 'package:app/ui/shared/layouts/attraction_layout.dart';
 
 // ─── Offline-allowed routes ───────────────────────────────────────────────────
 //
@@ -67,6 +68,10 @@ const _businessRouteMeta = {
   AppRoutes.businessProfile: _RouteMeta('Profile', 6),
 };
 
+const _attractionRouteMeta = {
+  AppRoutes.attractionDashboard: _RouteMeta('Dashboard', 0),
+};
+
 // ─── Route Permissions ────────────────────────────────────────────────────────
 
 abstract final class _RoutePermissions {
@@ -87,7 +92,7 @@ abstract final class _RoutePermissions {
     AppRoutes.businessRooms: {'business'},
     AppRoutes.businessMessages: {'business'},
     AppRoutes.businessProfile: {'business'},
-    AppRoutes.attractionHome: {'attraction'},
+    AppRoutes.attractionDashboard: {'attraction'},
   };
 
   /// Returns null if allowed, or a sentinel string if blocked.
@@ -132,8 +137,8 @@ abstract final class AppRouter {
           route = AppRoutes.adminDashboard;
           page = const AdminDashboardPage();
         } else if (session.role == 'attraction') {
-          route = AppRoutes.attractionHome;
-          page = const AttractionHomePage();
+          route = AppRoutes.attractionDashboard;
+          page = const AttractionDashboardPage();
         } else {
           route = AppRoutes.businessDashboard;
           page = const BusinessDashboardPage();
@@ -214,8 +219,8 @@ abstract final class AppRouter {
         settings,
       ),
       AppRoutes.businessProfile => _fade(const BusinessProfilePage(), settings),
-      AppRoutes.attractionHome => _fade(
-        const AttractionHomePage(),
+      AppRoutes.attractionDashboard => _fade(
+        const AttractionDashboardPage(),
         settings,
       ),
       _ => _fade(const _RedirectToInitialWidget(), settings),
@@ -245,8 +250,14 @@ abstract final class AppRouter {
         child: errorPage,
       );
     } else if (session.role == 'attraction') {
-      // No dedicated layout yet — fall back to a bare scaffold.
-      return Scaffold(body: errorPage);
+      final meta =
+          _attractionRouteMeta[routeName] ?? const _RouteMeta('Error', -1);
+      return AttractionLayout(
+        title: meta.title,
+        selectedIndex: meta.index,
+        onNavSelected: (_) {},
+        child: errorPage,
+      );
     } else {
       final meta =
           _businessRouteMeta[routeName] ?? const _RouteMeta('Error', -1);
@@ -359,7 +370,7 @@ class _InitialRouterState extends State<_InitialRouter> {
       if (session.role == 'admin') {
         route = AppRoutes.adminDashboard;
       } else if (session.role == 'attraction') {
-        route = AppRoutes.attractionHome;
+        route = AppRoutes.attractionDashboard;
       } else {
         route = AppRoutes.businessDashboard;
       }
@@ -506,7 +517,7 @@ class _RedirectToInitialWidgetState extends State<_RedirectToInitialWidget> {
       } else if (session.role == 'admin') {
         route = AppRoutes.adminDashboard;
       } else if (session.role == 'attraction') {
-        route = AppRoutes.attractionHome;
+        route = AppRoutes.attractionDashboard;
       } else {
         route = AppRoutes.businessDashboard;
       }

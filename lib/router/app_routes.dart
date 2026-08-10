@@ -17,5 +17,5 @@ abstract final class AppRoutes {
   static const businessRooms = '/business/rooms';
   static const businessMessages = '/business/messages';
   static const businessProfile = '/business/profile';
-  static const attractionHome = '/attraction/home';
+  static const attractionDashboard = '/attraction/dashboard';
 }
