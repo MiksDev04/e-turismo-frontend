@@ -158,6 +158,29 @@ class BusinessSummary {
       );
 }
 
+/// Lightweight attraction representation used in the compose dropdown.
+/// Only approved + warning attractions are eligible as message recipients.
+class AttractionSummary {
+  const AttractionSummary({
+    required this.id,
+    required this.name,
+    required this.status,
+  });
+
+  final String id;
+  final String name;
+  final String status;
+
+  bool get isEligible => status == 'approved' || status == 'warning';
+
+  factory AttractionSummary.fromJson(Map<String, dynamic> json) =>
+      AttractionSummary(
+        id: json['id'] as String,
+        name: json['attraction_name'] as String,
+        status: json['status'] as String,
+      );
+}
+
 /// Represents a row from `messages` joined with its sender profile.
 /// Used on the admin outbox side.
 class Message {
@@ -170,6 +193,7 @@ class Message {
     required this.isBroadcast,
     required this.createdAt,
     this.senderName,
+    this.recipientKind = MessageRecipientKind.business,
   });
 
   final String id;
@@ -180,6 +204,9 @@ class Message {
   final bool isBroadcast;
   final DateTime createdAt;
   final String? senderName;
+
+  /// Whether this message was addressed to establishments or attractions.
+  final MessageRecipientKind recipientKind;
 
   factory Message.fromJson(Map<String, dynamic> json) => Message(
     id: json['id'] as String,
@@ -194,6 +221,9 @@ class Message {
     createdAt: parseDbDateTime(json['created_at'] as String),
     senderName:
         (json['sender'] as Map<String, dynamic>?)?['full_name'] as String?,
+    recipientKind: json['recipient_kind'] == 'attraction'
+        ? MessageRecipientKind.attraction
+        : MessageRecipientKind.business,
   );
 }
 
@@ -275,6 +305,7 @@ class DeliveryReceipt {
     required this.status,
     required this.isRead,
     this.readAt,
+    this.recipientKind = MessageRecipientKind.business,
   });
 
   final String recipientId;
@@ -284,6 +315,11 @@ class DeliveryReceipt {
   final RecipientStatus status;
   final bool isRead;
   final DateTime? readAt;
+
+  /// Whether the recipient is an attraction rather than a business.
+  final MessageRecipientKind recipientKind;
+
+  bool get isAttraction => recipientKind == MessageRecipientKind.attraction;
 
   factory DeliveryReceipt.fromJson(Map<String, dynamic> json) {
     final biz = json['business'] as Map<String, dynamic>;
@@ -300,6 +336,9 @@ class DeliveryReceipt {
       readAt: json['read_at'] != null
           ? parseDbDateTime(json['read_at'] as String)
           : null,
+      recipientKind: json['recipient_kind'] == 'attraction'
+          ? MessageRecipientKind.attraction
+          : MessageRecipientKind.business,
     );
   }
 }
@@ -321,6 +360,14 @@ class MessagesApi extends BaseApi {
     final data = handleResponse(response) as List<dynamic>;
     return data
         .map((b) => BusinessSummary.fromJson(b as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<AttractionSummary>> fetchEligibleAttractions() async {
+    final response = await get('/api/messages/eligible-attractions');
+    final data = handleResponse(response) as List<dynamic>;
+    return data
+        .map((a) => AttractionSummary.fromJson(a as Map<String, dynamic>))
         .toList();
   }
 
@@ -348,11 +395,13 @@ class MessagesApi extends BaseApi {
 
   Future<({String messageId, int recipientCount})> sendToAll({
     required String senderId,
+    MessageRecipientKind recipientKind = MessageRecipientKind.business,
     required MessageType messageType,
     required String subject,
     required String content,
   }) async {
     final response = await post('/api/messages/send-all', {
+      'recipientKind': recipientKind.name,
       'messageType': messageType.dbValue,
       'subject': subject,
       'content': content,
@@ -373,6 +422,7 @@ class MessagesApi extends BaseApi {
     String? searchQuery,
     String? type,
     String? scope,
+    String? audience,
   }) async {
     final queryParams = <String, String>{
       'page': page.toString(),
@@ -381,6 +431,7 @@ class MessagesApi extends BaseApi {
     if (searchQuery != null && searchQuery.isNotEmpty) queryParams['searchQuery'] = searchQuery;
     if (type != null && type != 'All Types') queryParams['type'] = type;
     if (scope != null && scope != 'All') queryParams['scope'] = scope;
+    if (audience != null && audience != 'All') queryParams['audience'] = audience;
 
     final uri = Uri.parse('/api/messages/admin/outbox').replace(queryParameters: queryParams);
     final response = await get(uri.toString());

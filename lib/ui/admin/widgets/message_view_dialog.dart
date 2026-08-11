@@ -581,13 +581,43 @@ class _ReceiptRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  receipt.businessName,
-                  style: const TextStyle(
-                    color: AppColors.textWhite,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w500,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        receipt.businessName,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textWhite,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    if (receipt.isAttraction) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF9B8AFB).withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color:
+                                const Color(0xFF9B8AFB).withOpacity(0.4),
+                          ),
+                        ),
+                        child: const Text(
+                          'Attraction',
+                          style: TextStyle(
+                            color: Color(0xFF9B8AFB),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 if (receipt.businessStatus != 'approved') ...[
                   const SizedBox(height: 2),

@@ -5,7 +5,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:app/core/services/connectivity_service.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
-import 'package:app/ui/shared/pages/loading_page.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../api/messages_api.dart';
 import '../../../core/services/session_service.dart';
@@ -33,6 +32,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
   String _searchQuery = '';
   String _selectedType = 'All Types';
   String _selectedScope = 'All'; // 'All' | 'Broadcast' | 'Targeted'
+  String _selectedAudience = 'All'; // 'All' | 'Business' | 'Attraction'
   int _currentPage = 0;
   int _pageSize = 10;
 
@@ -54,6 +54,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
   ];
 
   static const _scopeOptions = ['All', 'Broadcast', 'Targeted'];
+  static const _audienceOptions = ['All', 'Business', 'Attraction'];
   static const List<int> _pageSizeOptions = [10, 20, 30];
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -96,6 +97,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
         searchQuery: _searchQuery.isNotEmpty ? _searchQuery : null,
         type: _selectedType != 'All Types' ? _selectedType : null,
         scope: _selectedScope != 'All' ? _selectedScope : null,
+        audience: _selectedAudience != 'All' ? _selectedAudience : null,
       );
       if (mounted) {
         setState(() {
@@ -183,8 +185,17 @@ Widget build(BuildContext context) {
                         });
                         _loadMessages();
                       },
+                      selectedAudience: _selectedAudience,
+                      onAudienceChanged: (v) {
+                        setState(() {
+                          _selectedAudience = v!;
+                          _currentPage = 0;
+                        });
+                        _loadMessages();
+                      },
                       typeOptions: _typeOptions,
                       scopeOptions: _scopeOptions,
+                      audienceOptions: _audienceOptions,
                     ),
                     const SizedBox(height: 14),
                     if (_loading)
@@ -264,7 +275,7 @@ class _PageHeader extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Send notices to accommodation establishments',
+                    'Send notices to accommodation establishments and tourist attractions',
                     style: TextStyle(
                       color: AppColors.textGray,
                       fontSize: isMobile ? 10 : (isSmall ? 11 : 13),
@@ -330,8 +341,11 @@ class _FilterRow extends StatelessWidget {
     required this.onTypeChanged,
     required this.selectedScope,
     required this.onScopeChanged,
+    required this.selectedAudience,
+    required this.onAudienceChanged,
     required this.typeOptions,
     required this.scopeOptions,
+    required this.audienceOptions,
   });
 
   final TextEditingController searchCtrl;
@@ -340,8 +354,11 @@ class _FilterRow extends StatelessWidget {
   final ValueChanged<String?> onTypeChanged;
   final String selectedScope;
   final ValueChanged<String?> onScopeChanged;
+  final String selectedAudience;
+  final ValueChanged<String?> onAudienceChanged;
   final List<String> typeOptions;
   final List<String> scopeOptions;
+  final List<String> audienceOptions;
 
   @override
   Widget build(BuildContext context) {
@@ -375,6 +392,19 @@ class _FilterRow extends StatelessWidget {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _DropdownFilter(
+                          value: selectedAudience,
+                          items: audienceOptions,
+                          onChanged: onAudienceChanged,
+                        ),
+                      ),
+                      const Expanded(child: SizedBox()),
+                    ],
+                  ),
                 ],
               )
             : Row(
@@ -401,6 +431,14 @@ class _FilterRow extends StatelessWidget {
                       value: selectedScope,
                       items: scopeOptions,
                       onChanged: onScopeChanged,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _DropdownFilter(
+                      value: selectedAudience,
+                      items: audienceOptions,
+                      onChanged: onAudienceChanged,
                     ),
                   ),
                 ],
@@ -568,6 +606,7 @@ class _TableHeader extends StatelessWidget {
               Expanded(flex: 2, child: _HeaderCell('Type')),
               Expanded(flex: 5, child: _HeaderCell('Subject')),
               Expanded(flex: 2, child: _HeaderCell('Scope')),
+              Expanded(flex: 2, child: _HeaderCell('Audience')),
               Expanded(flex: 2, child: _HeaderCell('Sent At')),
               Expanded(
                 flex: 1,
@@ -644,6 +683,14 @@ class _MessageRow extends StatelessWidget {
       MessageType.general => 'GENERAL NOTICE',
     };
 
+    final isAttraction =
+        message.recipientKind == MessageRecipientKind.attraction;
+    final recipient = message.isBroadcast
+        ? (isAttraction
+            ? 'All Attractions (Broadcast)'
+            : 'All Businesses (Broadcast)')
+        : (isAttraction ? 'Targeted Attractions' : 'Targeted Recipients');
+
     showMessageViewDialog(
       context,
       api,
@@ -651,9 +698,7 @@ class _MessageRow extends StatelessWidget {
         subject: message.subject,
         // Show "All Businesses (Broadcast)" for broadcast messages;
         // for targeted, the delivery report in the dialog can list recipients.
-        recipient: message.isBroadcast
-            ? 'All Businesses (Broadcast)'
-            : 'Targeted Recipients',
+        recipient: recipient,
         date: _fmt(message.createdAt),
         messageType: typeLabel,
         messageContent: message.content,
@@ -711,6 +756,14 @@ class _MessageRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   _CardDetail(
+                    label: 'Audience',
+                    child: _AudienceBadge(
+                      isAttraction:
+                          message.recipientKind == MessageRecipientKind.attraction,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  _CardDetail(
                     label: 'Sent',
                     child: Text(
                       dateStr,
@@ -756,6 +809,16 @@ class _MessageRow extends StatelessWidget {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: _ScopeBadge(isBroadcast: message.isBroadcast),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _AudienceBadge(
+                    isAttraction:
+                        message.recipientKind == MessageRecipientKind.attraction,
+                  ),
                 ),
               ),
               Expanded(
@@ -846,6 +909,50 @@ class _ScopeBadge extends StatelessWidget {
     final icon = isBroadcast
         ? Icons.campaign_rounded
         : Icons.person_pin_rounded;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Audience Badge (Business vs Attraction) ─────────────────────────────────
+
+class _AudienceBadge extends StatelessWidget {
+  const _AudienceBadge({required this.isAttraction});
+
+  final bool isAttraction;
+
+  @override
+  Widget build(BuildContext context) {
+    const businessColor = Color(0xFF1A6FFF);
+    const attractionColor = Color(0xFF9B8AFB);
+
+    final color = isAttraction ? attractionColor : businessColor;
+    final label = isAttraction ? 'Attraction' : 'Business';
+    final icon = isAttraction
+        ? Icons.attractions_outlined
+        : Icons.storefront_outlined;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

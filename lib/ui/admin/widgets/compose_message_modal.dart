@@ -38,41 +38,53 @@ class AdminProfile {
 
 class ComposeMessageDraft {
   ComposeMessageDraft({
+    this.recipientKind = MessageRecipientKind.business,
     this.sendToMode = SendToMode.specific,
     this.selectedBusinesses = const [],
+    this.selectedAttractions = const [],
     this.messageType,
     this.subject = '',
     this.messageContent = '',
   });
 
-  SendToMode            sendToMode;
-  List<BusinessSummary> selectedBusinesses;
-  MessageType?          messageType;
-  String                subject;
-  String                messageContent;
+  MessageRecipientKind       recipientKind;
+  SendToMode                 sendToMode;
+  List<BusinessSummary>      selectedBusinesses;
+  List<AttractionSummary>    selectedAttractions;
+  MessageType?               messageType;
+  String                     subject;
+  String                     messageContent;
 
-  bool get isValid {
-    final hasRecipient =
-        sendToMode == SendToMode.all || selectedBusinesses.isNotEmpty;
-    return hasRecipient &&
-        messageType != null &&
-        subject.trim().isNotEmpty &&
-        messageContent.trim().isNotEmpty;
+  bool get hasRecipients {
+    if (sendToMode == SendToMode.all) return true;
+    return recipientKind == MessageRecipientKind.attraction
+        ? selectedAttractions.isNotEmpty
+        : selectedBusinesses.isNotEmpty;
   }
 
+  bool get isValid =>
+      hasRecipients &&
+      messageType != null &&
+      subject.trim().isNotEmpty &&
+      messageContent.trim().isNotEmpty;
+
   ComposeMessageDraft copyWith({
-    SendToMode?            sendToMode,
-    List<BusinessSummary>? selectedBusinesses,
-    MessageType?           messageType,
-    String?                subject,
-    String?                messageContent,
+    MessageRecipientKind?    recipientKind,
+    SendToMode?              sendToMode,
+    List<BusinessSummary>?   selectedBusinesses,
+    List<AttractionSummary>? selectedAttractions,
+    MessageType?             messageType,
+    String?                  subject,
+    String?                  messageContent,
   }) {
     return ComposeMessageDraft(
-      sendToMode:         sendToMode         ?? this.sendToMode,
-      selectedBusinesses: selectedBusinesses ?? this.selectedBusinesses,
-      messageType:        messageType        ?? this.messageType,
-      subject:            subject            ?? this.subject,
-      messageContent:     messageContent     ?? this.messageContent,
+      recipientKind:       recipientKind       ?? this.recipientKind,
+      sendToMode:          sendToMode          ?? this.sendToMode,
+      selectedBusinesses:  selectedBusinesses  ?? this.selectedBusinesses,
+      selectedAttractions: selectedAttractions ?? this.selectedAttractions,
+      messageType:         messageType         ?? this.messageType,
+      subject:             subject             ?? this.subject,
+      messageContent:      messageContent      ?? this.messageContent,
     );
   }
 }
@@ -100,9 +112,20 @@ Future<bool?> showComposeMessageDialog(
 // admin's profile later has zero effect on already-sent letters.
 
 String _buildLetter(ComposeMessageDraft d, AdminProfile admin) {
+  final isAttraction = d.recipientKind == MessageRecipientKind.attraction;
   final String recipient;
   if (d.sendToMode == SendToMode.all) {
-    recipient = 'All Registered Accommodations';
+    recipient = isAttraction
+        ? 'All Registered Attractions'
+        : 'All Registered Accommodations';
+  } else if (isAttraction) {
+    if (d.selectedAttractions.length == 1) {
+      recipient = d.selectedAttractions.first.name;
+    } else if (d.selectedAttractions.isEmpty) {
+      recipient = '—';
+    } else {
+      recipient = d.selectedAttractions.map((a) => a.name).join(', ');
+    }
   } else if (d.selectedBusinesses.length == 1) {
     recipient = d.selectedBusinesses.first.name;
   } else if (d.selectedBusinesses.isEmpty) {
@@ -118,7 +141,7 @@ String _buildLetter(ComposeMessageDraft d, AdminProfile admin) {
     senderEmail: admin.email,
     senderPhone: admin.phone,
     messageType: d.messageType ?? MessageType.general,
-    recipientKind: MessageRecipientKind.business,
+    recipientKind: d.recipientKind,
   );
 }
 
@@ -161,6 +184,11 @@ class _ComposeMessageDialogState extends State<ComposeMessageDialog>
   bool                  _loadingBiz   = true;
   String?               _bizLoadError;
 
+  // ── Attractions ────────────────────────────────────────────────────────────
+  List<AttractionSummary> _attractions = [];
+  bool                    _loadingAtt  = true;
+  String?                 _attLoadError;
+
   // ── Text Controllers ───────────────────────────────────────────────────────
   late final TextEditingController _subjectCtrl;
   late final TextEditingController _contentCtrl;
@@ -186,6 +214,7 @@ class _ComposeMessageDialogState extends State<ComposeMessageDialog>
 
     _loadAdminProfile();
     _loadBusinesses();
+    _loadAttractions();
   }
 
   @override
@@ -221,6 +250,18 @@ class _ComposeMessageDialogState extends State<ComposeMessageDialog>
       if (mounted) setState(() => _bizLoadError = 'Failed to load businesses.');
     } finally {
       if (mounted) setState(() => _loadingBiz = false);
+    }
+  }
+
+  Future<void> _loadAttractions() async {
+    setState(() { _loadingAtt = true; _attLoadError = null; });
+    try {
+      final list = await widget.api.fetchEligibleAttractions();
+      if (mounted) setState(() => _attractions = list);
+    } catch (_) {
+      if (mounted) setState(() => _attLoadError = 'Failed to load attractions.');
+    } finally {
+      if (mounted) setState(() => _loadingAtt = false);
     }
   }
 
@@ -261,6 +302,17 @@ class _ComposeMessageDialogState extends State<ComposeMessageDialog>
       if (_draft.sendToMode == SendToMode.all) {
         await widget.api.sendToAll(
           senderId:    widget.senderId,
+          recipientKind: _draft.recipientKind,
+          messageType: _draft.messageType!,
+          subject:     _draft.subject,
+          content:     frozenLetter,
+        );
+      } else if (_draft.recipientKind == MessageRecipientKind.attraction) {
+        await widget.api.sendToSelected(
+          senderId:    widget.senderId,
+          businessIds: const [],
+          attractionIds:
+              _draft.selectedAttractions.map((a) => a.id).toList(),
           messageType: _draft.messageType!,
           subject:     _draft.subject,
           content:     frozenLetter,
@@ -292,11 +344,13 @@ class _ComposeMessageDialogState extends State<ComposeMessageDialog>
   Widget build(BuildContext context) {
     _syncText();
 
-    final businessErr = _err(
+    final isAttraction = _draft.recipientKind == MessageRecipientKind.attraction;
+    final recipientErr = _err(
       'business',
-      _draft.sendToMode == SendToMode.specific &&
-          _draft.selectedBusinesses.isEmpty,
-      'Please select at least one business',
+      _draft.sendToMode == SendToMode.specific && !_draft.hasRecipients,
+      isAttraction
+          ? 'Please select at least one attraction'
+          : 'Please select at least one business',
     );
     final typeErr    = _err('messageType', _draft.messageType == null,
                             'Please select a message type');
@@ -371,7 +425,11 @@ class _ComposeMessageDialogState extends State<ComposeMessageDialog>
                                     loadingBiz:   _loadingBiz,
                                     bizLoadError: _bizLoadError,
                                     onRetryBiz:   _loadBusinesses,
-                                    businessErr:  businessErr,
+                                    attractions:  _attractions,
+                                    loadingAtt:   _loadingAtt,
+                                    attLoadError: _attLoadError,
+                                    onRetryAtt:   _loadAttractions,
+                                    recipientErr: recipientErr,
                                     typeErr:      typeErr,
                                     subjectErr:   subjectErr,
                                     contentErr:   contentErr,
@@ -530,7 +588,11 @@ class _Form extends StatelessWidget {
     required this.loadingBiz,
     required this.bizLoadError,
     required this.onRetryBiz,
-    required this.businessErr,
+    required this.attractions,
+    required this.loadingAtt,
+    required this.attLoadError,
+    required this.onRetryAtt,
+    required this.recipientErr,
     required this.typeErr,
     required this.subjectErr,
     required this.contentErr,
@@ -548,7 +610,11 @@ class _Form extends StatelessWidget {
   final bool                             loadingBiz;
   final String?                          bizLoadError;
   final VoidCallback                     onRetryBiz;
-  final String?                          businessErr;
+  final List<AttractionSummary>          attractions;
+  final bool                             loadingAtt;
+  final String?                          attLoadError;
+  final VoidCallback                     onRetryAtt;
+  final String?                          recipientErr;
   final String?                          typeErr;
   final String?                          subjectErr;
   final String?                          contentErr;
@@ -558,16 +624,43 @@ class _Form extends StatelessWidget {
   final AdminProfile                     adminProfile;
   final bool                             loadingAdmin;
 
+  bool get _isAttraction =>
+      draft.recipientKind == MessageRecipientKind.attraction;
+
+  void _changeKind(MessageRecipientKind kind) {
+    onTouch('business');
+    onChanged(draft.copyWith(
+      recipientKind:      kind,
+      selectedBusinesses: kind == MessageRecipientKind.business
+          ? draft.selectedBusinesses
+          : const [],
+      selectedAttractions: kind == MessageRecipientKind.attraction
+          ? draft.selectedAttractions
+          : const [],
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isAttraction = _isAttraction;
+    final noun = isAttraction ? 'Attraction' : 'Business';
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const _Label('Recipient Type'),
+          const SizedBox(height: 10),
+          _RecipientKindSelector(
+            selected: draft.recipientKind,
+            onChanged: _changeKind,
+          ),
+          const SizedBox(height: 18),
           const _Label('Send To'),
           const SizedBox(height: 10),
           _SendToToggle(
+            isAttraction: isAttraction,
             mode: draft.sendToMode,
             onChanged: (m) {
               onTouch('business');
@@ -575,29 +668,51 @@ class _Form extends StatelessWidget {
                 sendToMode:         m,
                 selectedBusinesses: m == SendToMode.all
                     ? [] : draft.selectedBusinesses,
+                selectedAttractions: m == SendToMode.all
+                    ? [] : draft.selectedAttractions,
               ));
             },
           ),
           if (draft.sendToMode == SendToMode.specific) ...[
             const SizedBox(height: 18),
-            const _Label('Select Business'),
+            _Label('Select $noun'),
             const SizedBox(height: 10),
-            _BusinessPicker(
-              selected:   draft.selectedBusinesses,
-              businesses: businesses,
-              loading:    loadingBiz,
-              loadError:  bizLoadError,
-              onRetry:    onRetryBiz,
-              errorText:  businessErr,
-              onChanged: (list) {
-                onTouch('business');
-                onChanged(draft.copyWith(selectedBusinesses: list));
-              },
-            ),
+            if (isAttraction)
+              _RecipientPicker<AttractionSummary>(
+                selected:   draft.selectedAttractions,
+                items:      attractions,
+                idOf:       (a) => a.id,
+                nameOf:     (a) => a.name,
+                statusOf:   (a) => a.status,
+                loading:    loadingAtt,
+                loadError:  attLoadError,
+                onRetry:    onRetryAtt,
+                errorText:  recipientErr,
+                onChanged: (list) {
+                  onTouch('business');
+                  onChanged(draft.copyWith(selectedAttractions: list));
+                },
+              )
+            else
+              _RecipientPicker<BusinessSummary>(
+                selected:   draft.selectedBusinesses,
+                items:      businesses,
+                idOf:       (b) => b.id,
+                nameOf:     (b) => b.name,
+                statusOf:   (b) => b.status,
+                loading:    loadingBiz,
+                loadError:  bizLoadError,
+                onRetry:    onRetryBiz,
+                errorText:  recipientErr,
+                onChanged: (list) {
+                  onTouch('business');
+                  onChanged(draft.copyWith(selectedBusinesses: list));
+                },
+              ),
           ],
           if (draft.sendToMode == SendToMode.all) ...[
             const SizedBox(height: 12),
-            _BroadcastNotice(),
+            _BroadcastNotice(isAttraction: isAttraction),
           ],
           const SizedBox(height: 18),
           const _Label('Message Type'),
@@ -746,18 +861,25 @@ class _SenderRow extends StatelessWidget {
 // ─── Send-To Toggle ───────────────────────────────────────────────────────────
 
 class _SendToToggle extends StatelessWidget {
-  const _SendToToggle({required this.mode, required this.onChanged});
+  const _SendToToggle({
+    required this.isAttraction,
+    required this.mode,
+    required this.onChanged,
+  });
 
+  final bool                     isAttraction;
   final SendToMode               mode;
   final ValueChanged<SendToMode> onChanged;
 
   @override
   Widget build(BuildContext context) {
+    final specific = isAttraction ? 'Specific Attraction' : 'Specific Business';
+    final all = isAttraction ? 'All Attractions' : 'All Businesses';
     return Row(
       children: [
         Expanded(
           child: _Segment(
-            label:        'Specific Business',
+            label:        specific,
             active:       mode == SendToMode.specific,
             leftRounded:  true,
             rightRounded: false,
@@ -766,7 +888,7 @@ class _SendToToggle extends StatelessWidget {
         ),
         Expanded(
           child: _Segment(
-            label:        'All Businesses',
+            label:        all,
             active:       mode == SendToMode.all,
             leftRounded:  false,
             rightRounded: true,
@@ -831,6 +953,10 @@ class _Segment extends StatelessWidget {
 // ─── Broadcast Notice ─────────────────────────────────────────────────────────
 
 class _BroadcastNotice extends StatelessWidget {
+  const _BroadcastNotice({required this.isAttraction});
+
+  final bool isAttraction;
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -844,13 +970,15 @@ class _BroadcastNotice extends StatelessWidget {
             color: const Color(0xFF9B8AFB).withOpacity(0.3)),
       ),
       child: Row(
-        children: const [
-          Icon(Icons.info_outline_rounded, color: Color(0xFF9B8AFB), size: 14),
-          SizedBox(width: 8),
+        children: [
+          const Icon(Icons.info_outline_rounded, color: Color(0xFF9B8AFB), size: 14),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Will be sent to all businesses with Approved or Warning status at time of sending.',
-              style: TextStyle(
+              isAttraction
+                  ? 'Will be sent to all attractions with Approved or Warning status at time of sending.'
+                  : 'Will be sent to all businesses with Approved or Warning status at time of sending.',
+              style: const TextStyle(
                 color:    Color(0xFF9B8AFB),
                 fontSize: 12,
                 height:   1.4,
@@ -863,12 +991,53 @@ class _BroadcastNotice extends StatelessWidget {
   }
 }
 
-// ─── Business Picker ──────────────────────────────────────────────────────────
+// ─── Recipient Kind Selector ──────────────────────────────────────────────────
 
-class _BusinessPicker extends StatelessWidget {
-  const _BusinessPicker({
+class _RecipientKindSelector extends StatelessWidget {
+  const _RecipientKindSelector({
     required this.selected,
-    required this.businesses,
+    required this.onChanged,
+  });
+
+  final MessageRecipientKind             selected;
+  final ValueChanged<MessageRecipientKind> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _Segment(
+            label:        'Establishments',
+            active:       selected == MessageRecipientKind.business,
+            leftRounded:  true,
+            rightRounded: false,
+            onTap:        () => onChanged(MessageRecipientKind.business),
+          ),
+        ),
+        Expanded(
+          child: _Segment(
+            label:        'Attractions',
+            active:       selected == MessageRecipientKind.attraction,
+            leftRounded:  false,
+            rightRounded: true,
+            onTap:        () => onChanged(MessageRecipientKind.attraction),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Recipient Picker ─────────────────────────────────────────────────────────
+
+class _RecipientPicker<T> extends StatelessWidget {
+  const _RecipientPicker({
+    required this.selected,
+    required this.items,
+    required this.idOf,
+    required this.nameOf,
+    required this.statusOf,
     required this.loading,
     required this.loadError,
     required this.onRetry,
@@ -876,18 +1045,21 @@ class _BusinessPicker extends StatelessWidget {
     this.errorText,
   });
 
-  final List<BusinessSummary>               selected;
-  final List<BusinessSummary>               businesses;
-  final bool                                loading;
-  final String?                             loadError;
-  final VoidCallback                        onRetry;
-  final ValueChanged<List<BusinessSummary>> onChanged;
-  final String?                             errorText;
+  final List<T>                         selected;
+  final List<T>                         items;
+  final String Function(T)              idOf;
+  final String Function(T)              nameOf;
+  final String Function(T)              statusOf;
+  final bool                            loading;
+  final String?                         loadError;
+  final VoidCallback                    onRetry;
+  final ValueChanged<List<T>>           onChanged;
+  final String?                         errorText;
 
-  void _toggle(BusinessSummary biz, List<BusinessSummary> current) {
-    final updated = List<BusinessSummary>.from(current);
-    final idx     = updated.indexWhere((b) => b.id == biz.id);
-    if (idx >= 0) updated.removeAt(idx); else updated.add(biz);
+  void _toggle(T item, List<T> current) {
+    final updated = List<T>.from(current);
+    final idx     = updated.indexWhere((e) => idOf(e) == idOf(item));
+    if (idx >= 0) updated.removeAt(idx); else updated.add(item);
     onChanged(updated);
   }
 
@@ -968,7 +1140,7 @@ class _BusinessPicker extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(b.name,
+                    Text(nameOf(b),
                         style: const TextStyle(
                             color: AppColors.textWhite, fontSize: 12)),
                     const SizedBox(width: 6),
@@ -993,9 +1165,9 @@ class _BusinessPicker extends StatelessWidget {
           ),
           padding: const EdgeInsets.symmetric(horizontal: 14),
           child: DropdownButtonHideUnderline(
-            child: DropdownButton<BusinessSummary>(
+            child: DropdownButton<T>(
               value:            null,
-              hint:             const Text('Add business...',
+              hint:             const Text('Add recipient...',
                   style: TextStyle(
                       color: AppColors.textSubtle, fontSize: 13.5)),
               isExpanded:       true,
@@ -1003,9 +1175,9 @@ class _BusinessPicker extends StatelessWidget {
               iconEnabledColor: AppColors.textGray,
               style: const TextStyle(
                   color: AppColors.textWhite, fontSize: 13.5),
-              items: businesses.map((b) {
-                final isSelected = selected.any((s) => s.id == b.id);
-                return DropdownMenuItem<BusinessSummary>(
+              items: items.map((b) {
+                final isSelected = selected.any((s) => idOf(s) == idOf(b));
+                return DropdownMenuItem<T>(
                   value: b,
                   child: Row(
                     children: [
@@ -1015,8 +1187,8 @@ class _BusinessPicker extends StatelessWidget {
                           child: Icon(Icons.check_rounded,
                               color: AppColors.primaryBlue, size: 14),
                         ),
-                      Expanded(child: Text(b.name)),
-                      if (b.status == 'warning')
+                      Expanded(child: Text(nameOf(b))),
+                      if (statusOf(b) == 'warning')
                         Container(
                           margin:  const EdgeInsets.only(left: 6),
                           padding: const EdgeInsets.symmetric(
