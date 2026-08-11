@@ -291,6 +291,7 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
         senderEmail: senderEmail,
         senderPhone: senderPhone,
         messageType: messageType,
+        recipientKind: MessageRecipientKind.business,
       );
       await _messagesApi.sendToSelected(
         senderId: senderId,

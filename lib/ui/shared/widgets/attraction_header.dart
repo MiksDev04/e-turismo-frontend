@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/session_service.dart';
+import '../../../router/app_routes.dart';
 import 'logout_confirm_dialog.dart';
 
 // ─── Attraction Header ────────────────────────────────────────────────────────
 
 /// Top bar for attraction pages. Reads the user + attraction name directly
-/// from [SessionService]. The profile block is display-only for now — there is
-/// no dedicated attraction profile page yet.
+/// from [SessionService]. The profile block navigates to the attraction
+/// profile page.
 class AttractionHeader extends StatelessWidget implements PreferredSizeWidget {
   const AttractionHeader({super.key, required this.title});
 
@@ -134,51 +135,58 @@ class _ProfileBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: compact ? 26 : 30,
-          height: compact ? 26 : 30,
-          decoration: const BoxDecoration(
-            color: AppColors.primaryCyan,
-            shape: BoxShape.circle,
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            initials,
-            style: const TextStyle(
-              color: AppColors.textWhite,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        if (!compact) ...[
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                displayName,
+    return GestureDetector(
+      onTap: () =>
+          Navigator.pushReplacementNamed(context, AppRoutes.attractionProfile),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Row(
+          children: [
+            Container(
+              width: compact ? 26 : 30,
+              height: compact ? 26 : 30,
+              decoration: const BoxDecoration(
+                color: AppColors.primaryCyan,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                initials,
                 style: const TextStyle(
                   color: AppColors.textWhite,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-              Text(
-                attractionName,
-                style: const TextStyle(
-                  color: AppColors.textGray,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w300,
-                ),
+            ),
+            if (!compact) ...[
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    displayName,
+                    style: const TextStyle(
+                      color: AppColors.textWhite,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    attractionName,
+                    style: const TextStyle(
+                      color: AppColors.textGray,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w300,
+                    ),
+                  ),
+                ],
               ),
             ],
-          ),
-        ],
-      ],
+          ],
+        ),
+      ),
     );
   }
 }

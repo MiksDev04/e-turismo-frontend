@@ -26,6 +26,8 @@ import 'package:app/ui/business/pages/business_profile_page.dart';
 import 'package:app/ui/attraction/pages/attraction_dashboard_page.dart';
 import 'package:app/ui/attraction/pages/attraction_visit_entry_page.dart';
 import 'package:app/ui/attraction/pages/attraction_visit_records_page.dart';
+import 'package:app/ui/attraction/pages/attraction_messages_page.dart';
+import 'package:app/ui/attraction/pages/attraction_profile_page.dart';
 
 import 'package:app/ui/shared/layouts/admin_layout.dart';
 import 'package:app/ui/shared/layouts/business_layout.dart';
@@ -74,6 +76,8 @@ const _attractionRouteMeta = {
   AppRoutes.attractionDashboard: _RouteMeta('Dashboard', 0),
   AppRoutes.attractionVisitEntry: _RouteMeta('Visit Entry', 1),
   AppRoutes.attractionVisitRecord: _RouteMeta('Visit Records', 2),
+  AppRoutes.attractionMessages: _RouteMeta('Messages', 3),
+  AppRoutes.attractionProfile: _RouteMeta('Profile', 4),
 };
 
 // ─── Route Permissions ────────────────────────────────────────────────────────
@@ -99,6 +103,8 @@ abstract final class _RoutePermissions {
     AppRoutes.attractionDashboard: {'attraction'},
     AppRoutes.attractionVisitEntry: {'attraction'},
     AppRoutes.attractionVisitRecord: {'attraction'},
+    AppRoutes.attractionMessages: {'attraction'},
+    AppRoutes.attractionProfile: {'attraction'},
   };
 
   /// Returns null if allowed, or a sentinel string if blocked.
@@ -235,6 +241,14 @@ abstract final class AppRouter {
       ),
       AppRoutes.attractionVisitRecord => _fade(
         const AttractionVisitRecordsPage(),
+        settings,
+      ),
+      AppRoutes.attractionMessages => _fade(
+        const AttractionMessagesPage(),
+        settings,
+      ),
+      AppRoutes.attractionProfile => _fade(
+        const AttractionProfilePage(),
         settings,
       ),
       _ => _fade(const _RedirectToInitialWidget(), settings),

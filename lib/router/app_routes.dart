@@ -20,4 +20,6 @@ abstract final class AppRoutes {
   static const attractionDashboard = '/attraction/dashboard';
   static const attractionVisitEntry = '/attraction/visit-entry';
   static const attractionVisitRecord = '/attraction/visit-records';
+  static const attractionMessages = '/attraction/messages';
+  static const attractionProfile = '/attraction/profile';
 }

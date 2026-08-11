@@ -164,6 +164,7 @@ class _AdminCompliancePageState extends State<AdminCompliancePage> {
       senderEmail: session?.email ?? '',
       senderPhone: session?.phone ?? '',
       messageType: MessageType.compliance,
+      recipientKind: MessageRecipientKind.business,
     );
     try {
       await AdminComplianceApi().updateBusinessStatus(

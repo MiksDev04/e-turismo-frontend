@@ -118,6 +118,7 @@ String _buildLetter(ComposeMessageDraft d, AdminProfile admin) {
     senderEmail: admin.email,
     senderPhone: admin.phone,
     messageType: d.messageType ?? MessageType.general,
+    recipientKind: MessageRecipientKind.business,
   );
 }
 

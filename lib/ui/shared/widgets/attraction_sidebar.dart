@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../api/messages_api.dart';
 import '../../../router/app_routes.dart';
 
 // ─── Nav Item Model ───────────────────────────────────────────────────────────
@@ -9,18 +12,20 @@ class AttrNavItem {
     required this.icon,
     required this.label,
     required this.index,
+    this.badge,
     required this.route,
   });
 
   final IconData icon;
   final String label;
   final int index;
+  final int? badge;
   final String route;
 }
 
 // ─── Attraction Sidebar ───────────────────────────────────────────────────────
 
-class AttractionSidebar extends StatelessWidget {
+class AttractionSidebar extends StatefulWidget {
   const AttractionSidebar({
     super.key,
     required this.selectedIndex,
@@ -30,7 +35,18 @@ class AttractionSidebar extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onItemSelected;
 
-  List<AttrNavItem> get _navItems => [
+  @override
+  State<AttractionSidebar> createState() => _AttractionSidebarState();
+}
+
+class _AttractionSidebarState extends State<AttractionSidebar> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(MessageBadgeController.instance.refresh());
+  }
+
+  List<AttrNavItem> _navItems(int unreadCount) => [
         AttrNavItem(
           icon: Icons.dashboard_rounded,
           label: 'Dashboard',
@@ -49,42 +65,54 @@ class AttractionSidebar extends StatelessWidget {
           index: 2,
           route: AppRoutes.attractionVisitRecord,
         ),
+        AttrNavItem(
+          icon: Icons.chat_bubble_outline_rounded,
+          label: 'Messages',
+          index: 3,
+          badge: unreadCount > 0 ? unreadCount : null,
+          route: AppRoutes.attractionMessages,
+        ),
       ];
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 210,
-      decoration: const BoxDecoration(
-        color: AppColors.sidebarBg,
-        border: Border(right: BorderSide(color: AppColors.cardBorder)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _SidebarBrand(),
-          const SizedBox(height: 12),
-          const _AttractionBadge(),
-          const SizedBox(height: 8),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              children: _navItems
-                  .map(
-                    (item) => _NavTile(
-                      item: item,
-                      isSelected: selectedIndex == item.index,
-                      onTap: () {
-                        onItemSelected(item.index);
-                        Navigator.pushReplacementNamed(context, item.route);
-                      },
-                    ),
-                  )
-                  .toList(),
-            ),
+    return ValueListenableBuilder<int>(
+      valueListenable: MessageBadgeController.instance.unreadCount,
+      builder: (context, unreadCount, _) {
+        return Container(
+          width: 210,
+          decoration: const BoxDecoration(
+            color: AppColors.sidebarBg,
+            border: Border(right: BorderSide(color: AppColors.cardBorder)),
           ),
-        ],
-      ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const _SidebarBrand(),
+              const SizedBox(height: 12),
+              const _AttractionBadge(),
+              const SizedBox(height: 8),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  children: _navItems(unreadCount)
+                      .map(
+                        (item) => _NavTile(
+                          item: item,
+                          isSelected: widget.selectedIndex == item.index,
+                          onTap: () {
+                            widget.onItemSelected(item.index);
+                            Navigator.pushReplacementNamed(context, item.route);
+                          },
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -243,6 +271,25 @@ class _NavTile extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (item.badge != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryCyan,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${item.badge}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

@@ -290,6 +290,7 @@ class _AdminAttractionsPageState extends State<AdminAttractionsPage> {
         senderEmail: senderEmail,
         senderPhone: senderPhone,
         messageType: messageType,
+        recipientKind: MessageRecipientKind.attraction,
       );
       await _messagesApi.sendToSelected(
         senderId: senderId,

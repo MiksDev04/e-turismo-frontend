@@ -18,11 +18,24 @@ import '../../shared/layouts/attraction_layout.dart';
 import '../../../api/attraction_dashboard_api.dart';
 import '../../../core/services/session_service.dart';
 
+const _attractionTypeLabels = {
+  'ecotourism': 'Ecotourism',
+  'natural_attractions': 'Natural Attractions',
+  'cultural': 'Cultural',
+  'religious': 'Religious',
+  'historical_heritage_sites': 'Historical Heritage Sites',
+  'agri_tourism': 'Agri-Tourism',
+  'farm_tourism_sites': 'Farm Tourism Sites',
+};
+
 String _displayTypeLabel(String raw) {
   final normalised = raw.trim();
   if (normalised.isEmpty) return raw;
+  final mapped = _attractionTypeLabels[normalised];
+  if (mapped != null) return mapped;
   return normalised
-      .split(RegExp(r'\s+'))
+      .toLowerCase()
+      .split(RegExp(r'[_\s]+'))
       .where((part) => part.isNotEmpty)
       .map((part) => part[0].toUpperCase() + part.substring(1))
       .join(' ');

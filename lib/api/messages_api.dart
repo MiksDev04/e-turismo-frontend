@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'base_api.dart';
+import '../core/services/session_service.dart';
 import '../core/utils/datetime_utils.dart';
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -35,8 +36,12 @@ enum RecipientStatus {
   String get dbValue => name;
 }
 
+/// Whether the letter's recipient is an accommodation establishment
+/// or a tourist attraction. Controls the salutation used in the letter.
+enum MessageRecipientKind { business, attraction }
+
 /// Builds the official tourism-office letter format used by compose message
-/// and by automated accommodation decisions.
+/// and by automated accommodation/attraction decisions.
 String buildOfficialMessageLetter({
   required String recipient,
   required String subject,
@@ -45,6 +50,7 @@ String buildOfficialMessageLetter({
   required String senderEmail,
   required String senderPhone,
   required MessageType messageType,
+  required MessageRecipientKind recipientKind,
   DateTime? now,
 }) {
   final current = now ?? DateTime.now();
@@ -69,6 +75,9 @@ String buildOfficialMessageLetter({
     MessageType.announcement => 'ANNOUNCEMENT',
     MessageType.general => 'GENERAL NOTICE',
   };
+  final salutation = recipientKind == MessageRecipientKind.attraction
+      ? 'Dear Attraction Representative,'
+      : 'Dear Establishment Representative,';
   return '''REPUBLIC OF THE PHILIPPINES
 CITY OF SAN PABLO
 OFFICE OF TOURISM
@@ -80,7 +89,7 @@ Re: ${subject.isEmpty ? '(no subject)' : subject}
 
 $typeLabel
 
-Dear Establishment Representative,
+$salutation
 
 ${messageContent.isEmpty ? '(no content)' : messageContent}
 
@@ -98,7 +107,7 @@ San Pablo City Tourism Office
 This is an official communication from the San Pablo City Tourism Office.''';
 }
 
-/// Shared unread-count cache for business navigation badges.
+/// Shared unread-count cache for business/attraction navigation badges.
 class MessageBadgeController {
   MessageBadgeController._();
 
@@ -111,7 +120,10 @@ class MessageBadgeController {
     if (_isRefreshing) return;
     _isRefreshing = true;
     try {
-      final count = await MessagesApi().fetchUnreadCount('');
+      final role = SessionService.instance.current?.role;
+      final count = role == 'attraction'
+          ? await MessagesApi().fetchAttractionUnreadCount()
+          : await MessagesApi().fetchUnreadCount('');
       unreadCount.value = count;
     } catch (_) {
       unreadCount.value = 0;
@@ -186,12 +198,13 @@ class Message {
 }
 
 /// Represents a row from `message_recipients` joined with its parent message.
-/// Used on the business inbox side.
+/// Used on the business/attraction inbox side.
 class InboxMessage {
   const InboxMessage({
     required this.recipientId,
     required this.messageId,
-    required this.businessId,
+    this.businessId,
+    this.attractionId,
     required this.status,
     required this.isRead,
     required this.createdAt,
@@ -207,7 +220,8 @@ class InboxMessage {
 
   final String recipientId;
   final String messageId;
-  final String businessId;
+  final String? businessId;
+  final String? attractionId;
   final RecipientStatus status;
   final bool isRead;
   final DateTime createdAt;
@@ -225,7 +239,8 @@ class InboxMessage {
     return InboxMessage(
       recipientId: json['id'] as String,
       messageId: json['message_id'] as String,
-      businessId: json['business_id'] as String,
+      businessId: json['business_id'] as String?,
+      attractionId: json['attraction_id'] as String?,
       status: RecipientStatus.values.firstWhere(
         (e) => e.dbValue == json['status'],
         orElse: () => RecipientStatus.unread,
@@ -419,6 +434,42 @@ class MessagesApi extends BaseApi {
 
   Future<int> fetchUnreadCount(String businessId) async {
     final response = await get('/api/messages/business/unread-count');
+    return handleResponse(response) as int;
+  }
+
+  // ── Attraction: Inbox ────────────────────────────────────────────────────
+
+  Future<({List<InboxMessage> data, int totalCount, int pageCount})>
+      fetchAttractionInbox(
+    String attractionId, {
+    bool includeArchived = false,
+    int page = 1,
+    int pageSize = 10,
+    String? searchQuery,
+    String? type,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'pageSize': pageSize.toString(),
+      'includeArchived': includeArchived.toString(),
+    };
+    if (searchQuery != null && searchQuery.isNotEmpty) queryParams['searchQuery'] = searchQuery;
+    if (type != null && type != 'All') queryParams['type'] = type;
+
+    final uri = Uri.parse('/api/messages/attraction/inbox').replace(queryParameters: queryParams);
+    final response = await get(uri.toString());
+    final body = handleResponse(response) as Map<String, dynamic>;
+    final list = body['data'] as List<dynamic>;
+    final totalCount = (body['totalCount'] as num?)?.toInt() ?? 0;
+    final pageCount = (body['pageCount'] as num?)?.toInt() ?? 0;
+    final data = list
+        .map((r) => InboxMessage.fromJson(r as Map<String, dynamic>))
+        .toList();
+    return (data: data, totalCount: totalCount, pageCount: pageCount);
+  }
+
+  Future<int> fetchAttractionUnreadCount() async {
+    final response = await get('/api/messages/attraction/unread-count');
     return handleResponse(response) as int;
   }
 

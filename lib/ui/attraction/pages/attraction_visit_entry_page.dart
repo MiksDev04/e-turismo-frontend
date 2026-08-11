@@ -503,7 +503,7 @@ class _VisitInfoCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           _FieldCol(
-            label: "Tourist Count *",
+            label: "Visitor/s Count *",
             errorText: errors["guestCount"],
             child: _EntryNumberField(
               controller: guestCountCtrl,

@@ -3,16 +3,18 @@ import 'package:app/core/constants/app_colors.dart';
 import 'package:app/api/attraction_visit_record_api.dart';
 import '../../shared/layouts/attraction_layout.dart';
 import '../../shared/widgets/paginator.dart';
+import '../../shared/widgets/action_icon_button.dart';
 import '../../../router/app_routes.dart';
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 String _fmtDate(DateTime dt) {
-  return "${dt.year.toString().padLeft(4,'0')}-${dt.month.toString().padLeft(2,'0')}-${dt.day.toString().padLeft(2,'0')}";
+  return "${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}";
 }
 
 String _fmtDateTime(DateTime? dt) {
   if (dt == null) return '-';
-  return "${_fmtDate(dt)} ${dt.hour.toString().padLeft(2,'0')}:${dt.minute.toString().padLeft(2,'0')}";
+  return "${_fmtDate(dt)} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
 }
 
 String _locationDisplay(VisitRecord r) {
@@ -32,126 +34,34 @@ String _nationalityLabel(VisitRecord r) {
   return r.isForeign ? 'Foreign' : 'Filipino';
 }
 
-class VisitRecordDetailDialog extends StatelessWidget {
-  const VisitRecordDetailDialog({super.key, required this.record});
-  final VisitRecord record;
+String _originLabel(VisitRecord r) => r.isForeign ? 'International' : 'Domestic';
 
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 560),
-        decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.cardBorder),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: BoxDecoration(
-                color: AppColors.backgroundMid.withOpacity(0.5),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-                border: const Border(bottom: BorderSide(color: AppColors.cardBorder)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Visit Record Details', style: TextStyle(color: AppColors.textWhite, fontSize: 15, fontWeight: FontWeight.w600)),
-                  GestureDetector(onTap: () => Navigator.of(context).pop(), child: const Icon(Icons.close_rounded, color: AppColors.textGray, size: 20)),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: _DetailGrid(record: record),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              child: SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  style: TextButton.styleFrom(backgroundColor: AppColors.primaryCyan.withOpacity(0.1), foregroundColor: AppColors.primaryCyan, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                  child: const Text('Close', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+// ─── Filter Options ───────────────────────────────────────────────────────────
 
-class _DetailGrid extends StatelessWidget {
-  const _DetailGrid({required this.record});
-  final VisitRecord record;
+const List<String> _originOptions = [
+  'All Nationalities',
+  'Domestic',
+  'International',
+];
 
-  @override
-  Widget build(BuildContext context) {
-    final rows = <_DetailRow>[
-      _DetailRow('Visit Date', _fmtDate(record.visitDate)),
-      _DetailRow('Guest Count', record.guestCount.toString()),
-      _DetailRow('Male Count', record.maleCount?.toString() ?? '-'),
-      _DetailRow('Female Count', record.femaleCount?.toString() ?? '-'),
-      _DetailRow('Nationality', _nationalityLabel(record)),
-    ];
-    if (record.isForeign) {
-      rows.add(_DetailRow('Country', record.country ?? '-'));
-      rows.add(_DetailRow('Province', '-'));
-      rows.add(_DetailRow('City / Municipality', '-'));
-    } else {
-      rows.add(_DetailRow('Country', '-'));
-      rows.add(_DetailRow('Province', record.province ?? '-'));
-      rows.add(_DetailRow('City / Municipality', record.cityMunicipality ?? '-'));
-    }
-    rows.add(_DetailRow('Created At', _fmtDateTime(record.createdAt)));
-    rows.add(_DetailRow('Updated At', _fmtDateTime(record.updatedAt)));
-
-    return Column(
-      children: List.generate(rows.length, (i) {
-        final r = rows[i];
-        return Container(
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.cardBorder))),
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          child: Row(
-            children: [
-              SizedBox(width: 140, child: Text(r.label, style: const TextStyle(color: AppColors.textGray, fontSize: 12))),
-              Expanded(child: Text(r.value, style: const TextStyle(color: AppColors.textWhite, fontSize: 12.5, fontWeight: FontWeight.w500))),
-            ],
-          ),
-        );
-      }),
-    );
-  }
-}
-
-class _DetailRow {
-  const _DetailRow(this.label, this.value);
-  final String label;
-  final String value;
-}
+// ─── Visit Records Page ───────────────────────────────────────────────────────
 
 class AttractionVisitRecordsPage extends StatefulWidget {
   const AttractionVisitRecordsPage({super.key});
+
   @override
-  State<AttractionVisitRecordsPage> createState() => _AttractionVisitRecordsPageState();
+  State<AttractionVisitRecordsPage> createState() =>
+      _AttractionVisitRecordsPageState();
 }
 
 class _AttractionVisitRecordsPageState extends State<AttractionVisitRecordsPage> {
   final _api = AttractionVisitRecordApi();
-  final _searchCtrl = TextEditingController();
 
   List<VisitRecord> _records = [];
   bool _isLoading = true;
   String? _loadError;
 
+  bool _showFilters = false;
   int _currentPage = 0;
   int _pageSize = 10;
   int _totalPages = 0;
@@ -159,21 +69,14 @@ class _AttractionVisitRecordsPageState extends State<AttractionVisitRecordsPage>
 
   DateTime? _dateFrom;
   DateTime? _dateTo;
-  String _originFilter = 'all';
+  String? _selectedOrigin;
 
   static const List<int> _pageSizeOptions = [10, 20, 30];
-  static const List<String> _originOptions = ['all', 'domestic', 'international'];
 
   @override
   void initState() {
     super.initState();
     _loadRecords();
-  }
-
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
   }
 
   Future<void> _loadRecords() async {
@@ -182,13 +85,20 @@ class _AttractionVisitRecordsPageState extends State<AttractionVisitRecordsPage>
       _loadError = null;
     });
 
+    String? originParam;
+    if (_selectedOrigin == 'Domestic') {
+      originParam = 'domestic';
+    } else if (_selectedOrigin == 'International') {
+      originParam = 'international';
+    }
+
     try {
       final result = await _api.fetchVisitRecords(
         page: _currentPage + 1,
         pageSize: _pageSize,
         dateFrom: _dateFrom?.toIso8601String().split('T').first,
         dateTo: _dateTo?.toIso8601String().split('T').first,
-        origin: _originFilter,
+        origin: originParam,
       );
 
       if (!mounted) return;
@@ -198,348 +108,1266 @@ class _AttractionVisitRecordsPageState extends State<AttractionVisitRecordsPage>
           _records = data.data;
           _totalPages = data.pageCount;
           _totalItems = data.totalCount;
+          _isLoading = false;
         });
       } else {
-        setState(() => _loadError = result.error);
+        setState(() {
+          _isLoading = false;
+          _loadError = result.error;
+        });
       }
     } catch (e) {
       if (!mounted) return;
-      setState(() => _loadError = 'Failed to load records: $e');
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      setState(() {
+        _isLoading = false;
+        _loadError = 'Failed to load records: $e';
+      });
     }
   }
 
-  Future<void> _pickDateRange(BuildContext context) async {
-    final picked = await showDateRangePicker(
+  // ── Date pickers ──────────────────────────────────────────────────────────
+
+  Future<void> _pickDate(BuildContext context, bool isFrom) async {
+    final picked = await showDatePicker(
       context: context,
+      initialDate: (isFrom ? _dateFrom : _dateTo) ?? DateTime.now(),
       firstDate: DateTime(2020),
       lastDate: DateTime(2030),
-      initialDateRange: _dateFrom != null && _dateTo != null
-          ? DateTimeRange(start: _dateFrom!, end: _dateTo!)
-          : null,
       builder: (ctx, child) => Theme(
         data: ThemeData(
           useMaterial3: true,
-          colorScheme: const ColorScheme.light(
-            primary: Color(0xFF3B82F6),
-            onPrimary: Colors.white,
-            surface: Colors.white,
-            onSurface: Color(0xFF111827),
+          colorScheme: ColorScheme.dark(
+            primary: AppColors.primaryCyan,
+            onPrimary: Colors.black,
+            primaryContainer: AppColors.primaryCyan.withOpacity(0.25),
+            onPrimaryContainer: AppColors.primaryCyan,
+            surface: AppColors.cardBackground,
+            onSurface: AppColors.textWhite,
+            onSurfaceVariant: AppColors.textGray,
+            outline: AppColors.cardBorder,
+            surfaceVariant: AppColors.inputBackground,
           ),
-          dialogTheme: DialogThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+          dialogTheme: DialogThemeData(
+            backgroundColor: AppColors.cardBackground,
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: AppColors.cardBorder),
+            ),
+          ),
+          textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(foregroundColor: AppColors.primaryCyan),
+          ),
         ),
         child: child!,
       ),
     );
-    if (picked == null) return;
+    if (picked == null || !mounted) return;
     setState(() {
-      _dateFrom = picked.start;
-      _dateTo = picked.end;
+      if (isFrom) {
+        _dateFrom = picked;
+      } else {
+        _dateTo = picked;
+      }
       _currentPage = 0;
     });
     _loadRecords();
   }
 
-  void _clearDateRange() {
+  void _clearAllFilters() {
     setState(() {
       _dateFrom = null;
       _dateTo = null;
-      _currentPage = 0;
-    });
-    _searchCtrl.clear();
-    _loadRecords();
-  }
-
-  List<VisitRecord> get _filteredRecords {
-    final query = _searchCtrl.text.toLowerCase().trim();
-    if (query.isEmpty) return _records;
-    return _records.where((r) {
-      return r.guestCount.toString().contains(query) ||
-          (r.country?.toLowerCase().contains(query) ?? false) ||
-          (r.province?.toLowerCase().contains(query) ?? false) ||
-          (r.cityMunicipality?.toLowerCase().contains(query) ?? false) ||
-          _nationalityLabel(r).toLowerCase().contains(query) ||
-          _fmtDate(r.visitDate).contains(query);
-    }).toList();
-  }
-
-  Future<void> _showDetail(VisitRecord record) async {
-    final detail = await _api.fetchVisitRecordById(record.id);
-    if (!mounted) return;
-    VisitRecord displayRecord = record;
-    if (detail.isSuccess && detail.data != null) {
-      displayRecord = detail.data!;
-    }
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierColor: Colors.black.withOpacity(0.4),
-      builder: (_) => VisitRecordDetailDialog(record: displayRecord),
-    );
-  }
-
-  void _onPageChanged(int page) {
-    setState(() => _currentPage = page);
-    _loadRecords();
-  }
-
-  void _onPageSizeChanged(int pageSize) {
-    setState(() {
-      _pageSize = pageSize;
+      _selectedOrigin = null;
       _currentPage = 0;
     });
     _loadRecords();
   }
+
+  void _reload() {
+    _currentPage = 0;
+    _loadRecords();
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final isMobile = MediaQuery.of(context).size.width < 600;
-
     return AttractionLayout(
       title: 'Visit Records',
       selectedIndex: 2,
-      onNavSelected: (i) {},
-      child: Scaffold(
-        backgroundColor: AppColors.backgroundDark,
-        floatingActionButton: isMobile
-            ? FloatingActionButton.extended(
-                onPressed: () => Navigator.pushReplacementNamed(context, AppRoutes.attractionVisitEntry),
-                label: const Text('Create Record'),
-                backgroundColor: AppColors.primaryCyan,
-                foregroundColor: AppColors.textWhite,
-                icon: const Icon(Icons.add_rounded),
-              )
-            : null,
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildToolbar(isMobile),
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator(color: AppColors.primaryCyan))
-                  : _buildTable(),
-            ),
-          ],
-        ),
+      onNavSelected: (_) {},
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 700;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.all(isNarrow ? 16 : 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _PageHeader(
+                        showFilters: _showFilters,
+                        onFilterToggle: () =>
+                            setState(() => _showFilters = !_showFilters),
+                        onCreate: () => Navigator.pushReplacementNamed(
+                            context, AppRoutes.attractionVisitEntry),
+                        isNarrow: isNarrow,
+                        totalRecords: _totalItems,
+                      ),
+                      const SizedBox(height: 8),
+                      if (_showFilters) ...[
+                        _FiltersSection(
+                          dateFrom: _dateFrom,
+                          dateTo: _dateTo,
+                          selectedOrigin: _selectedOrigin,
+                          originOptions: _originOptions,
+                          onDateFromTap: () => _pickDate(context, true),
+                          onDateToTap: () => _pickDate(context, false),
+                          onOriginChanged: (v) {
+                            setState(() => _selectedOrigin = v);
+                            _reload();
+                          },
+                          onClearAll: _clearAllFilters,
+                          isNarrow: isNarrow,
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+                      if (_isLoading)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 48),
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: AppColors.primaryCyan,
+                            ),
+                          ),
+                        )
+                      else if (_loadError != null)
+                        _ErrorBanner(
+                          message: _loadError!,
+                          onRetry: _loadRecords,
+                        )
+                      else
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _VisitTable(
+                              records: _records,
+                              isNarrow: isNarrow,
+                            ),
+                            const SizedBox(height: 12),
+                            Paginator(
+                              currentPage: _currentPage,
+                              totalPages: _totalPages,
+                              totalItems: _totalItems,
+                              pageSize: _pageSize,
+                              pageSizeOptions: _pageSizeOptions,
+                              onPageSizeChanged: (size) {
+                                setState(() {
+                                  _pageSize = size;
+                                  _currentPage = 0;
+                                });
+                                _loadRecords();
+                              },
+                              onPageChanged: (page) {
+                                setState(() => _currentPage = page);
+                                _loadRecords();
+                              },
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
+}
 
-  Widget _buildToolbar(bool isMobile) {
+// ─── Error Banner ─────────────────────────────────────────────────────────────
+
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 24, vertical: 12),
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        border: const Border(bottom: BorderSide(color: AppColors.cardBorder)),
+        color: AppColors.accentRed.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.accentRed.withOpacity(0.35)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          if (!isMobile) ...[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Visit Records', style: TextStyle(color: AppColors.textWhite, fontSize: 17, fontWeight: FontWeight.w600)),
-                Row(
-                  children: [
-                    if (_dateFrom != null || _dateTo != null)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: TextButton.icon(
-                          onPressed: _clearDateRange,
-                          icon: const Icon(Icons.clear_rounded, size: 16, color: AppColors.textGray),
-                          label: Text('Clear Dates', style: TextStyle(color: AppColors.textGray, fontSize: 12)),
-                        ),
-                      ),
-                    FilledButton.icon(
-                      onPressed: () => _pickDateRange(context),
-                      icon: const Icon(Icons.calendar_today_rounded, size: 16),
-                      label: const Text('Date Range'),
-                      style: FilledButton.styleFrom(backgroundColor: AppColors.inputBackground, foregroundColor: AppColors.textWhite, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7))),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton.icon(
-                      onPressed: () => Navigator.pushReplacementNamed(context, AppRoutes.attractionVisitEntry),
-                      icon: const Icon(Icons.add_rounded, size: 16),
-                      label: const Text('Create Record'),
-                      style: FilledButton.styleFrom(backgroundColor: AppColors.primaryCyan, foregroundColor: AppColors.textWhite, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7))),
-                    ),
-                  ],
-                ),
-              ],
+          const Icon(
+            Icons.error_outline_rounded,
+            color: AppColors.accentRed,
+            size: 18,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: AppColors.accentRed,
+                fontSize: 13.5,
+              ),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    height: 34,
-                    decoration: BoxDecoration(color: AppColors.inputBackground, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.inputBorder)),
-                    child: Row(children: [
-                      const SizedBox(width: 8),
-                      const Icon(Icons.search_rounded, size: 16, color: AppColors.textGray),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: TextField(
-                          controller: _searchCtrl,
-                          decoration: const InputDecoration(border: InputBorder.none, isDense: true, hintText: 'Search records...', hintStyle: TextStyle(color: AppColors.textSubtle, fontSize: 12.5)),
-                          style: TextStyle(color: AppColors.textWhite, fontSize: 12.5),
-                          onChanged: (_) => setState(() {}),
-                        ),
-                      ),
-                    ]),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 150,
-                  child: DropdownButtonFormField<String>(
-                    value: _originFilter,
-                    decoration: InputDecoration(isDense: true, contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: AppColors.inputBackground),
-                    dropdownColor: AppColors.cardBackground,
-                    style: const TextStyle(color: AppColors.textWhite, fontSize: 12.5),
-                    items: _originOptions.map((v) {
-                      final label = v == 'all' ? 'All Nationalities' : (v == 'domestic' ? 'Domestic' : 'International');
-                      return DropdownMenuItem(value: v, child: Text(label));
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() {
-                          _originFilter = val;
-                          _currentPage = 0;
-                        });
-                        _loadRecords();
-                      }
-                    },
-                  ),
-                ),
-              ],
+          ),
+          TextButton(
+            onPressed: onRetry,
+            child: const Text(
+              'Retry',
+              style: TextStyle(color: AppColors.primaryCyan),
             ),
-          ],
-          if (isMobile) ...[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Visit Records', style: TextStyle(color: AppColors.textWhite, fontSize: 17, fontWeight: FontWeight.w600)),
-                Row(
-                  children: [
-                    IconButton(icon: const Icon(Icons.filter_alt_rounded, color: AppColors.textGray, size: 20), onPressed: () => _pickDateRange(context)),
-                    IconButton(icon: const Icon(Icons.add_rounded, color: AppColors.primaryCyan, size: 22), onPressed: () => Navigator.pushReplacementNamed(context, AppRoutes.attractionVisitEntry)),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Container(
-              height: 34,
-              decoration: BoxDecoration(color: AppColors.inputBackground, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.inputBorder)),
-              child: Row(children: [
-                const SizedBox(width: 8),
-                const Icon(Icons.search_rounded, size: 16, color: AppColors.textGray),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: TextField(
-                    controller: _searchCtrl,
-                    decoration: const InputDecoration(border: InputBorder.none, isDense: true, hintText: 'Search...', hintStyle: TextStyle(color: AppColors.textSubtle, fontSize: 12.5)),
-                    style: TextStyle(color: AppColors.textWhite, fontSize: 12.5),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-              ]),
-            ),
-          ],
+          ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildTable() {
-    final displayed = _filteredRecords;
+// ─── Filters Section ──────────────────────────────────────────────────────────
 
-    if (_loadError != null) {
-      return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.error_outline_rounded, color: AppColors.accentRed, size: 32),
-          const SizedBox(height: 8),
-          Text(_loadError!, style: TextStyle(color: AppColors.textGray, fontSize: 13)),
-          const SizedBox(height: 12),
-          TextButton(onPressed: _loadRecords, child: Text('Retry', style: TextStyle(color: AppColors.primaryCyan))),
-        ]),
+class _FiltersSection extends StatelessWidget {
+  const _FiltersSection({
+    required this.dateFrom,
+    required this.dateTo,
+    required this.selectedOrigin,
+    required this.originOptions,
+    required this.onDateFromTap,
+    required this.onDateToTap,
+    required this.onOriginChanged,
+    required this.onClearAll,
+    required this.isNarrow,
+  });
+
+  final DateTime? dateFrom;
+  final DateTime? dateTo;
+  final String? selectedOrigin;
+  final List<String> originOptions;
+  final VoidCallback onDateFromTap;
+  final VoidCallback onDateToTap;
+  final ValueChanged<String?> onOriginChanged;
+  final VoidCallback onClearAll;
+  final bool isNarrow;
+
+  bool get _hasActiveFilters =>
+      dateFrom != null ||
+      dateTo != null ||
+      (selectedOrigin != null && selectedOrigin != 'All Nationalities');
+
+  @override
+  Widget build(BuildContext context) {
+    if (isNarrow) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _DateFilter(
+                  label: 'Date From',
+                  date: dateFrom,
+                  onTap: onDateFromTap,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _DateFilter(
+                  label: 'Date To',
+                  date: dateTo,
+                  onTap: onDateToTap,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _DropFilter(
+            label: 'Nationality',
+            value: selectedOrigin,
+            items: originOptions,
+            onChanged: onOriginChanged,
+            icon: Icons.flag_outlined,
+          ),
+          if (_hasActiveFilters) ...[
+            const SizedBox(height: 10),
+            _ClearAllBtn(onTap: onClearAll),
+          ],
+        ],
       );
     }
 
-    if (displayed.isEmpty) {
-      return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.document_scanner_outlined, color: AppColors.textSubtle, size: 40),
-          const SizedBox(height: 8),
-          Text(_searchCtrl.text.isNotEmpty || _dateFrom != null || _originFilter != 'all'
-              ? 'No matching records found.'
-              : 'No visit records yet.', style: TextStyle(color: AppColors.textGray, fontSize: 13)),
-        ]),
-      );
-    }
-
-    return Column(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.cardBorder),
-              ),
-              child: DataTable(
-                columnSpacing: 14,
-                headingRowHeight: 36,
-                dataRowHeight: 40,
-                headingTextStyle: TextStyle(color: AppColors.textGray, fontSize: 11.5, fontWeight: FontWeight.w600),
-                dataTextStyle: TextStyle(color: AppColors.textWhite, fontSize: 12.5),
-                border: TableBorder.all(color: AppColors.cardBorder),
-                columns: const [
-                DataColumn(label: Text('Date', style: TextStyle(color: AppColors.textGray))),
-                DataColumn(label: Text('Guests', style: TextStyle(color: AppColors.textGray)), numeric: true),
-                DataColumn(label: Text('Nationality', style: TextStyle(color: AppColors.textGray))),
-                DataColumn(label: Text('Location', style: TextStyle(color: AppColors.textGray))),
-                DataColumn(label: Text('Created', style: TextStyle(color: AppColors.textGray))),
-                DataColumn(label: Text('Actions', style: TextStyle(color: AppColors.textGray))),
+          child: _DateFilter(
+            label: 'Date From',
+            date: dateFrom,
+            onTap: onDateFromTap,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _DateFilter(
+            label: 'Date To',
+            date: dateTo,
+            onTap: onDateToTap,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _DropFilter(
+            label: 'Nationality',
+            value: selectedOrigin,
+            items: originOptions,
+            onChanged: onOriginChanged,
+            icon: Icons.flag_outlined,
+          ),
+        ),
+        if (_hasActiveFilters) ...[
+          const SizedBox(width: 12),
+          _ClearAllBtn(onTap: onClearAll),
+        ],
+      ],
+    );
+  }
+}
+
+// ─── Filter Widgets ───────────────────────────────────────────────────────────
+
+class _DateFilter extends StatelessWidget {
+  const _DateFilter({
+    required this.label,
+    required this.date,
+    required this.onTap,
+  });
+
+  final String label;
+  final DateTime? date;
+  final VoidCallback onTap;
+
+  String get _display {
+    if (date == null) return 'mm/dd/yyyy';
+    return '${date!.month.toString().padLeft(2, '0')}/'
+        '${date!.day.toString().padLeft(2, '0')}/${date!.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textGray,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 4),
+        GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.cardBackground,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.cardBorder),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.calendar_today,
+                  color: AppColors.textSubtle,
+                  size: 14,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _display,
+                    style: TextStyle(
+                      color: date != null
+                          ? AppColors.textWhite
+                          : AppColors.textSubtle,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
               ],
-              rows: displayed.map((r) => DataRow(
-                cells: [
-                  DataCell(Text(_fmtDate(r.visitDate))),
-                  DataCell(Text(r.guestCount.toString())),
-                  DataCell(Text(_nationalityLabel(r))),
-                  DataCell(Text(_locationDisplay(r))),
-                  DataCell(Text(r.createdAt != null ? _fmtDateTime(r.createdAt) : '-')),
-                  DataCell(Row(children: [
-                    Icon(Icons.visibility_rounded, size: 16, color: AppColors.primaryCyan),
-                    const SizedBox(width: 4),
-                    Text('View', style: TextStyle(color: AppColors.primaryCyan, fontSize: 11.5)),
-                  ])),
-                ],
-                onSelectChanged: (_) => _showDetail(r),
-              )).toList(),
             ),
           ),
         ),
+      ],
+    );
+  }
+}
+
+class _DropFilter extends StatelessWidget {
+  const _DropFilter({
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+    required this.icon,
+  });
+
+  final String label;
+  final String? value;
+  final List<String> items;
+  final ValueChanged<String?> onChanged;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textGray,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Paginator(
-            currentPage: _currentPage,
-            totalPages: _totalPages,
-            totalItems: _totalItems,
-            pageSize: _pageSize,
-            pageSizeOptions: _pageSizeOptions,
-            onPageSizeChanged: _onPageSizeChanged,
-            onPageChanged: _onPageChanged,
+        const SizedBox(height: 4),
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            color: AppColors.cardBackground,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.cardBorder),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: value,
+              isDense: true,
+              isExpanded: true,
+              hint: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(
+                  children: [
+                    Icon(icon, color: AppColors.textSubtle, size: 14),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'All',
+                      style: TextStyle(
+                        color: AppColors.textSubtle,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              dropdownColor: AppColors.cardBackground,
+              iconEnabledColor: AppColors.textGray,
+              style: const TextStyle(
+                color: AppColors.textWhite,
+                fontSize: 12.5,
+              ),
+              items: items
+                  .map(
+                    (e) => DropdownMenuItem(
+                      value: e,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: Text(e),
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: onChanged,
+            ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ClearAllBtn extends StatelessWidget {
+  const _ClearAllBtn({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.cardBorder),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.clear_all, color: AppColors.textGray, size: 15),
+            SizedBox(width: 5),
+            Text(
+              'Clear All',
+              style: TextStyle(color: AppColors.textGray, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Page Header ──────────────────────────────────────────────────────────────
+
+class _PageHeader extends StatelessWidget {
+  const _PageHeader({
+    required this.showFilters,
+    required this.onFilterToggle,
+    required this.onCreate,
+    required this.isNarrow,
+    required this.totalRecords,
+  });
+
+  final bool showFilters;
+  final VoidCallback onFilterToggle;
+  final VoidCallback onCreate;
+  final bool isNarrow;
+  final int totalRecords;
+
+  @override
+  Widget build(BuildContext context) {
+    final createBtn = FilledButton.icon(
+      onPressed: onCreate,
+      icon: const Icon(Icons.add_rounded, size: 16),
+      label: const Text('Create Record'),
+      style: FilledButton.styleFrom(
+        backgroundColor: AppColors.primaryCyan,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+    final filterBtn = _FilterPanelButton(
+      isActive: showFilters,
+      onTap: onFilterToggle,
+    );
+
+    if (isNarrow) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _TitleSubtitle(totalRecords: totalRecords),
+          const SizedBox(height: 12),
+          Row(children: [createBtn, const SizedBox(width: 10), filterBtn]),
+        ],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        _TitleSubtitle(totalRecords: totalRecords),
+        const Spacer(),
+        createBtn,
+        const SizedBox(width: 10),
+        filterBtn,
+      ],
+    );
+  }
+}
+
+class _TitleSubtitle extends StatelessWidget {
+  const _TitleSubtitle({required this.totalRecords});
+  final int totalRecords;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Visit Records ($totalRecords)',
+          style: const TextStyle(
+            color: AppColors.textWhite,
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'View and manage all visitor entries',
+          style: TextStyle(color: AppColors.textGray, fontSize: 13),
+        ),
+      ],
+    );
+  }
+}
+
+class _FilterPanelButton extends StatelessWidget {
+  const _FilterPanelButton({required this.isActive, required this.onTap});
+  final bool isActive;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive
+              ? AppColors.primaryCyan.withOpacity(0.15)
+              : AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isActive ? AppColors.primaryCyan : AppColors.cardBorder,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.filter_list_rounded,
+              color: isActive ? AppColors.primaryCyan : AppColors.textGray,
+              size: 16,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Filters',
+              style: TextStyle(
+                color: isActive ? AppColors.primaryCyan : AppColors.textGray,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Visit Table ──────────────────────────────────────────────────────────────
+
+class _VisitTable extends StatelessWidget {
+  const _VisitTable({
+    required this.records,
+    required this.isNarrow,
+  });
+
+  final List<VisitRecord> records;
+  final bool isNarrow;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.cardBorder),
+      ),
+      child: Column(
+        children: [
+          if (!isNarrow) ...[
+            const _TableHeader(),
+            const Divider(color: AppColors.cardBorder, height: 1),
+          ],
+          if (records.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(40),
+              child: Center(
+                child: Text(
+                  'No records found.',
+                  style: TextStyle(color: AppColors.textGray),
+                ),
+              ),
+            )
+          else
+            ...records.map((r) {
+              final isLast = r == records.last;
+              return Column(
+                children: [
+                  if (isNarrow)
+                    _RecordCard(record: r)
+                  else
+                    _RecordRow(record: r),
+                  if (!isLast)
+                    const Divider(color: AppColors.cardBorder, height: 1),
+                ],
+              );
+            }),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Table Header ─────────────────────────────────────────────────────────────
+
+class _TableHeader extends StatelessWidget {
+  const _TableHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Row(
+        children: [
+          Expanded(flex: 3, child: _HeaderCell('Date')),
+          Expanded(flex: 1, child: _HeaderCell('Visitors')),
+          Expanded(flex: 3, child: _HeaderCell('Nationality')),
+          Expanded(flex: 3, child: _HeaderCell('Location')),
+          Expanded(flex: 2, child: _HeaderCell('Actions')),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderCell extends StatelessWidget {
+  const _HeaderCell(this.label);
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: const TextStyle(
+        color: AppColors.textGray,
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+      ),
+    );
+  }
+}
+
+// ─── Table Row (wide) ─────────────────────────────────────────────────────────
+
+class _RecordRow extends StatelessWidget {
+  const _RecordRow({required this.record});
+
+  final VisitRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    final r = record;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Text(
+              _fmtDate(r.visitDate),
+              style: const TextStyle(
+                color: AppColors.textWhite,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 1,
+            child: Text(
+              '${r.guestCount}',
+              style: const TextStyle(
+                color: AppColors.textWhite,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              _nationalityLabel(r),
+              style: const TextStyle(color: AppColors.textGray, fontSize: 13),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              _locationDisplay(r),
+              style: const TextStyle(color: AppColors.textGray, fontSize: 13),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: _ActionButtons(
+              onView: () => _showRecordModal(context, r),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Record Card (narrow) ─────────────────────────────────────────────────────
+
+class _RecordCard extends StatelessWidget {
+  const _RecordCard({required this.record});
+
+  final VisitRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    final r = record;
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _fmtDate(r.visitDate),
+                      style: const TextStyle(
+                        color: AppColors.textWhite,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _originLabel(r),
+                      style: const TextStyle(
+                        color: AppColors.textGray,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              _GuestBadge(count: r.guestCount),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 16,
+            runSpacing: 4,
+            children: [
+              _InfoChip(label: 'Nationality', value: _nationalityLabel(r)),
+              _InfoChip(label: 'Location', value: _locationDisplay(r)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              ActionIconButton(
+                icon: Icons.visibility_outlined,
+                label: 'View',
+                color: AppColors.accentGreen,
+                showBorder: true,
+                compact: true,
+                onTap: () => _showRecordModal(context, r),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GuestBadge extends StatelessWidget {
+  const _GuestBadge({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.primaryCyan.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: AppColors.primaryCyan.withOpacity(0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.people_outline,
+            color: AppColors.primaryCyan,
+            size: 13,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '$count',
+            style: const TextStyle(
+              color: AppColors.primaryCyan,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  const _InfoChip({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return RichText(
+      text: TextSpan(
+        style: const TextStyle(fontSize: 12),
+        children: [
+          TextSpan(
+            text: '$label: ',
+            style: const TextStyle(color: AppColors.textSubtle),
+          ),
+          TextSpan(
+            text: value,
+            style: const TextStyle(color: AppColors.textGray),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Action Buttons ───────────────────────────────────────────────────────────
+
+class _ActionButtons extends StatelessWidget {
+  const _ActionButtons({required this.onView});
+
+  final VoidCallback onView;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      children: [
+        ActionIconButton(
+          icon: Icons.visibility_outlined,
+          label: 'View',
+          color: AppColors.accentGreen,
+          showBorder: true,
+          compact: true,
+          onTap: onView,
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Full Record Modal ────────────────────────────────────────────────────────
+
+void _showRecordModal(BuildContext context, VisitRecord record) {
+  showDialog(
+    context: context,
+    barrierColor: Colors.black.withOpacity(0.6),
+    builder: (_) => _RecordDetailModal(record: record),
+  );
+}
+
+class _RecordDetailModal extends StatelessWidget {
+  const _RecordDetailModal({required this.record});
+  final VisitRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    final isNarrow = MediaQuery.of(context).size.width < 560;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: isNarrow ? 16 : 40,
+        vertical: 32,
+      ),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 640),
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.cardBorder),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.4),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Header ─────────────────────────────────────────────────
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: AppColors.cardBorder)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryCyan.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.event_note_rounded,
+                      color: AppColors.primaryCyan,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Visit Record Details',
+                      style: TextStyle(
+                        color: AppColors.textWhite,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: AppColors.textGray,
+                      size: 20,
+                    ),
+                    splashRadius: 18,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Body ───────────────────────────────────────────────────
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.7,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppColors.inputBackground,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.cardBorder.withOpacity(0.4)),
+                      ),
+                      child: const _ModalSectionLabel('Visit Information'),
+                    ),
+                    const SizedBox(height: 10),
+                    _VisitInfoGrid(record: record),
+                    const SizedBox(height: 24),
+
+                    Container(
+                      width: double.infinity,
+                      height: 1,
+                      color: AppColors.cardBorder.withOpacity(0.6),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppColors.inputBackground,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.cardBorder.withOpacity(0.4)),
+                      ),
+                      child: const _ModalSectionLabel('Visitors Demographics'),
+                    ),
+                    const SizedBox(height: 12),
+
+                    _GuestDemoGrid(record: record),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Visit Info Grid ──────────────────────────────────────────────────────────
+
+class _VisitInfoGrid extends StatelessWidget {
+  const _VisitInfoGrid({required this.record});
+  final VisitRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      (Icons.calendar_today,        'Visit Date',    _fmtDate(record.visitDate)),
+      (Icons.people_outline,        'Total Visitors',  '${record.guestCount}'),
+      (Icons.male_outlined,         'Male Visitors',   record.maleCount?.toString() ?? '-'),
+      (Icons.female_outlined,       'Female Visitors', record.femaleCount?.toString() ?? '-'),
+      (Icons.schedule_rounded,      'Created At',    _fmtDateTime(record.createdAt)),
+      (Icons.update_rounded,        'Updated At',    _fmtDateTime(record.updatedAt)),
+    ];
+
+    const spacing = 12.0;
+    const rowGap = 12.0;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final itemWidth = (constraints.maxWidth - spacing) / 2;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: rowGap,
+          children: [
+            for (final item in items)
+              SizedBox(
+                width: itemWidth,
+                child: _DetailField(
+                  icon: item.$1,
+                  label: item.$2,
+                  value: item.$3,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ─── Guest Demographics Grid ──────────────────────────────────────────────────
+
+class _GuestDemoGrid extends StatelessWidget {
+  const _GuestDemoGrid({required this.record});
+  final VisitRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      (Icons.flag_outlined,             'Nationality',     _nationalityLabel(record)),
+      (Icons.flight_outlined,           'Origin',          _originLabel(record)),
+      (Icons.public_outlined,           'Country',         record.isForeign
+          ? (record.country ?? '-')
+          : 'Philippines'),
+      (Icons.map_outlined,              'Province',        record.isForeign
+          ? '-'
+          : (record.province ?? '-')),
+      (Icons.location_city_outlined,    'City/Municipality', record.isForeign
+          ? '-'
+          : (record.cityMunicipality ?? '-')),
+    ];
+
+    const spacing = 12.0;
+    const rowGap = 12.0;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final itemWidth = (constraints.maxWidth - spacing) / 2;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: rowGap,
+          children: [
+            for (final item in items)
+              SizedBox(
+                width: itemWidth,
+                child: _DetailField(
+                  icon: item.$1,
+                  label: item.$2,
+                  value: item.$3,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _DetailField extends StatelessWidget {
+  const _DetailField({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: AppColors.textSubtle, size: 13),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textSubtle,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          style: const TextStyle(
+            color: AppColors.textWhite,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Modal Helpers ────────────────────────────────────────────────────────────
+
+class _ModalSectionLabel extends StatelessWidget {
+  const _ModalSectionLabel(this.label);
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: const TextStyle(
+        color: AppColors.textWhite,
+        fontSize: 12.5,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.2,
+      ),
     );
   }
 }
