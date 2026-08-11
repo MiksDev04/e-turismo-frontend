@@ -18,4 +18,6 @@ abstract final class AppRoutes {
   static const businessMessages = '/business/messages';
   static const businessProfile = '/business/profile';
   static const attractionDashboard = '/attraction/dashboard';
+  static const attractionVisitEntry = '/attraction/visit-entry';
+  static const attractionVisitRecord = '/attraction/visit-records';
 }

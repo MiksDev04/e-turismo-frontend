@@ -105,6 +105,18 @@ class AttractionBottomNavBar extends StatelessWidget {
         index: 0,
         route: AppRoutes.attractionDashboard,
       ),
+      AttrNavItem(
+        icon: Icons.person_add_rounded,
+        label: 'Visit Entry',
+        index: 1,
+        route: AppRoutes.attractionVisitEntry,
+      ),
+      AttrNavItem(
+        icon: Icons.list_rounded,
+        label: 'Records',
+        index: 2,
+        route: AppRoutes.attractionVisitRecord,
+      ),
     ];
 
     return Container(
