@@ -158,6 +158,9 @@ class EstablishmentReport {
     this.monthData,
     this.seriesData,
     this.varData,
+    this.attractionType,
+    this.attractionDaily,
+    this.attractionTotals,
   });
 
   final String businessId;
@@ -178,10 +181,20 @@ class EstablishmentReport {
   /// For VAR: aggregated sex × residence counts
   final VarData? varData;
 
+  /// For VAR 1 (attraction): the attraction's tourism type list
+  final List<String>? attractionType;
+
+  /// For VAR 1 (attraction): day number (1-31) → sex × residence counts
+  final Map<String, VarData>? attractionDaily;
+
+  /// For VAR 1 (attraction): month totals in sex × residence shape
+  final VarData? attractionTotals;
+
   static EstablishmentReport fromJson(Map<String, dynamic> json) {
     final md = json['monthData'];
     final sd = json['seriesData'];
     final vd = json['varData'];
+    final rawDaily = json['attractionDaily'] ?? json['daily'];
 
     return EstablishmentReport(
       businessId: json['businessId'] as String,
@@ -201,6 +214,20 @@ class EstablishmentReport {
               .toList()
           : null,
       varData: vd != null ? VarData.fromJson(vd as Map<String, dynamic>) : null,
+      attractionType: json['attractionType'] != null
+          ? (json['attractionType'] as List).map((e) => e.toString()).toList()
+          : null,
+      attractionDaily: rawDaily != null
+          ? (rawDaily as Map<String, dynamic>).map(
+              (day, v) => MapEntry(
+                day,
+                VarData.fromJson(v as Map<String, dynamic>),
+              ),
+            )
+          : null,
+      attractionTotals: json['attractionTotals'] != null
+          ? VarData.fromJson(json['attractionTotals'] as Map<String, dynamic>)
+          : null,
     );
   }
 }

@@ -754,7 +754,12 @@ class _TypeBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = type.toUpperCase();
     final isDae = label == 'DAE';
-    final color = isDae ? const Color(0xFF00C48C) : const Color(0xFFFFCA28);
+    final isAttraction = label == 'ATTRACTION';
+    final color = isDae
+        ? const Color(0xFF00C48C)
+        : isAttraction
+            ? const Color(0xFF7C4DFF)
+            : const Color(0xFFFFCA28);
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
@@ -828,7 +833,9 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
 
   bool get _isDae => _reportType == 'dae';
   bool get _isVar => _reportType == 'var';
-  bool get _needsSingleMonth => _isDae && (_variant == 'daily' || _variant == 'summary');
+  bool get _isAttraction => _reportType == 'attraction';
+  bool get _needsSingleMonth =>
+      _isDae && (_variant == 'daily' || _variant == 'summary') || _isAttraction;
   bool get _needsMultiMonth => (_isDae && _variant == 'series') || _isVar;
 
   bool get _canCreate {
@@ -875,15 +882,21 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
 
   String get _dialogTitle {
     if (_isVar) return 'Create VAR Report';
+    if (_isAttraction) return 'Create VAR 1 Report';
     return 'Create DAE Report';
   }
 
   String get _dialogSubtitle {
     if (_isVar) return 'Select the period for the VAR report';
+    if (_isAttraction) return 'Daily visitor breakdown for tourist attractions';
     return 'View live data \u2014 no file generated until you download';
   }
 
-  String get _effectiveVariant => _isVar ? 'total' : _variant;
+  String get _effectiveVariant {
+    if (_isVar) return 'total';
+    if (_isAttraction) return 'daily';
+    return _variant;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -939,6 +952,22 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
                         _rangeStart = null;
                         _rangeEnd = null;
                         _selectedMonth = null;
+                      }),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _TypeCard(
+                      icon: Icons.attractions_rounded,
+                      label: 'VAR 1',
+                      subtitle: 'Attraction',
+                      selected: _isAttraction,
+                      onTap: () => setState(() {
+                        _reportType = 'attraction';
+                        _rangeStart = null;
+                        _rangeEnd = null;
+                        _selectedMonth = null;
+                        _variant = 'daily';
                       }),
                     ),
                   ),
