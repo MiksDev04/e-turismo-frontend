@@ -55,25 +55,48 @@ class _Var {
 
 // ─────────────────────────────────────────────────────────────────────────
 // VAR 1 (TOURIST ATTRACTION) PALETTE
-// Lifted from VAR-REPORT-ATTRACTION_DAILY.xlsx: yellow header (#FFFF00),
-// green total (#92D050), Arial throughout.  Day column = B (narrow), a
-// "Week Day" column = C, then 15 data columns (D..R).
+// Lifted from same day blank.xlsx: yellow header (#FFFF00), green total
+// (#92D050), Arial Narrow table cells, Arial titles.  Day column = B, a
+// "Week Day" column = C, then 15 data columns (D..R) with per-column widths
+// and a mixed thin/medium border scheme at the group boundaries.
 // ─────────────────────────────────────────────────────────────────────────
 class _Var1 {
   static const String font = 'Arial';
+  static const String narrow = 'Arial Narrow';
+  static const String dayFont = 'Calibri';
   static const Color paper = Colors.white;
   static const Color ink = Colors.black;
   static const Color gridLine = Colors.black;
   static const Color headerYellow = Color(0xFFFFFF00);
   static const Color totalGreen = Color(0xFF92D050);
-  static const double dataSize = 8.5;
-  static const double daySize = 10.0;
-  static const double headerSize = 8.5;
-  static const double smallSize = 9.0;
+  static const Color grandTotalYellow = Color(0xFFFFFF00);
 
-  static const double dayColWidth = 32;
-  static const double weekdayColWidth = 78;
-  static const double dataColWidth = 55;
+  static const double dataSize = 10.0; // Arial Narrow 10 data cells
+  static const double daySize = 11.0; // Calibri 11 day / weekday cells
+  static const double headerSize = 8.0; // Arial Narrow 8 bold headers
+
+  static const double thin = 0.5;
+  static const double medium = 0.5;
+
+  // Column widths (px) for B..R from the template (52 / 74 / 15 data cols).
+  static const double dayColWidth = 52;
+  static const double weekdayColWidth = 74;
+  static const List<double> dataColWidths = [
+    66, 69, 70, 66, 68, 70, 66, 64, 66, 70, 64, 64, 73, 77, 80,
+  ];
+  static double get dataColWidthSum =>
+      dataColWidths.fold(0, (a, b) => a + b);
+  static double get tableWidth =>
+      dayColWidth + weekdayColWidth + dataColWidthSum;
+
+  // Row heights (px) for the 4-level header and data rows.
+  static const double headerRow1 = 22; // 16.5pt
+  static const double headerRow2 = 20; // 15pt
+  static const double headerRow3 = 38; // 28.5pt
+  static const double headerRow4 = 23; // 17.25pt
+  static const double dataRowHeight = 32; // 24pt
+  static const double lastDataRowHeight = 35; // 26.25pt
+  static const double totalRowHeight = 47; // 35.25pt
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1197,17 +1220,36 @@ class _VarReportTable extends StatelessWidget {
 Container _var1DataCell(
   String text, {
   required double width,
+  double height = _Var1.dataRowHeight,
   bool bold = false,
-  double height = 17,
   bool isTotal = false,
+  bool isGrandTotal = false,
   bool day = false,
+  double? fontSize,
+  double? borderLeft,
+  double? borderRight,
+  double? borderTop,
+  double? borderBottom,
 }) {
+  final double l = borderLeft ?? _Var1.thin;
+  final double r = borderRight ?? _Var1.thin;
+  final double t = borderTop ?? _Var1.thin;
+  final double b = borderBottom ?? _Var1.thin;
   return Container(
     width: width,
     height: height,
     decoration: BoxDecoration(
-      color: isTotal ? _Var1.totalGreen : _Var1.paper,
-      border: Border.all(color: _Var1.gridLine, width: 0.5),
+      color: isGrandTotal
+          ? _Var1.grandTotalYellow
+          : isTotal
+              ? _Var1.totalGreen
+              : _Var1.paper,
+      border: Border(
+        left: BorderSide(color: _Var1.gridLine, width: l),
+        right: BorderSide(color: _Var1.gridLine, width: r),
+        top: BorderSide(color: _Var1.gridLine, width: t),
+        bottom: BorderSide(color: _Var1.gridLine, width: b),
+      ),
     ),
     alignment: Alignment.center,
     padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -1215,8 +1257,13 @@ Container _var1DataCell(
       text,
       textAlign: TextAlign.center,
       style: TextStyle(
-        fontFamily: _Var1.font,
-        fontSize: day ? _Var1.daySize : _Var1.dataSize,
+        fontFamily: day ? _Var1.dayFont : _Var1.narrow,
+        fontSize: fontSize ??
+            (isTotal
+                ? (isGrandTotal ? 12.0 : 11.0)
+                : day
+                    ? _Var1.daySize
+                    : _Var1.dataSize),
         fontWeight: bold ? FontWeight.bold : FontWeight.normal,
         color: _Var1.ink,
       ),
@@ -1229,14 +1276,28 @@ Container _var1HeaderCell(
   required double width,
   bool bold = true,
   bool wrap = false,
-  double height = 20,
+  double height = _Var1.headerRow1,
+  double? fontSize,
+  double? borderLeft,
+  double? borderRight,
+  double? borderTop,
+  double? borderBottom,
 }) {
+  final double l = borderLeft ?? _Var1.thin;
+  final double r = borderRight ?? _Var1.thin;
+  final double t = borderTop ?? _Var1.thin;
+  final double b = borderBottom ?? _Var1.thin;
   return Container(
     width: width,
     height: height,
     decoration: BoxDecoration(
       color: _Var1.headerYellow,
-      border: Border.all(color: _Var1.gridLine, width: 0.5),
+      border: Border(
+        left: BorderSide(color: _Var1.gridLine, width: l),
+        right: BorderSide(color: _Var1.gridLine, width: r),
+        top: BorderSide(color: _Var1.gridLine, width: t),
+        bottom: BorderSide(color: _Var1.gridLine, width: b),
+      ),
     ),
     alignment: Alignment.center,
     padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
@@ -1246,8 +1307,8 @@ Container _var1HeaderCell(
       softWrap: wrap,
       overflow: TextOverflow.clip,
       style: TextStyle(
-        fontFamily: _Var1.font,
-        fontSize: _Var1.headerSize,
+        fontFamily: _Var1.narrow,
+        fontSize: fontSize ?? _Var1.headerSize,
         fontWeight: bold ? FontWeight.bold : FontWeight.normal,
         color: _Var1.ink,
       ),
@@ -1266,17 +1327,37 @@ class _Var1ReportTable extends StatelessWidget {
   final int month;
   final int year;
 
+  // Column widths (px) for B..R in order.
+  static const List<double> _colW = [
+    _Var1.dayColWidth,
+    _Var1.weekdayColWidth,
+    ..._Var1.dataColWidths,
+  ];
+
   static const double _dayW = _Var1.dayColWidth;
   static const double _wdW = _Var1.weekdayColWidth;
-  static const double _dataW = _Var1.dataColWidth;
 
-  static const double _h1 = 20.0;
-  static const double _h2 = 18.0;
-  static const double _h3 = 30.0;
-  static const double _h4 = 20.0;
+  static const double _h1 = _Var1.headerRow1;
+  static const double _h2 = _Var1.headerRow2;
+  static const double _h3 = _Var1.headerRow3;
+  static const double _h4 = _Var1.headerRow4;
   static const double _headerH = _h1 + _h2 + _h3 + _h4;
 
-  static const double _tableW = _dayW + _wdW + 15 * _dataW;
+  static double get _tableW => _Var1.tableWidth;
+
+  static double _colX(int index) => _colW.take(index).fold(0.0, (a, b) => a + b);
+
+  // Medium vertical separators: outer edges plus the group boundaries
+  // (C|D, F|G, I|J, L|M, O|P) and the Grand Total block (P|Q, Q|R).
+  static bool _mediumLeft(int col) =>
+      col == 0 ||
+      col == 2 ||
+      col == 5 ||
+      col == 8 ||
+      col == 11 ||
+      col == 14 ||
+      col == 15 ||
+      col == 16;
 
   @override
   Widget build(BuildContext context) {
@@ -1288,9 +1369,7 @@ class _Var1ReportTable extends StatelessWidget {
   }
 
   Widget _buildHeader() {
-    const double xDay = 0;
-    const double xWd = _dayW;
-    const double xData = _dayW + _wdW;
+    final double xData = _colX(2);
     const double y0 = 0;
     const double y1 = _h1;
     const double y2 = _h1 + _h2;
@@ -1303,15 +1382,32 @@ class _Var1ReportTable extends StatelessWidget {
       required double w,
       required double h,
       bool wrap = false,
+      double? fontSize,
+      double? borderLeft,
+      double? borderRight,
+      double? borderTop,
+      double? borderBottom,
     }) {
       return Positioned(
         left: x,
         top: y,
         width: w,
         height: h,
-        child: _var1HeaderCell(text, width: w, height: h, wrap: wrap),
+        child: _var1HeaderCell(
+          text,
+          width: w,
+          height: h,
+          wrap: wrap,
+          fontSize: fontSize,
+          borderLeft: borderLeft,
+          borderRight: borderRight,
+          borderTop: borderTop,
+          borderBottom: borderBottom,
+        ),
       );
     }
+
+    const labels = ['Male', 'Female', 'Total'];
 
     return SizedBox(
       width: _tableW,
@@ -1319,69 +1415,120 @@ class _Var1ReportTable extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.hardEdge,
         children: [
-          // ── Row 1 (y=0): "Date" spans B16:C16 ────────────────────────
-          cell('Date', x: xDay, y: y0, w: _dayW + _wdW, h: _h1),
-          // D16:O16 = "*** Place of Residence"
-          cell('*** Place of Residence', x: xData, y: y0, w: _dataW * 12, h: _h1),
-          // P16:R18 = "* Grand Total Number of Visitors" (3 rows)
+          // ── Row 1: "Date" (B:C), "*** Place of Residence" (D:O),
+          //    "* Grand Total Number of Visitors" (P:R, 3 rows) ────────
+          cell(
+            'Date',
+            x: 0,
+            y: y0,
+            w: _dayW + _wdW,
+            h: _h1,
+            borderLeft: _Var1.medium,
+            borderTop: _Var1.medium,
+          ),
+          cell(
+            '*** Place of Residence',
+            x: xData,
+            y: y0,
+            w: _colX(14) - xData,
+            h: _h1,
+            borderLeft: _Var1.medium,
+            borderTop: _Var1.medium,
+          ),
           cell(
             '* Grand Total Number of Visitors',
-            x: xData + _dataW * 12,
+            x: _colX(14),
             y: y0,
-            w: _dataW * 3,
+            w: _colW[14] + _colW[15] + _colW[16],
             h: _h1 + _h2 + _h3,
             wrap: true,
+            borderLeft: _Var1.medium,
+            borderRight: _Var1.medium,
+            borderTop: _Var1.medium,
           ),
 
-          // ── Row 2 (y=20) ─────────────────────────────────────────────
-          // B17:B19 = "Day" (3 rows)
-          cell('Day', x: xDay, y: y1, w: _dayW, h: _h2 + _h3 + _h4, wrap: true),
-          // C17:C19 = "Week Day (Mon-Sun)" (3 rows)
+          // ── Row 2 ────────────────────────────────────────────────────
+          cell(
+            'Day',
+            x: 0,
+            y: y1,
+            w: _dayW,
+            h: _h2 + _h3 + _h4,
+            wrap: true,
+            borderLeft: _Var1.medium,
+            borderBottom: _Var1.medium,
+          ),
           cell(
             'Week Day (Mon-Sun)',
-            x: xWd,
+            x: _dayW,
             y: y1,
             w: _wdW,
             h: _h2 + _h3 + _h4,
             wrap: true,
+            borderBottom: _Var1.medium,
           ),
-          // D17:L17 = "Philippines"
-          cell('Philippines', x: xData, y: y1, w: _dataW * 9, h: _h2),
-          // M17:O18 = "Foreign Country Residence" (2 rows)
+          cell(
+            'Philippines',
+            x: xData,
+            y: y1,
+            w: _colX(11) - xData,
+            h: _h2,
+            borderLeft: _Var1.medium,
+          ),
           cell(
             'Foreign Country Residence',
-            x: xData + _dataW * 9,
+            x: _colX(11),
             y: y1,
-            w: _dataW * 3,
+            w: _colX(14) - _colX(11),
             h: _h2 + _h3,
             wrap: true,
+            borderLeft: _Var1.medium,
           ),
 
-          // ── Row 3 (y=38) ─────────────────────────────────────────────
+          // ── Row 3 ────────────────────────────────────────────────────
           cell(
             'This City/Municipality',
             x: xData,
             y: y2,
-            w: _dataW * 3,
+            w: _colX(5) - xData,
             h: _h3,
             wrap: true,
+            borderLeft: _Var1.medium,
           ),
           cell(
             'Other City/Municipality',
-            x: xData + _dataW * 3,
+            x: _colX(5),
             y: y2,
-            w: _dataW * 3,
+            w: _colX(8) - _colX(5),
             h: _h3,
             wrap: true,
+            borderLeft: _Var1.medium,
           ),
-          cell('Other Province', x: xData + _dataW * 6, y: y2, w: _dataW * 3, h: _h3),
+          cell(
+            'Other Province',
+            x: _colX(8),
+            y: y2,
+            w: _colX(11) - _colX(8),
+            h: _h3,
+            wrap: true,
+            borderLeft: _Var1.medium,
+          ),
 
-          // ── Row 4 (y=68): M / F / T for each of the 5 groups ────────
-          for (int g = 0; g < 5; g++) ...[
-            cell('Male', x: xData + _dataW * (g * 3), y: y3, w: _dataW, h: _h4),
-            cell('Female', x: xData + _dataW * (g * 3 + 1), y: y3, w: _dataW, h: _h4),
-            cell('Total', x: xData + _dataW * (g * 3 + 2), y: y3, w: _dataW, h: _h4),
-          ],
+          // ── Row 4: M / F / T for each of the 5 groups ────────────────
+          for (int g = 0; g < 5; g++)
+            for (int j = 0; j < 3; j++) ...[
+              cell(
+                labels[j],
+                x: _colX(2 + g * 3 + j),
+                y: y3,
+                w: _colW[2 + g * 3 + j],
+                h: _h4,
+                borderLeft:
+                    _mediumLeft(2 + g * 3 + j) ? _Var1.medium : null,
+                borderRight: (2 + g * 3 + j) == 16 ? _Var1.medium : null,
+                borderBottom: _Var1.medium,
+              ),
+            ],
         ],
       ),
     );
@@ -1402,32 +1549,43 @@ class _Var1ReportTable extends StatelessWidget {
     final m = vd ?? const VarData();
     final daysInMonth = DateTime(year, month + 1, 0).day;
     final isInMonth = day <= daysInMonth;
+    final isLast = day == 31;
+    final height =
+        isLast ? _Var1.lastDataRowHeight : _Var1.dataRowHeight;
 
     String v(int val) => val == 0 ? '' : '$val';
 
+    final values = <String>[
+      isInMonth ? '$day' : '',
+      isInMonth ? _weekdayLabel(year, month, day) : '',
+      v(m.maleThisCity),
+      v(m.femaleThisCity),
+      m.totalThisCity == 0 ? '' : '${m.totalThisCity}',
+      v(m.maleOtherCity),
+      v(m.femaleOtherCity),
+      m.totalOtherCity == 0 ? '' : '${m.totalOtherCity}',
+      v(m.maleOtherProvince),
+      v(m.femaleOtherProvince),
+      m.totalOtherProvince == 0 ? '' : '${m.totalOtherProvince}',
+      v(m.maleForeign),
+      v(m.femaleForeign),
+      m.totalForeign == 0 ? '' : '${m.totalForeign}',
+      v(m.grandMale),
+      v(m.grandFemale),
+      m.grandTotal == 0 ? '' : '${m.grandTotal}',
+    ];
+
     return Row(
       children: [
-        _var1DataCell(isInMonth ? '$day' : '', width: _dayW, day: true),
-        _var1DataCell(
-          isInMonth ? _weekdayLabel(year, month, day) : '',
-          width: _wdW,
-          day: true,
-        ),
-        _var1DataCell(v(m.maleThisCity), width: _dataW),
-        _var1DataCell(v(m.femaleThisCity), width: _dataW),
-        _var1DataCell(m.totalThisCity == 0 ? '' : '${m.totalThisCity}', width: _dataW),
-        _var1DataCell(v(m.maleOtherCity), width: _dataW),
-        _var1DataCell(v(m.femaleOtherCity), width: _dataW),
-        _var1DataCell(m.totalOtherCity == 0 ? '' : '${m.totalOtherCity}', width: _dataW),
-        _var1DataCell(v(m.maleOtherProvince), width: _dataW),
-        _var1DataCell(v(m.femaleOtherProvince), width: _dataW),
-        _var1DataCell(m.totalOtherProvince == 0 ? '' : '${m.totalOtherProvince}', width: _dataW),
-        _var1DataCell(v(m.maleForeign), width: _dataW),
-        _var1DataCell(v(m.femaleForeign), width: _dataW),
-        _var1DataCell(m.totalForeign == 0 ? '' : '${m.totalForeign}', width: _dataW),
-        _var1DataCell(v(m.grandMale), width: _dataW),
-        _var1DataCell(v(m.grandFemale), width: _dataW),
-        _var1DataCell(m.grandTotal == 0 ? '' : '${m.grandTotal}', width: _dataW),
+        for (int col = 0; col < 17; col++)
+          _var1DataCell(
+            values[col],
+            width: _colW[col],
+            height: height,
+            day: col < 2,
+            borderLeft: _mediumLeft(col) ? _Var1.medium : null,
+            borderRight: col == 16 ? _Var1.medium : null,
+          ),
       ],
     );
   }
@@ -1435,29 +1593,49 @@ class _Var1ReportTable extends StatelessWidget {
   Row _buildTotalRow() {
     final t = establishment.attractionTotals ?? const VarData();
     String v(int x) => '$x';
+
+    final values = <String>[
+      v(t.maleThisCity),
+      v(t.femaleThisCity),
+      v(t.totalThisCity),
+      v(t.maleOtherCity),
+      v(t.femaleOtherCity),
+      v(t.totalOtherCity),
+      v(t.maleOtherProvince),
+      v(t.femaleOtherProvince),
+      v(t.totalOtherProvince),
+      v(t.maleForeign),
+      v(t.femaleForeign),
+      v(t.totalForeign),
+      v(t.grandMale),
+      v(t.grandFemale),
+      v(t.grandTotal),
+    ];
+
     return Row(
       children: [
         _var1DataCell(
           'Total of this Month ****',
           width: _dayW + _wdW,
+          height: _Var1.totalRowHeight,
           bold: true,
+          fontSize: 10,
           isTotal: true,
+          borderLeft: _Var1.medium,
+          borderBottom: _Var1.medium,
         ),
-        _var1DataCell(v(t.maleThisCity), width: _dataW, isTotal: true),
-        _var1DataCell(v(t.femaleThisCity), width: _dataW, isTotal: true),
-        _var1DataCell(v(t.totalThisCity), width: _dataW, isTotal: true),
-        _var1DataCell(v(t.maleOtherCity), width: _dataW, isTotal: true),
-        _var1DataCell(v(t.femaleOtherCity), width: _dataW, isTotal: true),
-        _var1DataCell(v(t.totalOtherCity), width: _dataW, isTotal: true),
-        _var1DataCell(v(t.maleOtherProvince), width: _dataW, isTotal: true),
-        _var1DataCell(v(t.femaleOtherProvince), width: _dataW, isTotal: true),
-        _var1DataCell(v(t.totalOtherProvince), width: _dataW, isTotal: true),
-        _var1DataCell(v(t.maleForeign), width: _dataW, isTotal: true),
-        _var1DataCell(v(t.femaleForeign), width: _dataW, isTotal: true),
-        _var1DataCell(v(t.totalForeign), width: _dataW, isTotal: true),
-        _var1DataCell(v(t.grandMale), width: _dataW, isTotal: true),
-        _var1DataCell(v(t.grandFemale), width: _dataW, isTotal: true),
-        _var1DataCell(v(t.grandTotal), width: _dataW, isTotal: true),
+        for (int i = 0; i < 15; i++)
+          _var1DataCell(
+            values[i],
+            width: _Var1.dataColWidths[i],
+            height: _Var1.totalRowHeight,
+            bold: true,
+            isTotal: i < 14,
+            isGrandTotal: i == 14,
+            borderLeft: _Var1.medium,
+            borderRight: i == 14 ? _Var1.medium : null,
+            borderBottom: _Var1.medium,
+          ),
       ],
     );
   }
@@ -2173,7 +2351,7 @@ class _ReportViewerModalState extends State<ReportViewerModal>
   }
 
   double _var1TableWidth() {
-    return _Var1.dayColWidth + _Var1.weekdayColWidth + 15 * _Var1.dataColWidth;
+    return _Var1.tableWidth;
   }
 
   // ── VAR 1 Form Header (rows 1-14 of VAR-REPORT-ATTRACTION_DAILY.xlsx) ─────
@@ -2182,6 +2360,11 @@ class _ReportViewerModalState extends State<ReportViewerModal>
     final ts = const TextStyle(
       fontFamily: _Var1.font,
       fontSize: 12,
+      color: _Var1.ink,
+    );
+    final tsNarrow = const TextStyle(
+      fontFamily: _Var1.narrow,
+      fontSize: 11,
       color: _Var1.ink,
     );
 
@@ -2215,13 +2398,14 @@ class _ReportViewerModalState extends State<ReportViewerModal>
       width: _var1TableWidth(),
       child: Stack(
         children: [
+          // Logo at top-LEFT, per same day blank.xlsx anchor (col C..E / rows 3-7).
           Positioned(
-            top: 5,
-            right: 70,
+            top: 14,
+            left: 93,
             child: Image.asset(
               'assets/images/tourism_office_logo.jpg',
-              width: 40,
-              height: 40,
+              width: 143,
+              height: 86,
               fit: BoxFit.contain,
             ),
           ),
@@ -2231,14 +2415,14 @@ class _ReportViewerModalState extends State<ReportViewerModal>
               Center(
                 child: Text(
                   'Republic of the Philippines',
-                  style: ts.copyWith(fontSize: 12, fontWeight: FontWeight.bold),
+                  style: ts.copyWith(fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
                 ),
               ),
               Center(
                 child: Text(
                   'City Government of San Pablo',
-                  style: ts.copyWith(fontSize: 12, fontWeight: FontWeight.bold),
+                  style: ts.copyWith(fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -2251,7 +2435,7 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                     padding: const EdgeInsets.only(bottom: 2),
                     child: Text(
                       line,
-                      style: ts.copyWith(fontSize: 10),
+                      style: ts,
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -2266,48 +2450,34 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                 ),
               ),
               const SizedBox(height: 10),
-              // Row 7: title + (VAR 1) at far right
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Tourism Attraction Visitor Record',
-                        style: ts.copyWith(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    Text(
-                      '(VAR 1)',
-                      style: ts.copyWith(fontSize: 12),
-                    ),
-                  ],
-                ),
+              // Title + (VAR 1) at far right (matches VAR 2's spaceBetween row)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Tourism Attraction Visitor Record',
+                    style: ts.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  Text('(VAR 1)', style: ts),
+                ],
               ),
-              // Row 8: subtitle
-              Center(
-                child: Text(
-                  '( This recording form can be used instead of just counting the visitors )',
-                  style: ts.copyWith(fontSize: 9),
-                  textAlign: TextAlign.center,
-                ),
+              const SizedBox(height: 4),
+              // Subtitle (matches VAR 2's left-aligned note)
+              Text(
+                '( This recording form can be used instead of just counting the visitors )',
+                style: tsNarrow,
               ),
               const SizedBox(height: 12),
-              // Rows 10-14: variable fields
-              Text('Month/Year: $period', style: ts),
+              _var1Field('Month/Year:', period, underline: true),
               const SizedBox(height: 3),
-              Text('Name of City/Municipality:  SAN PABLO CITY', style: ts),
+              _var1Field('Name of City/Municipality:', 'SAN PABLO CITY', boxed: true),
               const SizedBox(height: 3),
-              Text('Name of attraction/ Spot:  ${est.businessName}', style: ts),
+              _var1Field('Name of attraction/ Spot:', est.businessName, underline: true),
               const SizedBox(height: 6),
-              Text(
-                'Type of Tourism Attraction: ${types.isEmpty ? '—' : types}',
-                style: ts.copyWith(fontSize: 11),
+              _var1Field(
+                'Type of Tourism Attraction:',
+                types.isEmpty ? '—' : types,
+                boxed: true,
               ),
             ],
           ),
@@ -2316,12 +2486,66 @@ class _ReportViewerModalState extends State<ReportViewerModal>
     );
   }
 
+  Widget _var1Field(
+    String label,
+    String value, {
+    bool underline = false,
+    bool boxed = false,
+  }) {
+    final tsNarrow = const TextStyle(
+      fontFamily: _Var1.narrow,
+      fontSize: 11,
+      color: _Var1.ink,
+    );
+    Widget valueWidget = Text(value, style: tsNarrow);
+    if (underline) {
+      valueWidget = Container(
+        margin: const EdgeInsets.only(bottom: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        decoration: const BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: Colors.black, width: 1.2),
+          ),
+        ),
+        child: valueWidget,
+      );
+    } else if (boxed) {
+      valueWidget = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        decoration: const BoxDecoration(
+          border: Border(
+            top: BorderSide(color: Colors.black, width: 1.2),
+            bottom: BorderSide(color: Colors.black, width: 1.2),
+          ),
+        ),
+        child: valueWidget,
+      );
+    }
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(label, style: tsNarrow),
+        const SizedBox(width: 20),
+        SizedBox(
+          width: 650,
+          child: valueWidget,
+        ),
+      ],
+    );
+  }
+
   // ── VAR 1 Report Footer (rows 51-58) ───────────────────────────────────────
 
   Widget _buildVar1Footer() {
     final ts = const TextStyle(
       fontFamily: _Var1.font,
-      fontSize: 10,
+      fontSize: 12,
+      color: _Var1.ink,
+    );
+    final tsNarrow = const TextStyle(
+      fontFamily: _Var1.narrow,
+      fontSize: 9,
       color: _Var1.ink,
     );
 
@@ -2333,8 +2557,8 @@ class _ReportViewerModalState extends State<ReportViewerModal>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '*Grand Total of this Month must be reported. **Sex & ***Residence entries are optional.',
-            style: ts.copyWith(fontSize: _Var1.smallSize),
+            'Note: *Total number must be recorded,  ** Sex & ***Residence entries are optional.   Total number of this month must be reported.',
+            style: tsNarrow,
           ),
           const SizedBox(height: 16),
           Row(
@@ -2343,12 +2567,17 @@ class _ReportViewerModalState extends State<ReportViewerModal>
               Expanded(
                 child: Column(
                   children: [
-                    Text('Submitted by:', style: ts),
+                    Text('Prepared by:', style: ts),
                     const SizedBox(height: 30),
                     Text('________________________', style: ts),
+                    const SizedBox(height: 2),
                     Text(
-                      'Tourism Staff',
-                      style: ts.copyWith(fontWeight: FontWeight.bold, fontSize: 12),
+                      'ROMINA I. ALIDIO',
+                      style: ts.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      'Admin Aide I',
+                      style: ts.copyWith(fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
@@ -2359,22 +2588,35 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                     Text('Received and checked by:', style: ts),
                     const SizedBox(height: 30),
                     Text('________________________', style: ts),
+                    const SizedBox(height: 2),
                     Text(
-                      'Administrative Aide VI',
-                      style: ts.copyWith(fontWeight: FontWeight.bold, fontSize: 12),
+                      'REINA KRISTINE S. OLIVA',
+                      style: ts.copyWith(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      'Admin Aide VI',
+                      style: ts.copyWith(fontSize: 14, fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
               ),
             ],
           ),
+          // QR code below signatures (same day blank.xlsx rows 62-64, col B..F).
           const SizedBox(height: 14),
-          Align(
-            alignment: Alignment.center,
-            child: Text(
-              'QFM-OCT-006 Rev 0 2022.02.16',
-              style: ts.copyWith(fontSize: 11),
+          Padding(
+            padding: const EdgeInsets.only(left: 43),
+            child: Image.asset(
+              'assets/images/qr-pic.png',
+              width: 210,
+              height: 58,
+              fit: BoxFit.contain,
             ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'QFM-OCT-002 Rev 0 2022.02.16',
+            style: ts.copyWith(fontSize: 8),
           ),
         ],
       ),
