@@ -47,7 +47,7 @@ class ReportBatch {
       case 'series':
         return 'Monthly Series';
       case 'total':
-        return 'VAR Report';
+        return 'Total';
       default:
         return reportVariant;
     }

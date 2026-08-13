@@ -1751,9 +1751,9 @@ class _ReportViewerModalState extends State<ReportViewerModal>
     setState(() => _printing = true);
     try {
       await Printing.layoutPdf(
-        name: '${widget.batch.reportType == "var"
-            ? "VAR"
-            : widget.batch.reportType == "attraction" ? "VAR1" : "DAE"}_Report',
+        name: '${widget.batch.reportType == "var2"
+            ? "VAR2"
+            : widget.batch.reportType == "var1" ? "VAR1" : "DAE"}_Report',
         onLayout: (format) async {
           final pdfBytes = await _reportService.downloadReport(
             DownloadReportParams(
@@ -1860,13 +1860,13 @@ class _ReportViewerModalState extends State<ReportViewerModal>
       );
     }
 
-    // VAR: single table with all establishments
-    if (widget.batch.reportType == 'var') {
+    // VAR 2: single table with all establishments + attractions
+    if (widget.batch.reportType == 'var2') {
       return _buildVarContent();
     }
 
     // VAR 1 (tourist attraction): single grid or tab bar
-    if (widget.batch.reportType == 'attraction') {
+    if (widget.batch.reportType == 'var1') {
       if (establishments.length == 1) {
         return _buildVar1View(establishments.first);
       }
@@ -2883,7 +2883,7 @@ class _ModalHeader extends StatelessWidget {
           runSpacing: 4,
           children: [
             Text(
-              '${batch.reportType == "attraction" ? "VAR 1" : batch.reportType == "var" ? "VAR" : "DAE"} \u2014 ${batch.variantLabel}',
+              '${batch.reportType == "var1" ? "VAR 1" : batch.reportType == "var2" ? "VAR 2" : "DAE"} \u2014 ${batch.variantLabel}',
               style: TextStyle(
                 color: AppColors.textWhite,
                 fontSize: titleFontSize,

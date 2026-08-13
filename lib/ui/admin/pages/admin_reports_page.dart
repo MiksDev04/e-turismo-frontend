@@ -752,12 +752,13 @@ class _TypeBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = type.toUpperCase();
-    final isDae = label == 'DAE';
-    final isAttraction = label == 'ATTRACTION';
+    final typeKey = type.toLowerCase();
+    final isDae = typeKey == 'dae';
+    final isVar1 = typeKey == 'var1';
+    final label = isDae ? 'DAE' : isVar1 ? 'VAR 1' : 'VAR 2';
     final color = isDae
         ? const Color(0xFF00C48C)
-        : isAttraction
+        : isVar1
             ? const Color(0xFF7C4DFF)
             : const Color(0xFFFFCA28);
     return Align(
@@ -832,11 +833,11 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
   int? _rangeEnd;
 
   bool get _isDae => _reportType == 'dae';
-  bool get _isVar => _reportType == 'var';
-  bool get _isAttraction => _reportType == 'attraction';
+  bool get _isVar1 => _reportType == 'var1';
+  bool get _isVar2 => _reportType == 'var2';
   bool get _needsSingleMonth =>
-      _isDae && (_variant == 'daily' || _variant == 'summary') || _isAttraction;
-  bool get _needsMultiMonth => (_isDae && _variant == 'series') || _isVar;
+      _isDae && (_variant == 'daily' || _variant == 'summary') || _isVar1;
+  bool get _needsMultiMonth => (_isDae && _variant == 'series') || _isVar2;
 
   bool get _canCreate {
     if (_selectedYear == null) return false;
@@ -881,20 +882,20 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
   }
 
   String get _dialogTitle {
-    if (_isVar) return 'Create VAR Report';
-    if (_isAttraction) return 'Create VAR 1 Report';
+    if (_isVar2) return 'Create VAR 2 Report';
+    if (_isVar1) return 'Create VAR 1 Report';
     return 'Create DAE Report';
   }
 
   String get _dialogSubtitle {
-    if (_isVar) return 'Select the period for the VAR report';
-    if (_isAttraction) return 'Daily visitor breakdown for tourist attractions';
+    if (_isVar2) return 'Combined attractions and accommodations \u2014 one row each';
+    if (_isVar1) return 'Daily visitor breakdown for tourist attractions';
     return 'View live data \u2014 no file generated until you download';
   }
 
   String get _effectiveVariant {
-    if (_isVar) return 'total';
-    if (_isAttraction) return 'daily';
+    if (_isVar2) return 'total';
+    if (_isVar1) return 'daily';
     return _variant;
   }
 
@@ -943,31 +944,31 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: _TypeCard(
-                      icon: Icons.summarize_rounded,
-                      label: 'VAR',
-                      subtitle: 'VAR Report',
-                      selected: _isVar,
+                      icon: Icons.attractions_rounded,
+                      label: 'VAR 1',
+                      subtitle: 'Attraction',
+                      selected: _isVar1,
                       onTap: () => setState(() {
-                        _reportType = 'var';
+                        _reportType = 'var1';
                         _rangeStart = null;
                         _rangeEnd = null;
                         _selectedMonth = null;
+                        _variant = 'daily';
                       }),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: _TypeCard(
-                      icon: Icons.attractions_rounded,
-                      label: 'VAR 1',
-                      subtitle: 'Attraction',
-                      selected: _isAttraction,
+                      icon: Icons.summarize_rounded,
+                      label: 'VAR 2',
+                      subtitle: 'Combined Report',
+                      selected: _isVar2,
                       onTap: () => setState(() {
-                        _reportType = 'attraction';
+                        _reportType = 'var2';
                         _rangeStart = null;
                         _rangeEnd = null;
                         _selectedMonth = null;
-                        _variant = 'daily';
                       }),
                     ),
                   ),
