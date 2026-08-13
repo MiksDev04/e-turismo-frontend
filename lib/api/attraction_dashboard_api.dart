@@ -240,7 +240,7 @@ class AttractionDashboardApi extends BaseApi {
     required String endDate,
   }) async {
     final response = await get(
-      '/api/attraction-dashboard/visit-logs'
+      '/api/dashboard/attraction/visit-logs'
       '?attractionId=$attractionId&startDate=$startDate&endDate=$endDate',
     );
     return List<Map<String, dynamic>>.from(handleResponse(response) as List? ?? []);
