@@ -4,8 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:app/core/constants/app_colors.dart';
 import 'package:app/core/services/connectivity_service.dart';
 import 'package:app/api/admin_report_api.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1839,30 +1837,24 @@ class ReportViewerModal extends StatefulWidget {
   State<ReportViewerModal> createState() => _ReportViewerModalState();
 }
 
-class _ReportViewerModalState extends State<ReportViewerModal>
-    with SingleTickerProviderStateMixin {
+class _ReportViewerModalState extends State<ReportViewerModal> {
   bool _loading = true;
   String? _error;
-  ReportViewResponse? _viewData;
+  Uint8List? _pdfBytes;
 
   bool _downloading = false;
-  bool _printing = false;
+
+  ReportViewResponse? _viewData;
   TabController? _tabController;
-
   double _zoomLevel = 1.0;
-  static const double _zoomStep = 0.1;
-  static const double _zoomMin = 1.0;
-  static const double _zoomMax = 2.0;
-
-  void _zoomIn() => setState(
-    () => _zoomLevel = (_zoomLevel + _zoomStep).clamp(_zoomMin, _zoomMax),
-  );
-  void _zoomOut() => setState(
-    () => _zoomLevel = (_zoomLevel - _zoomStep).clamp(_zoomMin, _zoomMax),
-  );
-  void _resetZoom() => setState(() => _zoomLevel = 1.0);
 
   final _reportService = ReportService();
+
+  static final Map<String, Uint8List> _pdfCache = {};
+
+  String get _cacheKey =>
+      '${widget.batch.reportType}_${widget.batch.reportVariant}_'
+      '${widget.batch.periodYear}_${widget.batch.periodMonths}';
 
   @override
   void initState() {
@@ -1870,34 +1862,36 @@ class _ReportViewerModalState extends State<ReportViewerModal>
     _loadReport();
   }
 
-  @override
-  void dispose() {
-    _tabController?.dispose();
-    super.dispose();
-  }
-
   Future<void> _loadReport() async {
-    try {
-      final params = ViewReportParams(
-        reportType: widget.batch.reportType,
-        reportVariant: widget.batch.reportVariant,
-        periodYear: widget.batch.periodYear,
-        periodMonths: widget.batch.periodMonths,
-      );
-      final data = await _reportService.viewReport(params);
+    final cached = _pdfCache[_cacheKey];
+    if (cached != null) {
       if (!mounted) return;
-
       setState(() {
-        _viewData = data;
+        _pdfBytes = cached;
         _loading = false;
       });
+      return;
+    }
 
-      if (data.establishments.length > 1) {
-        _tabController = TabController(
-          length: data.establishments.length,
-          vsync: this,
-        );
-      }
+    try {
+      final bytes = await _reportService.downloadReport(
+        DownloadReportParams(
+          reportType: widget.batch.reportType,
+          reportVariant: widget.batch.reportVariant,
+          periodYear: widget.batch.periodYear,
+          periodMonths: widget.batch.periodMonths,
+          format: 'pdf',
+        ),
+        timeout: const Duration(seconds: 120),
+      );
+      if (!mounted) return;
+
+      _pdfCache[_cacheKey] = bytes;
+
+      setState(() {
+        _pdfBytes = bytes;
+        _loading = false;
+      });
     } catch (e) {
       debugPrint('❌ Report view error: $e');
       if (!mounted) return;
@@ -1922,35 +1916,6 @@ class _ReportViewerModalState extends State<ReportViewerModal>
       widget.onDownload(format);
     } finally {
       if (mounted) setState(() => _downloading = false);
-    }
-  }
-
-  Future<void> _handlePrint() async {
-    setState(() => _printing = true);
-    try {
-      await Printing.layoutPdf(
-        name: '${widget.batch.reportType == "var2"
-            ? "VAR2"
-            : widget.batch.reportType == "var1" ? "VAR1" : "DAE"}_Report',
-        onLayout: (format) async {
-          final pdfBytes = await _reportService.downloadReport(
-            DownloadReportParams(
-              reportType: widget.batch.reportType,
-              reportVariant: widget.batch.reportVariant,
-              periodYear: widget.batch.periodYear,
-              periodMonths: widget.batch.periodMonths,
-              format: 'pdf',
-              pageWidth: format.width,
-              pageHeight: format.height,
-            ),
-          );
-          return pdfBytes;
-        },
-      );
-    } catch (e) {
-      debugPrint('Print error: $e');
-    } finally {
-      if (mounted) setState(() => _printing = false);
     }
   }
 
@@ -1991,13 +1956,7 @@ class _ReportViewerModalState extends State<ReportViewerModal>
                   ? null
                   : () => _handleDownload('xlsx'),
               onDownloadPdf: _downloading ? null : () => _handleDownload('pdf'),
-              onPrint: (_viewData == null || _printing) ? null : _handlePrint,
               downloading: _downloading,
-              printing: _printing,
-              zoomLevel: _zoomLevel,
-              onZoomIn: _zoomIn,
-              onZoomOut: _zoomOut,
-              onZoomReset: _resetZoom,
             ),
             const Divider(color: AppColors.cardBorder, height: 1),
             Expanded(
@@ -2023,10 +1982,8 @@ class _ReportViewerModalState extends State<ReportViewerModal>
   }
 
   Widget _buildContent() {
-    final data = _viewData!;
-    final establishments = data.establishments;
-
-    if (establishments.isEmpty) {
+    final bytes = _pdfBytes;
+    if (bytes == null) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
@@ -2038,61 +1995,15 @@ class _ReportViewerModalState extends State<ReportViewerModal>
       );
     }
 
-    // VAR 2: single table with all establishments + attractions
-    if (widget.batch.reportType == 'var2') {
-      return _buildVarContent();
-    }
-
-    // VAR 1 (tourist attraction): single grid or tab bar
-    if (widget.batch.reportType == 'var1') {
-      if (establishments.length == 1) {
-        return _buildVar1View(establishments.first);
-      }
-      return _buildVar1Tabs(establishments);
-    }
-
-    // DAE: single establishment or tabs
-    if (establishments.length == 1) {
-      return _buildEstablishmentView(establishments.first);
-    }
-
-    // Multiple establishments: tab bar
-    return Column(
-      children: [
-        SizedBox(
-          height: 34,
-          child: Material(
-            color: AppColors.backgroundDark,
-            child: TabBar(
-              controller: _tabController,
-              isScrollable: true,
-              labelColor: AppColors.primaryCyan,
-              unselectedLabelColor: AppColors.textGray,
-              indicatorColor: AppColors.primaryCyan,
-              indicatorSize: TabBarIndicatorSize.label,
-              labelPadding: const EdgeInsets.symmetric(horizontal: 12),
-              labelStyle: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-              unselectedLabelStyle: const TextStyle(fontSize: 11),
-              tabAlignment: TabAlignment.start,
-              tabs: establishments
-                  .map((e) => Tab(text: e.businessName))
-                  .toList(),
-            ),
-          ),
-        ),
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            physics: const NeverScrollableScrollPhysics(),
-            children: establishments
-                .map((e) => _buildEstablishmentView(e))
-                .toList(),
-          ),
-        ),
-      ],
+    return PdfPreview(
+      allowPrinting: true,
+      allowSharing: true,
+      canDebug: false,
+      canChangePageFormat: false,
+      canChangeOrientation: false,
+      dpi: 200,
+      loadingWidget: const _LoadingView(),
+      build: (_) async => bytes,
     );
   }
 
@@ -3079,26 +2990,14 @@ class _ModalHeader extends StatelessWidget {
     required this.onClose,
     required this.onDownloadExcel,
     required this.onDownloadPdf,
-    required this.onPrint,
     required this.downloading,
-    required this.printing,
-    required this.zoomLevel,
-    required this.onZoomIn,
-    required this.onZoomOut,
-    required this.onZoomReset,
   });
 
   final ReportBatch batch;
   final VoidCallback onClose;
   final VoidCallback? onDownloadExcel;
   final VoidCallback? onDownloadPdf;
-  final VoidCallback? onPrint;
   final bool downloading;
-  final bool printing;
-  final double zoomLevel;
-  final VoidCallback onZoomIn;
-  final VoidCallback onZoomOut;
-  final VoidCallback onZoomReset;
 
   @override
   Widget build(BuildContext context) {
@@ -3111,7 +3010,6 @@ class _ModalHeader extends StatelessWidget {
     final subtitleFontSize = isMobile ? 10.0 : 11.5;
     final btnSize = isMobile ? 28.0 : 32.0;
     final btnIconSize = isMobile ? 14.0 : 16.0;
-    final zoomTextSize = isMobile ? 10.0 : 11.0;
     final horizontalPad = isMobile ? 10.0 : 20.0;
     final verticalPad = isMobile ? 8.0 : 16.0;
 
@@ -3167,70 +3065,6 @@ class _ModalHeader extends StatelessWidget {
       ],
     );
 
-    final zoomControls = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        GestureDetector(
-          onTap: onZoomOut,
-          child: Container(
-            width: btnSize,
-            height: btnSize,
-            decoration: BoxDecoration(
-              color: AppColors.backgroundDark,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.cardBorder),
-            ),
-            child: Icon(
-              Icons.remove,
-              color: AppColors.textGray,
-              size: btnIconSize,
-            ),
-          ),
-        ),
-        SizedBox(width: isMobile ? 2 : 4),
-        GestureDetector(
-          onTap: onZoomReset,
-          child: Container(
-            height: btnSize,
-            padding: EdgeInsets.symmetric(horizontal: isMobile ? 6 : 8),
-            decoration: BoxDecoration(
-              color: AppColors.backgroundDark,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.cardBorder),
-            ),
-            child: Center(
-              child: Text(
-                '${(zoomLevel * 100).round()}%',
-                style: TextStyle(
-                  color: AppColors.textGray,
-                  fontSize: zoomTextSize,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-        ),
-        SizedBox(width: isMobile ? 2 : 4),
-        GestureDetector(
-          onTap: onZoomIn,
-          child: Container(
-            width: btnSize,
-            height: btnSize,
-            decoration: BoxDecoration(
-              color: AppColors.backgroundDark,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.cardBorder),
-            ),
-            child: Icon(
-              Icons.add,
-              color: AppColors.textGray,
-              size: btnIconSize,
-            ),
-          ),
-        ),
-      ],
-    );
-
     final downloadButtons = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -3249,15 +3083,6 @@ class _ModalHeader extends StatelessWidget {
           color: const Color(0xFFD32F2F),
           isLoading: downloading,
           onTap: onDownloadPdf,
-          compact: isMobile,
-        ),
-        SizedBox(width: isMobile ? 6 : 8),
-        _DownloadButton(
-          icon: Icons.print_rounded,
-          label: 'Print',
-          color: const Color(0xFF1565C0),
-          isLoading: printing,
-          onTap: onPrint,
           compact: isMobile,
         ),
       ],
@@ -3314,7 +3139,7 @@ class _ModalHeader extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Row(children: [downloadButtons, const Spacer(), zoomControls]),
+            Row(children: [downloadButtons]),
           ],
         ),
       );
@@ -3346,8 +3171,6 @@ class _ModalHeader extends StatelessWidget {
           Expanded(child: titleSection),
           const SizedBox(width: 12),
           downloadButtons,
-          const SizedBox(width: 12),
-          zoomControls,
           const SizedBox(width: 12),
           closeButton,
         ],

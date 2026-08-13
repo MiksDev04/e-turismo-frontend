@@ -548,7 +548,10 @@ class ReportService extends BaseApi {
   }
 
   /// Downloads a report file (xlsx or pdf) as raw bytes.
-  Future<Uint8List> downloadReport(DownloadReportParams params) async {
+  Future<Uint8List> downloadReport(
+    DownloadReportParams params, {
+    Duration timeout = const Duration(seconds: 60),
+  }) async {
     final body = params.toJson();
     final endpoint = '/api/admin/reports/download';
 
@@ -556,7 +559,7 @@ class ReportService extends BaseApi {
     final uri = Uri.parse('$baseUrl$endpoint');
     final response = await http
         .post(uri, headers: headers, body: jsonEncode(body))
-        .timeout(const Duration(seconds: 60));
+        .timeout(timeout);
 
     if (response.statusCode == 200) {
       return response.bodyBytes;
