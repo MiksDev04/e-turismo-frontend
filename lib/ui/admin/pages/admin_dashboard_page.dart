@@ -149,8 +149,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       buf.writeln('SUMMARY');
       buf.writeln('Metric,Value');
       buf.writeln('Active Accommodations,${d.stats.activeAccommodations}');
+      buf.writeln('Active Attractions,${d.stats.activeAttractions}');
       buf.writeln('Tourists This Period,${d.stats.touristsThisPeriod}');
-      buf.writeln('Pending Registrations,${d.stats.pendingRegistrations}');
       buf.writeln('Total Tourists This Year,${d.stats.touristsThisYear}');
       buf.writeln();
 
@@ -203,11 +203,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       }
       buf.writeln();
 
-      // ── Purpose of Visit ───────────────────────────────────────────────────
-      buf.writeln('PURPOSE OF VISIT');
-      buf.writeln('Purpose,Tourists');
-      for (final pv in d.purposeOfVisit) {
-        buf.writeln('${_csvCell(pv.purpose)},${pv.count}');
+      // ── Attractions ──────────────────────────────────────────────────────
+      buf.writeln('ATTRACTIONS');
+      buf.writeln('Attraction Type,Tourists');
+      for (final a in d.attractions) {
+        buf.writeln('${_csvCell(a.type)},${a.count}');
       }
       buf.writeln();
 
@@ -308,8 +308,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               headers: ['Metric', 'Value'],
               data: [
                 ['Active Accommodations', '${d.stats.activeAccommodations}'],
+                ['Active Attractions', '${d.stats.activeAttractions}'],
                 ['Tourists This Period', '${d.stats.touristsThisPeriod}'],
-                ['Pending Registrations', '${d.stats.pendingRegistrations}'],
                 ['Total Tourists This Year', '${d.stats.touristsThisYear}'],
               ],
               cellStyle: const pw.TextStyle(fontSize: 10),
@@ -425,16 +425,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             ),
             pw.SizedBox(height: 16),
 
-            // ── Purpose of Visit ──────────────────────────────────────────────
+            // ── Attractions ──────────────────────────────────────────────────
             pw.Text(
-              'Purpose of Visit',
+              'Attractions',
               style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 8),
             pw.Table.fromTextArray(
-              headers: ['Purpose', 'Tourists'],
-              data: d.purposeOfVisit
-                  .map((pv) => [pv.purpose, '${pv.count}'])
+              headers: ['Attraction Type', 'Tourists'],
+              data: d.attractions
+                  .map((a) => [a.type, '${a.count}'])
                   .toList(),
               cellStyle: const pw.TextStyle(fontSize: 10),
               headerStyle: pw.TextStyle(
@@ -745,7 +745,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                               topNationalities: _dashData!.topNationalities,
                               provinces: _dashData!.provinces,
                               accommodationTypes: _dashData!.accommodationTypes,
-                              purposeOfVisit: _dashData!.purposeOfVisit,
+                              attractions: _dashData!.attractions,
                               isNarrow: isNarrow,
                               isMedium: isMedium,
                             ),
@@ -1168,18 +1168,18 @@ class _StatCards extends StatelessWidget {
             Navigator.pushReplacementNamed(context, AppRoutes.adminAccommodations),
       ),
       _StatCard(
+        icon: Icons.attractions_rounded,
+        iconColor: AppColors.accentOrange,
+        value: '${stats.activeAttractions}',
+        label: 'Active Attractions',
+        onTap: () =>
+            Navigator.pushReplacementNamed(context, AppRoutes.adminAttractions),
+      ),
+      _StatCard(
         icon: Icons.people_alt_rounded,
         iconColor: AppColors.primaryBlue,
         value: '${stats.touristsThisPeriod}',
         label: 'Tourists $_periodLabel',
-      ),
-      _StatCard(
-        icon: Icons.calendar_today_rounded,
-        iconColor: AppColors.accentOrange,
-        value: '${stats.pendingRegistrations}',
-        label: 'Pending Registrations',
-        onTap: () =>
-            Navigator.pushReplacementNamed(context, AppRoutes.adminAccommodations),
       ),
       _StatCard(
         icon: Icons.groups_rounded,
@@ -1361,7 +1361,7 @@ class _DonutChartsRow extends StatelessWidget {
     required this.topNationalities,
     required this.provinces,
     required this.accommodationTypes,
-    required this.purposeOfVisit,
+    required this.attractions,
     required this.isNarrow,
     required this.isMedium,
   });
@@ -1371,7 +1371,7 @@ class _DonutChartsRow extends StatelessWidget {
   final List<NationalityCount> topNationalities;
   final List<ProvinceCount> provinces;
   final List<AccommodationTypeCount> accommodationTypes;
-  final List<PurposeCount> purposeOfVisit;
+  final List<AttractionCount> attractions;
   final bool isNarrow;
   final bool isMedium;
 
@@ -1385,9 +1385,9 @@ class _DonutChartsRow extends StatelessWidget {
       topNationalities: topNationalities,
       provinces: provinces,
     );
-    final accommodationPurposeCard = _AccommodationPurposeCard(
+    final accommodationPurposeCard = _AccommodationAttractionCard(
       accommodationTypes: accommodationTypes,
-      purposeOfVisit: purposeOfVisit,
+      attractions: attractions,
     );
 
     if (isNarrow) {
@@ -1762,24 +1762,25 @@ class _CountriesCardState extends State<_CountriesCard> {
   }
 }
 
-// ─── Accommodation / Purpose of Visit Card ────────────────────────────────────
+// ─── Accommodation / Attraction Card ──────────────────────────────────────────
 
-class _AccommodationPurposeCard extends StatefulWidget {
-  const _AccommodationPurposeCard({
+class _AccommodationAttractionCard extends StatefulWidget {
+  const _AccommodationAttractionCard({
     required this.accommodationTypes,
-    required this.purposeOfVisit,
+    required this.attractions,
   });
 
   final List<AccommodationTypeCount> accommodationTypes;
-  final List<PurposeCount> purposeOfVisit;
+  final List<AttractionCount> attractions;
 
   @override
-  State<_AccommodationPurposeCard> createState() =>
-      _AccommodationPurposeCardState();
+  State<_AccommodationAttractionCard> createState() =>
+      _AccommodationAttractionCardState();
 }
 
-class _AccommodationPurposeCardState extends State<_AccommodationPurposeCard> {
-  int _tab = 0; // 0 = Accommodation, 1 = Purpose of Visit
+class _AccommodationAttractionCardState
+    extends State<_AccommodationAttractionCard> {
+  int _tab = 0; // 0 = Accommodation, 1 = Attraction
 
   static const _accommodationColors = [
     AppColors.chartOrange,
@@ -1790,7 +1791,7 @@ class _AccommodationPurposeCardState extends State<_AccommodationPurposeCard> {
     AppColors.chartGray,
   ];
 
-  static const _purposeColors = [
+  static const _attractionColors = [
     AppColors.chartPurple,
     AppColors.chartOrange,
     AppColors.chartBlue,
@@ -1823,24 +1824,24 @@ class _AccommodationPurposeCardState extends State<_AccommodationPurposeCard> {
         );
       }).toList();
     } else {
-      final list = widget.purposeOfVisit;
+      final list = widget.attractions;
       if (list.isEmpty) {
         return List.generate(
           5,
           (i) => _Segment(
             value: 0.2,
-            color: _purposeColors[i % _purposeColors.length],
+            color: _attractionColors[i % _attractionColors.length],
             isEmpty: true,
           ),
         );
       }
-      final total = list.fold<int>(0, (s, p) => s + p.count);
+      final total = list.fold<int>(0, (s, a) => s + a.count);
       return list.asMap().entries.map((e) {
         final ratio = total == 0 ? 1 / list.length : e.value.count / total;
         return _Segment(
           value: ratio,
-          color: _purposeColors[e.key % _purposeColors.length],
-          label: e.value.purpose,
+          color: _attractionColors[e.key % _attractionColors.length],
+          label: e.value.type,
           percentage: '${e.value.count} tourists',
         );
       }).toList();
@@ -1860,13 +1861,13 @@ class _AccommodationPurposeCardState extends State<_AccommodationPurposeCard> {
           )
           .toList();
     }
-    return widget.purposeOfVisit
+    return widget.attractions
         .asMap()
         .entries
         .map(
           (e) => _LegendItem(
-            label: e.value.purpose,
-            color: _purposeColors[e.key % _purposeColors.length],
+            label: e.value.type,
+            color: _attractionColors[e.key % _attractionColors.length],
           ),
         )
         .toList();
@@ -1875,8 +1876,7 @@ class _AccommodationPurposeCardState extends State<_AccommodationPurposeCard> {
   String? get _emptyHint {
     if (_tab == 0 && widget.accommodationTypes.isEmpty)
       return 'No accommodation data';
-    if (_tab == 1 && widget.purposeOfVisit.isEmpty)
-      return 'No data for this period';
+    if (_tab == 1 && widget.attractions.isEmpty) return 'No attraction data';
     return null;
   }
 
@@ -1887,7 +1887,7 @@ class _AccommodationPurposeCardState extends State<_AccommodationPurposeCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _ToggleCardTitle(
-            options: const ['Accommodation', 'Purpose of Visit'],
+            options: const ['Accommodation', 'Attraction'],
             selectedIndex: _tab,
             onChanged: (i) => setState(() => _tab = i),
           ),

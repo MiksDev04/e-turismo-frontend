@@ -11,12 +11,14 @@ class AdminDashboardStats {
     required this.activeAccommodations,
     required this.touristsThisPeriod,
     required this.pendingRegistrations,
+    required this.activeAttractions,
     required this.touristsThisYear,
   });
 
   final int activeAccommodations;
   final int touristsThisPeriod;
   final int pendingRegistrations;
+  final int activeAttractions;
   final int touristsThisYear;
 }
 
@@ -70,10 +72,10 @@ class AccommodationTypeCount {
   final int count;
 }
 
-class PurposeCount {
-  const PurposeCount({required this.purpose, required this.count});
+class AttractionCount {
+  const AttractionCount({required this.type, required this.count});
 
-  final String purpose;
+  final String type;
   final int count;
 }
 
@@ -98,7 +100,7 @@ class AdminDashboardData {
     required this.provinces,
     required this.compliance,
     required this.accommodationTypes,
-    required this.purposeOfVisit,
+    required this.attractions,
   });
 
   final AdminDashboardStats stats;
@@ -108,7 +110,7 @@ class AdminDashboardData {
   final List<ProvinceCount> provinces;
   final ComplianceData compliance;
   final List<AccommodationTypeCount> accommodationTypes;
-  final List<PurposeCount> purposeOfVisit;
+  final List<AttractionCount> attractions;
 }
 
 typedef DashboardData = AdminDashboardData;
@@ -220,6 +222,52 @@ class AdminDashboardApi extends BaseApi {
     return raw.map((e) => (e?.toString() ?? '').trim()).where((e) => e.isNotEmpty).map(_toTitleCase).toList();
   }
 
+  List<String> _extractAttractionTypes(Object? value) {
+    if (value == null) return const [];
+
+    List<dynamic> raw = [];
+    if (value is List) {
+      raw = value;
+    } else if (value is String) {
+      if (value.startsWith('[')) {
+        try {
+          final decoded = jsonDecode(value);
+          if (decoded is List) raw = decoded;
+        } catch (_) {}
+      } else {
+        raw = [value];
+      }
+    }
+
+    return raw
+        .map((e) => (e?.toString() ?? '').trim())
+        .where((e) => e.isNotEmpty)
+        .map(_attractionTypeLabel)
+        .toSet()
+        .toList();
+  }
+
+  String _attractionTypeLabel(String s) {
+    switch (s) {
+      case 'natural_attractions':
+        return 'Natural Attractions';
+      case 'cultural':
+        return 'Cultural';
+      case 'religious':
+        return 'Religious';
+      case 'historical_heritage_sites':
+        return 'Historical Heritage Sites';
+      case 'agri_tourism':
+        return 'Agri-Tourism';
+      case 'farm_tourism_sites':
+        return 'Farm Tourism Sites';
+      case 'ecotourism':
+        return 'Ecotourism';
+      default:
+        return _toTitleCase(s);
+    }
+  }
+
   Future<List<AccommodationTypeCount>> _fetchAccommodationTypes(
     List<Map<String, dynamic>> periodRecords,
   ) async {
@@ -296,6 +344,7 @@ class AdminDashboardApi extends BaseApi {
     final stats = data['stats'] as Map<String, dynamic>;
     final activeAccommodations = (stats['activeAccommodations'] as num).toInt();
     final pendingRegistrations = (stats['pendingRegistrations'] as num).toInt();
+    final activeAttractions = (stats['activeAttractions'] as num).toInt();
 
     final breakdowns =
         List<Map<String, dynamic>>.from(data['breakdowns'] as List);
@@ -395,18 +444,20 @@ class AdminDashboardApi extends BaseApi {
             .take(5)
             .toList();
 
-    final purposeMap = <String, int>{};
-    for (final record in periodRecords) {
-      final purpose = (record['purpose_of_visit'] as String? ?? '').trim();
-      if (purpose.isEmpty) continue;
-      final label = _toTitleCase(purpose);
-      final id = record['id']?.toString() ?? '';
-      final guestDays = recordGuestDays[id] ?? 1;
-      purposeMap[label] = (purposeMap[label] ?? 0) + guestDays;
+    final attractionVisitLogs =
+        List<Map<String, dynamic>>.from(data['attractionVisitLogs'] as List? ?? []);
+    final attractionMap = <String, int>{};
+    for (final log in attractionVisitLogs) {
+      final guestCount = (log['guest_count'] as num?)?.toInt() ?? 0;
+      if (guestCount <= 0) continue;
+      final types = _extractAttractionTypes(log['attraction_type']);
+      for (final type in types) {
+        attractionMap[type] = (attractionMap[type] ?? 0) + guestCount;
+      }
     }
-    final purposeOfVisit =
-        (purposeMap.entries
-                .map((e) => PurposeCount(purpose: e.key, count: e.value))
+    final attractions =
+        (attractionMap.entries
+                .map((e) => AttractionCount(type: e.key, count: e.value))
                 .toList()
               ..sort((a, b) => b.count.compareTo(a.count)))
             .take(5)
@@ -440,6 +491,7 @@ class AdminDashboardApi extends BaseApi {
         activeAccommodations: activeAccommodations,
         touristsThisPeriod: touristsThisPeriod,
         pendingRegistrations: pendingRegistrations,
+        activeAttractions: activeAttractions,
         touristsThisYear: touristsThisYear,
       ),
       genderDistribution: GenderDistribution(
@@ -455,7 +507,7 @@ class AdminDashboardApi extends BaseApi {
         nonCompliant: pendingRegistrations,
       ),
       accommodationTypes: accommodationTypes,
-      purposeOfVisit: purposeOfVisit,
+      attractions: attractions,
     );
   }
 
