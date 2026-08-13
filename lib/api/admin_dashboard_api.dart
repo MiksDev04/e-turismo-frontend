@@ -42,10 +42,10 @@ class GenderDistribution {
 
 typedef SexDistribution = GenderDistribution;
 
-class AgeGroupCount {
-  const AgeGroupCount({required this.ageGroup, required this.count});
+class CityMunicipalityCount {
+  const CityMunicipalityCount({required this.cityMunicipality, required this.count});
 
-  final String ageGroup;
+  final String cityMunicipality;
   final int count;
 }
 
@@ -95,7 +95,7 @@ class AdminDashboardData {
   const AdminDashboardData({
     required this.stats,
     required this.genderDistribution,
-    required this.ageGroups,
+    required this.cityMunicipalities,
     required this.topNationalities,
     required this.provinces,
     required this.compliance,
@@ -105,7 +105,7 @@ class AdminDashboardData {
 
   final AdminDashboardStats stats;
   final GenderDistribution genderDistribution;
-  final List<AgeGroupCount> ageGroups;
+  final List<CityMunicipalityCount> cityMunicipalities;
   final List<NationalityCount> topNationalities;
   final List<ProvinceCount> provinces;
   final ComplianceData compliance;
@@ -180,6 +180,17 @@ class AdminDashboardApi extends BaseApi {
     );
     final data = handleResponse(response);
     return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchAttractionVisitLogs({
+    required String startDate,
+    required String endDate,
+  }) async {
+    final response = await get(
+      '/api/dashboard/attraction-visit-logs?startDate=$startDate&endDate=$endDate',
+    );
+    final data = handleResponse(response);
+    return List<Map<String, dynamic>>.from(data as List? ?? []);
   }
 
   Future<List<Map<String, dynamic>>> _fetchBreakdowns(
@@ -327,6 +338,11 @@ class AdminDashboardApi extends BaseApi {
     final yearRecords =
         List<Map<String, dynamic>>.from(data['yearRecords'] as List);
 
+    final attractionVisitLogs =
+        List<Map<String, dynamic>>.from(data['attractionVisitLogs'] as List? ?? []);
+    final yearAttractionVisitLogs =
+        List<Map<String, dynamic>>.from(data['yearAttractionVisitLogs'] as List? ?? []);
+
     final periodStart = parseDbDateTime(start);
     final periodEnd = parseDbDateTime(end);
     final yearStartDt = parseDbDateTime(yearStart);
@@ -336,9 +352,15 @@ class AdminDashboardApi extends BaseApi {
     for (final r in periodRecords) {
       touristsThisPeriod += _recordGuestDays(r, periodStart, periodEnd);
     }
+    for (final log in attractionVisitLogs) {
+      touristsThisPeriod += (log['guest_count'] as num?)?.toInt() ?? 0;
+    }
     int touristsThisYear = 0;
     for (final r in yearRecords) {
       touristsThisYear += _recordGuestDays(r, yearStartDt, yearEndDt);
+    }
+    for (final log in yearAttractionVisitLogs) {
+      touristsThisYear += (log['guest_count'] as num?)?.toInt() ?? 0;
     }
 
     final stats = data['stats'] as Map<String, dynamic>;
@@ -351,12 +373,10 @@ class AdminDashboardApi extends BaseApi {
 
     // Build per-record guest-days map for the period
     final recordGuestDays = <String, int>{};
-    final recordTotalGuests = <String, int>{};
     for (final r in periodRecords) {
       final id = r['id']?.toString();
       if (id != null) {
         recordGuestDays[id] = _recordGuestDays(r, periodStart, periodEnd);
-        recordTotalGuests[id] = (r['total_guests'] as num?)?.toInt() ?? 0;
       }
     }
 
@@ -386,24 +406,23 @@ class AdminDashboardApi extends BaseApi {
       if (unaccounted > 0) other += unaccounted * days;
     }
 
-    final ageGroupMap = <String, int>{};
-    for (final breakdown in breakdowns) {
-      final ageGroup = (breakdown['age_group'] as String? ?? '').trim();
-      if (ageGroup.isEmpty) continue;
-      final label = _toTitleCase(ageGroup);
-      // Age is known only for the lead guest (1 person per record), weighted by
-      // the days they spent inside the period.
-      final recordId = breakdown['guest_record_id']?.toString() ?? '';
-      final guestDays = recordGuestDays[recordId] ?? 1;
-      final totalGuests = recordTotalGuests[recordId] ?? 0;
-      final days = totalGuests > 0 ? guestDays ~/ totalGuests : 1;
-      ageGroupMap[label] = (ageGroupMap[label] ?? 0) + days;
+    // Attraction visit logs: each log is a single-day visit, so guest_count,
+    // male_count and female_count contribute directly (no day weighting).
+    for (final log in attractionVisitLogs) {
+      final guestCount = (log['guest_count'] as num?)?.toInt() ?? 0;
+      if (guestCount <= 0) continue;
+      var maleCount = (log['male_count'] as num?)?.toInt() ?? 0;
+      var femaleCount = (log['female_count'] as num?)?.toInt() ?? 0;
+      if (maleCount + femaleCount == 0) {
+        // PSA 47.1% / 52.9% split fallback for legacy/anomalous rows.
+        maleCount = (guestCount * 0.471).round();
+        femaleCount = guestCount - maleCount;
+      }
+      male += maleCount;
+      female += femaleCount;
+      final unaccounted = guestCount - maleCount - femaleCount;
+      if (unaccounted > 0) other += unaccounted;
     }
-    final ageGroups =
-        ageGroupMap.entries
-            .map((e) => AgeGroupCount(ageGroup: e.key, count: e.value))
-            .toList()
-          ..sort((a, b) => b.count.compareTo(a.count));
 
     final nationalityMap = <String, int>{};
     for (final breakdown in breakdowns) {
@@ -413,6 +432,14 @@ class AdminDashboardApi extends BaseApi {
       final recordId = breakdown['guest_record_id']?.toString() ?? '';
       final guestDays = recordGuestDays[recordId] ?? 1;
       nationalityMap[label] = (nationalityMap[label] ?? 0) + guestDays;
+    }
+    for (final log in attractionVisitLogs) {
+      final guestCount = (log['guest_count'] as num?)?.toInt() ?? 0;
+      if (guestCount <= 0) continue;
+      final country = (log['country'] as String? ?? '').trim();
+      if (country.isEmpty) continue;
+      final label = _toTitleCase(country);
+      nationalityMap[label] = (nationalityMap[label] ?? 0) + guestCount;
     }
     final topNationalities =
         (nationalityMap.entries
@@ -436,6 +463,14 @@ class AdminDashboardApi extends BaseApi {
       final guestDays = recordGuestDays[recordId] ?? 1;
       provinceMap[label] = (provinceMap[label] ?? 0) + guestDays;
     }
+    for (final log in attractionVisitLogs) {
+      final guestCount = (log['guest_count'] as num?)?.toInt() ?? 0;
+      if (guestCount <= 0) continue;
+      final province = (log['province'] as String? ?? '').trim();
+      if (province.isEmpty) continue;
+      final label = _toTitleCase(province);
+      provinceMap[label] = (provinceMap[label] ?? 0) + guestCount;
+    }
     final provinces =
         (provinceMap.entries
                 .map((entry) => ProvinceCount(province: entry.key, count: entry.value))
@@ -444,8 +479,36 @@ class AdminDashboardApi extends BaseApi {
             .take(5)
             .toList();
 
-    final attractionVisitLogs =
-        List<Map<String, dynamic>>.from(data['attractionVisitLogs'] as List? ?? []);
+    final cityMap = <String, int>{};
+    for (final breakdown in breakdowns) {
+      final city = (breakdown['city_municipality'] as String? ?? '').trim();
+      if (city.isEmpty) continue;
+      final label = _toTitleCase(city);
+      final recordId = breakdown['guest_record_id']?.toString() ?? '';
+      final guestDays = recordGuestDays[recordId] ?? 1;
+      cityMap[label] = (cityMap[label] ?? 0) + guestDays;
+    }
+    for (final log in attractionVisitLogs) {
+      final guestCount = (log['guest_count'] as num?)?.toInt() ?? 0;
+      if (guestCount <= 0) continue;
+      final city = (log['city_municipality'] as String? ?? '').trim();
+      if (city.isEmpty) continue;
+      final label = _toTitleCase(city);
+      cityMap[label] = (cityMap[label] ?? 0) + guestCount;
+    }
+    final cityMunicipalities =
+        (cityMap.entries
+                .map(
+                  (entry) => CityMunicipalityCount(
+                    cityMunicipality: entry.key,
+                    count: entry.value,
+                  ),
+                )
+                .toList()
+              ..sort((a, b) => b.count.compareTo(a.count)))
+            .take(5)
+            .toList();
+
     final attractionMap = <String, int>{};
     for (final log in attractionVisitLogs) {
       final guestCount = (log['guest_count'] as num?)?.toInt() ?? 0;
@@ -499,7 +562,7 @@ class AdminDashboardApi extends BaseApi {
         female: female,
         other: other,
       ),
-      ageGroups: ageGroups,
+      cityMunicipalities: cityMunicipalities,
       topNationalities: topNationalities,
       provinces: provinces,
       compliance: ComplianceData(
@@ -519,6 +582,10 @@ class AdminDashboardApi extends BaseApi {
     for (final year in years) {
       final (start, end) = _dateRange(0, year);
       final records = await _fetchGuestRecords(startDate: start, endDate: end);
+      final attractionLogs = await _fetchAttractionVisitLogs(
+        startDate: start,
+        endDate: end,
+      );
 
       final yearStartDt = parseDbDateTime(start);
       final yearEndDt = parseDbDateTime(end);
@@ -603,6 +670,17 @@ class AdminDashboardApi extends BaseApi {
             1,
           );
         }
+      }
+
+      for (final log in attractionLogs) {
+        final visitDate = log['visit_date']?.toString() ?? '';
+        final month = int.tryParse(
+          visitDate.length >= 7 ? visitDate.substring(5, 7) : '',
+        );
+        if (month == null) continue;
+        final count = (log['guest_count'] as num?)?.toInt() ?? 0;
+        if (count <= 0) continue;
+        monthMap[month] = (monthMap[month] ?? 0) + count;
       }
 
       result[year] = List.generate(

@@ -167,14 +167,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       );
       buf.writeln();
 
-      // ── Age Group Distribution ─────────────────────────────────────────────
-      buf.writeln('AGE GROUP DISTRIBUTION');
-      buf.writeln('Age Group,Count,Percentage');
-      final totalAge = d.ageGroups.fold<int>(0, (s, a) => s + a.count);
-      for (final a in d.ageGroups) {
-        final pct = totalAge == 0 ? 0.0 : (a.count / totalAge * 100);
+      // ── City / Municipality Distribution ───────────────────────────────────
+      buf.writeln('CITY / MUNICIPALITY DISTRIBUTION');
+      buf.writeln('City / Municipality,Count,Percentage');
+      final totalCity =
+          d.cityMunicipalities.fold<int>(0, (s, c) => s + c.count);
+      for (final c in d.cityMunicipalities) {
+        final pct = totalCity == 0 ? 0.0 : (c.count / totalCity * 100);
         buf.writeln(
-          '${_csvCell(a.ageGroup)},${a.count},${pct.toStringAsFixed(1)}%',
+          '${_csvCell(c.cityMunicipality)},${c.count},${pct.toStringAsFixed(1)}%',
         );
       }
       buf.writeln();
@@ -274,8 +275,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           _trendData[_trendYear2] ??
           List.generate(12, (i) => MonthlyCount(month: i + 1, count: 0));
 
-      final totalAge = d.ageGroups.fold<int>(0, (s, a) => s + a.count);
-
       doc.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
@@ -348,17 +347,25 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             ),
             pw.SizedBox(height: 16),
 
-            // ── Age Group Distribution ────────────────────────────────────────
+            // ── City / Municipality Distribution ─────────────────────────────
             pw.Text(
-              'Age Group Distribution',
+              'City / Municipality Distribution',
               style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 8),
             pw.Table.fromTextArray(
-              headers: ['Age Group', 'Count', 'Percentage'],
-              data: d.ageGroups.map((a) {
-                final pct = totalAge == 0 ? 0.0 : (a.count / totalAge * 100);
-                return [a.ageGroup, '${a.count}', '${pct.toStringAsFixed(1)}%'];
+              headers: ['City / Municipality', 'Count', 'Percentage'],
+              data: d.cityMunicipalities.map((c) {
+                final total = d.cityMunicipalities.fold<int>(
+                  0,
+                  (s, x) => s + x.count,
+                );
+                final pct = total == 0 ? 0.0 : (c.count / total * 100);
+                return [
+                  c.cityMunicipality,
+                  '${c.count}',
+                  '${pct.toStringAsFixed(1)}%',
+                ];
               }).toList(),
               cellStyle: const pw.TextStyle(fontSize: 10),
               headerStyle: pw.TextStyle(
@@ -741,7 +748,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             const SizedBox(height: 20),
                             _DonutChartsRow(
                               genderDist: _dashData!.genderDistribution,
-                              ageGroups: _dashData!.ageGroups,
+                              cityMunicipalities: _dashData!.cityMunicipalities,
                               topNationalities: _dashData!.topNationalities,
                               provinces: _dashData!.provinces,
                               accommodationTypes: _dashData!.accommodationTypes,
@@ -1357,7 +1364,7 @@ class _StatCard extends StatelessWidget {
 class _DonutChartsRow extends StatelessWidget {
   const _DonutChartsRow({
     required this.genderDist,
-    required this.ageGroups,
+    required this.cityMunicipalities,
     required this.topNationalities,
     required this.provinces,
     required this.accommodationTypes,
@@ -1367,7 +1374,7 @@ class _DonutChartsRow extends StatelessWidget {
   });
 
   final GenderDistribution genderDist;
-  final List<AgeGroupCount> ageGroups;
+  final List<CityMunicipalityCount> cityMunicipalities;
   final List<NationalityCount> topNationalities;
   final List<ProvinceCount> provinces;
   final List<AccommodationTypeCount> accommodationTypes;
@@ -1377,9 +1384,9 @@ class _DonutChartsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final genderAgeCard = _GenderAgeCard(
+    final genderCityCard = _GenderCityCard(
       genderDist: genderDist,
-      ageGroups: ageGroups,
+      cityMunicipalities: cityMunicipalities,
     );
     final countriesCard = _CountriesCard(
       topNationalities: topNationalities,
@@ -1393,7 +1400,7 @@ class _DonutChartsRow extends StatelessWidget {
     if (isNarrow) {
       return Column(
         children: [
-          genderAgeCard,
+          genderCityCard,
           const SizedBox(height: 14),
           countriesCard,
           const SizedBox(height: 14),
@@ -1405,7 +1412,7 @@ class _DonutChartsRow extends StatelessWidget {
     if (isMedium) {
       return Column(
         children: [
-          genderAgeCard,
+          genderCityCard,
           const SizedBox(height: 14),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1422,7 +1429,7 @@ class _DonutChartsRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: genderAgeCard),
+        Expanded(child: genderCityCard),
         const SizedBox(width: 14),
         Expanded(child: countriesCard),
         const SizedBox(width: 14),
@@ -1500,22 +1507,25 @@ class _ToggleCardTitle extends StatelessWidget {
   }
 }
 
-// ─── Gender / Age Group Card ──────────────────────────────────────────────────
+// ─── Gender / City-Municipality Card ──────────────────────────────────────────
 
-class _GenderAgeCard extends StatefulWidget {
-  const _GenderAgeCard({required this.genderDist, required this.ageGroups});
+class _GenderCityCard extends StatefulWidget {
+  const _GenderCityCard({
+    required this.genderDist,
+    required this.cityMunicipalities,
+  });
 
   final GenderDistribution genderDist;
-  final List<AgeGroupCount> ageGroups;
+  final List<CityMunicipalityCount> cityMunicipalities;
 
   @override
-  State<_GenderAgeCard> createState() => _GenderAgeCardState();
+  State<_GenderCityCard> createState() => _GenderCityCardState();
 }
 
-class _GenderAgeCardState extends State<_GenderAgeCard> {
-  int _tab = 0; // 0 = Gender, 1 = Age Group
+class _GenderCityCardState extends State<_GenderCityCard> {
+  int _tab = 0; // 0 = Gender, 1 = City / Municipality
 
-  static const _ageColors = [
+  static const _cityColors = [
     AppColors.chartBlue,
     AppColors.chartGreen,
     AppColors.chartOrange,
@@ -1545,25 +1555,28 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
         ),
       ];
     } else {
-      if (widget.ageGroups.isEmpty) {
+      if (widget.cityMunicipalities.isEmpty) {
         return List.generate(
           5,
           (i) => _Segment(
             value: 0.2,
-            color: _ageColors[i % _ageColors.length],
+            color: _cityColors[i % _cityColors.length],
             isEmpty: true,
           ),
         );
       }
-      final total = widget.ageGroups.fold<int>(0, (s, a) => s + a.count);
-      return widget.ageGroups.asMap().entries.map((e) {
+      final total = widget.cityMunicipalities.fold<int>(
+        0,
+        (s, a) => s + a.count,
+      );
+      return widget.cityMunicipalities.asMap().entries.map((e) {
         final ratio = total == 0
-            ? 1 / widget.ageGroups.length
+            ? 1 / widget.cityMunicipalities.length
             : e.value.count / total;
         return _Segment(
           value: ratio,
-          color: _ageColors[e.key % _ageColors.length],
-          label: e.value.ageGroup,
+          color: _cityColors[e.key % _cityColors.length],
+          label: e.value.cityMunicipality,
           percentage: '${e.value.count} tourists',
         );
       }).toList();
@@ -1577,13 +1590,13 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
         _LegendItem(label: 'Female', color: AppColors.chartPurple),
       ];
     }
-    return widget.ageGroups
+    return widget.cityMunicipalities
         .asMap()
         .entries
         .map(
           (e) => _LegendItem(
-            label: e.value.ageGroup,
-            color: _ageColors[e.key % _ageColors.length],
+            label: e.value.cityMunicipality,
+            color: _cityColors[e.key % _cityColors.length],
           ),
         )
         .toList();
@@ -1592,7 +1605,8 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
   String? get _emptyHint {
     if (_tab == 0 && widget.genderDist.total == 0)
       return 'No data for this period';
-    if (_tab == 1 && widget.ageGroups.isEmpty) return 'No data for this period';
+    if (_tab == 1 && widget.cityMunicipalities.isEmpty)
+      return 'No data for this period';
     return null;
   }
 
@@ -1603,7 +1617,7 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _ToggleCardTitle(
-            options: const ['Gender', 'Age Group'],
+            options: const ['Gender', 'City / Municipality'],
             selectedIndex: _tab,
             onChanged: (i) => setState(() => _tab = i),
           ),
