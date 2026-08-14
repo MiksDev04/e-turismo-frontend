@@ -5,6 +5,8 @@ import 'package:app/core/constants/app_colors.dart';
 import 'package:app/core/services/connectivity_service.dart';
 import 'package:app/api/admin_report_api.dart';
 import 'package:printing/printing.dart';
+import 'package:syncfusion_flutter_core/theme.dart';
+import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 
 // ─────────────────────────────────────────────────────────────────────────
 // DAE-1B TEMPLATE PALETTE
@@ -1843,6 +1845,8 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
   ReportViewResponse? _viewData;
   TabController? _tabController;
   double _zoomLevel = 1.0;
+  final PdfViewerController _pdfController = PdfViewerController();
+  int _pdfZoomPercent = 100;
 
   final _reportService = ReportService();
 
@@ -1856,6 +1860,12 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
   void initState() {
     super.initState();
     _loadReport();
+  }
+
+  @override
+  void dispose() {
+    _pdfController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadReport() async {
@@ -1912,6 +1922,15 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
     await Printing.layoutPdf(onLayout: (_) async => bytes);
   }
 
+  void _zoomPdfBy(double delta) {
+    _pdfController.zoomLevel =
+        (_pdfController.zoomLevel + delta).clamp(1.0, 4.0);
+  }
+
+  void _onPdfZoomChanged(PdfZoomDetails details) {
+    setState(() => _pdfZoomPercent = (details.newZoomLevel * 100).round());
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
@@ -1946,6 +1965,9 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
               batch: widget.batch,
               onClose: () => Navigator.pop(context),
               onPrint: _pdfBytes == null ? null : _handlePrint,
+              onZoomIn: () => _zoomPdfBy(0.25),
+              onZoomOut: () => _zoomPdfBy(-0.25),
+              zoomPercent: _pdfZoomPercent,
             ),
             const Divider(color: AppColors.cardBorder, height: 1),
             Expanded(
@@ -1984,16 +2006,20 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
       );
     }
 
-    return PdfPreview(
-      allowPrinting: false,
-      allowSharing: false,
-      useActions: false,
-      canDebug: false,
-      canChangePageFormat: false,
-      canChangeOrientation: false,
-      dpi: 200,
-      loadingWidget: const _LoadingView(),
-      build: (_) async => bytes,
+    return SfPdfViewerTheme(
+      data: const SfPdfViewerThemeData(
+        backgroundColor: Color(0xFFDDE3EA),
+      ),
+      child: SfPdfViewer.memory(
+        bytes,
+        controller: _pdfController,
+        enableDoubleTapZooming: true,
+        canShowScrollHead: true,
+        canShowScrollStatus: true,
+        pageLayoutMode: PdfPageLayoutMode.continuous,
+        maxZoomLevel: 4.0,
+        onZoomLevelChanged: _onPdfZoomChanged,
+      ),
     );
   }
 
@@ -2979,11 +3005,17 @@ class _ModalHeader extends StatelessWidget {
     required this.batch,
     required this.onClose,
     required this.onPrint,
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.zoomPercent,
   });
 
   final ReportBatch batch;
   final VoidCallback onClose;
   final VoidCallback? onPrint;
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+  final int zoomPercent;
 
   @override
   Widget build(BuildContext context) {
@@ -3091,6 +3123,60 @@ class _ModalHeader extends StatelessWidget {
       ),
     );
 
+    Widget zoomButton({
+      required VoidCallback onTap,
+      required IconData icon,
+    }) {
+      return GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: btnSize,
+          height: btnSize,
+          decoration: BoxDecoration(
+            color: AppColors.backgroundDark,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.cardBorder),
+          ),
+          child: Icon(
+            icon,
+            color: AppColors.textGray,
+            size: btnIconSize,
+          ),
+        ),
+      );
+    }
+
+    final zoomPercentLabel = Container(
+      height: btnSize,
+      constraints: const BoxConstraints(minWidth: 44),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: AppColors.backgroundDark,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.cardBorder),
+      ),
+      child: Text(
+        '$zoomPercent%',
+        style: const TextStyle(
+          color: AppColors.textGray,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+
+    final zoomControls = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        zoomButton(onTap: onZoomOut, icon: Icons.remove_rounded),
+        const SizedBox(width: 3),
+        zoomPercentLabel,
+        const SizedBox(width: 3),
+        zoomButton(onTap: onZoomIn, icon: Icons.add_rounded),
+      ],
+    );
+
     if (isMobile) {
       return Padding(
         padding: EdgeInsets.fromLTRB(
@@ -3120,6 +3206,8 @@ class _ModalHeader extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(child: titleSection),
                 const SizedBox(width: 8),
+                zoomControls,
+                const SizedBox(width: 6),
                 printButton,
                 const SizedBox(width: 6),
                 closeButton,
@@ -3155,6 +3243,8 @@ class _ModalHeader extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(child: titleSection),
           const SizedBox(width: 12),
+          zoomControls,
+          const SizedBox(width: 8),
           printButton,
           const SizedBox(width: 8),
           closeButton,

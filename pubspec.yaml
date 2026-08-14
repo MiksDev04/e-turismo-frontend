@@ -55,12 +55,29 @@ dependencies:
   shared_preferences: ^2.5.5
   printing: ^5.14.3
 
+  # PDF viewing (Syncfusion) — commercial package; requires a free Syncfusion
+  # community license (https://www.syncfusion.com/products/communitylicense)
+  # or a commercial license before shipping.
+  # Pinned to 33.2.x: newer Syncfusion versions require xml ^7.0.1, which
+  # conflicts with excel 4.0.6 (xml <7.0.0).
+  syncfusion_flutter_pdfviewer: ^33.2.13
+  syncfusion_flutter_core: ^33.2.12
+  # Cap xml to keep both excel (>=5.0.0 <7.0.0) and Syncfusion (<7.0.0) happy.
+  xml: '>=6.5.0 <7.0.0'
+
   crypto: ^3.0.7
   universal_io: ^2.3.1
   sqflite_common_ffi_web: ^1.1.1
   http: ^1.2.2
   http_parser: ^4.0.2
   flutter_dotenv: ^6.0.1
+
+dependency_overrides:
+  # file_picker 12.0.0-beta.7 requires win32 ^6.3.0, but syncfusion_flutter_pdfviewer
+  # 33.2.13 pulls device_info_plus ^12.x (win32 ^5.x). device_info_plus 13.x is built
+  # against win32 ^6, resolving the clash while keeping Syncfusion on xml ^6 (which
+  # excel 4.0.6 requires). device_info_plus is only a transitive dep here.
+  device_info_plus: ^13.1.0
 
 
 dev_dependencies:
