@@ -519,7 +519,7 @@ class _TableHeader extends StatelessWidget {
           Expanded(flex: 1, child: _HeaderCell('Type')),
           Expanded(flex: 2, child: _HeaderCell('Variant')),
           Expanded(flex: 2, child: _HeaderCell('Period')),
-          SizedBox(width: 180, child: _HeaderCell('Actions')),
+          SizedBox(width: 210, child: _HeaderCell('Actions')),
         ],
       ),
     );
@@ -548,6 +548,7 @@ class _TableRow extends StatelessWidget {
         const SizedBox(width: 8),
         _ExportButton(
           icon: Icons.table_rows_rounded,
+          label: 'Excel',
           tooltip: 'Download Excel',
           color: const Color(0xFF1D6F42),
           onTap: () => onDownload('xlsx'),
@@ -555,6 +556,7 @@ class _TableRow extends StatelessWidget {
         const SizedBox(width: 8),
         _ExportButton(
           icon: Icons.picture_as_pdf_rounded,
+          label: 'PDF',
           tooltip: 'Download PDF',
           color: const Color(0xFFD32F2F),
           onTap: () => onDownload('pdf'),
@@ -647,7 +649,7 @@ class _TableRow extends StatelessWidget {
             ),
           ),
           SizedBox(
-            width: 180,
+            width: 210,
             child: actions,
           ),
         ],
@@ -672,55 +674,50 @@ class _ViewButtonState extends State<_ViewButton> {
   @override
   Widget build(BuildContext context) {
     final color = AppColors.primaryCyan;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        MouseRegion(
-          onEnter: (_) => setState(() => _hovered = true),
-          onExit: (_) => setState(() => _hovered = false),
-          cursor: SystemMouseCursors.click,
-          child: Tooltip(
-            message: 'View Report',
-            child: GestureDetector(
-              onTap: widget.onTap,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: _hovered
-                      ? color.withOpacity(0.12)
-                      : color.withOpacity(0.04),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: _hovered
-                        ? color.withOpacity(0.7)
-                        : color.withOpacity(0.35),
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: SystemMouseCursors.click,
+      child: Tooltip(
+        message: 'View Report',
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            decoration: BoxDecoration(
+              color: _hovered
+                  ? color.withOpacity(0.12)
+                  : color.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: _hovered
+                    ? color.withOpacity(0.7)
+                    : color.withOpacity(0.35),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.open_in_full_rounded,
+                  color: _hovered ? color : color.withOpacity(0.7),
+                  size: 11,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'View',
+                  style: TextStyle(
+                    color: _hovered ? color : color.withOpacity(0.7),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.open_in_full_rounded,
-                      color: _hovered ? color : color.withOpacity(0.7),
-                      size: 13,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      'View',
-                      style: TextStyle(
-                        color: _hovered ? color : color.withOpacity(0.7),
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              ],
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -730,12 +727,14 @@ class _ViewButtonState extends State<_ViewButton> {
 class _ExportButton extends StatefulWidget {
   const _ExportButton({
     required this.icon,
+    required this.label,
     required this.tooltip,
     required this.color,
     required this.onTap,
   });
 
   final IconData icon;
+  final String label;
   final String tooltip;
   final Color color;
   final VoidCallback onTap;
@@ -760,8 +759,7 @@ class _ExportButtonState extends State<_ExportButton> {
           onTap: widget.onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
-            width: 28,
-            height: 28,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             decoration: BoxDecoration(
               color: _hovered
                   ? color.withOpacity(0.12)
@@ -773,10 +771,24 @@ class _ExportButtonState extends State<_ExportButton> {
                     : color.withOpacity(0.35),
               ),
             ),
-            child: Icon(
-              widget.icon,
-              color: _hovered ? color : color.withOpacity(0.7),
-              size: 14,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  widget.icon,
+                  color: _hovered ? color : color.withOpacity(0.7),
+                  size: 11,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  widget.label,
+                  style: TextStyle(
+                    color: _hovered ? color : color.withOpacity(0.7),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
