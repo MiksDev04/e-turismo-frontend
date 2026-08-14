@@ -31,6 +31,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
   String? _fetchError;
   String _filterYear = '';
   String _filterMonth = '';
+  String _filterType = '';
   int _currentPage = 0;
   int _pageSize = 10;
   int _totalPages = 0;
@@ -63,6 +64,26 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     '2022',
   ];
 
+  static const List<String> _types = [
+    'All Types',
+    'DAE',
+    'VAR 1',
+    'VAR 2',
+  ];
+
+  static String? _typeCode(String label) {
+    switch (label) {
+      case 'DAE':
+        return 'dae';
+      case 'VAR 1':
+        return 'var1';
+      case 'VAR 2':
+        return 'var2';
+      default:
+        return null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -82,6 +103,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
         pageSize: _pageSize,
         year: _filterYear.isNotEmpty ? _filterYear : null,
         month: _filterMonth.isNotEmpty ? _filterMonth : null,
+        type: _typeCode(_filterType),
       );
 
       if (!mounted) return;
@@ -162,7 +184,6 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       barrierColor: Colors.black87,
       builder: (_) => ReportViewerModal(
         batch: batch,
-        onDownload: (format) => _downloadReport(batch, format: format),
       ),
     );
   }
@@ -198,6 +219,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     setState(() {
       _filterYear = '';
       _filterMonth = '';
+      _filterType = '';
       _currentPage = 0;
     });
     _fetchBatches();
@@ -268,8 +290,10 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
                           isNarrow: isNarrow,
                           months: _months,
                           years: _years,
+                          types: _types,
                           selectedMonth: _filterMonth,
                           selectedYear: _filterYear,
+                          selectedType: _filterType,
                           onMonthChanged: (v) {
                             setState(() {
                               _filterMonth = v ?? '';
@@ -280,6 +304,13 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
                           onYearChanged: (v) {
                             setState(() {
                               _filterYear = v ?? '';
+                              _currentPage = 0;
+                            });
+                            _fetchBatches();
+                          },
+                          onTypeChanged: (v) {
+                            setState(() {
+                              _filterType = v ?? '';
                               _currentPage = 0;
                             });
                             _fetchBatches();
@@ -308,6 +339,8 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
                             rows: _batches,
                             isLoading: false,
                             onView: _viewReport,
+                            onDownload: (batch, format) =>
+                                _downloadReport(batch, format: format),
                           ),
                         if (!_loadingReports) ...[
                           const SizedBox(height: 12),
@@ -400,11 +433,13 @@ class _ReportBatchesTable extends StatelessWidget {
     required this.rows,
     required this.isLoading,
     required this.onView,
+    required this.onDownload,
   });
 
   final List<ReportBatch> rows;
   final bool isLoading;
   final void Function(ReportBatch) onView;
+  final void Function(ReportBatch, String format) onDownload;
 
   @override
   Widget build(BuildContext context) {
@@ -450,6 +485,7 @@ class _ReportBatchesTable extends StatelessWidget {
                   batch: rows[i],
                   isNarrow: constraints.maxWidth < 700,
                   onView: () => onView(rows[i]),
+                  onDownload: (format) => onDownload(rows[i], format),
                 ),
               ),
             ),
@@ -483,9 +519,7 @@ class _TableHeader extends StatelessWidget {
           Expanded(flex: 1, child: _HeaderCell('Type')),
           Expanded(flex: 2, child: _HeaderCell('Variant')),
           Expanded(flex: 2, child: _HeaderCell('Period')),
-          Expanded(flex: 2, child: _HeaderCell('Created')),
-          Expanded(flex: 2, child: _HeaderCell('Last Viewed')),
-          SizedBox(width: 88, child: _HeaderCell('Actions')),
+          SizedBox(width: 180, child: _HeaderCell('Actions')),
         ],
       ),
     );
@@ -497,24 +531,36 @@ class _TableRow extends StatelessWidget {
     required this.batch,
     required this.isNarrow,
     required this.onView,
+    required this.onDownload,
   });
 
   final ReportBatch batch;
   final bool isNarrow;
   final VoidCallback onView;
+  final void Function(String format) onDownload;
 
   @override
   Widget build(BuildContext context) {
-    final createdStr =
-        '${batch.createdAt.year}-'
-        '${batch.createdAt.month.toString().padLeft(2, '0')}-'
-        '${batch.createdAt.day.toString().padLeft(2, '0')}';
-
-    final viewedStr = batch.lastViewedAt != null
-        ? '${batch.lastViewedAt!.year}-'
-          '${batch.lastViewedAt!.month.toString().padLeft(2, '0')}-'
-          '${batch.lastViewedAt!.day.toString().padLeft(2, '0')}'
-        : 'Never';
+    final actions = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _ViewButton(onTap: onView),
+        const SizedBox(width: 8),
+        _ExportButton(
+          icon: Icons.table_rows_rounded,
+          tooltip: 'Download Excel',
+          color: const Color(0xFF1D6F42),
+          onTap: () => onDownload('xlsx'),
+        ),
+        const SizedBox(width: 8),
+        _ExportButton(
+          icon: Icons.picture_as_pdf_rounded,
+          tooltip: 'Download PDF',
+          color: const Color(0xFFD32F2F),
+          onTap: () => onDownload('pdf'),
+        ),
+      ],
+    );
 
     if (isNarrow) {
       return Padding(
@@ -566,60 +612,12 @@ class _TableRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Created',
-                        style: TextStyle(
-                          color: AppColors.textSubtle,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        createdStr,
-                        style: const TextStyle(
-                          color: AppColors.textGray,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Last Viewed',
-                        style: TextStyle(
-                          color: AppColors.textSubtle,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        viewedStr,
-                        style: TextStyle(
-                          color: viewedStr == 'Never'
-                              ? AppColors.textSubtle
-                              : AppColors.textGray,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ],
             ),
             const SizedBox(height: 10),
             Align(
               alignment: Alignment.centerRight,
-              child: _ViewButton(onTap: onView),
+              child: actions,
             ),
           ],
         ),
@@ -648,26 +646,9 @@ class _TableRow extends StatelessWidget {
               style: const TextStyle(color: AppColors.textGray, fontSize: 13),
             ),
           ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              createdStr,
-              style: const TextStyle(color: AppColors.textGray, fontSize: 13),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              viewedStr,
-              style: TextStyle(
-                color: viewedStr == 'Never' ? AppColors.textSubtle : AppColors.textGray,
-                fontSize: 13,
-              ),
-            ),
-          ),
           SizedBox(
-            width: 88,
-            child: _ViewButton(onTap: onView),
+            width: 180,
+            child: actions,
           ),
         ],
       ),
@@ -740,6 +721,66 @@ class _ViewButtonState extends State<_ViewButton> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─── Export Button ────────────────────────────────────────────────────────────
+
+class _ExportButton extends StatefulWidget {
+  const _ExportButton({
+    required this.icon,
+    required this.tooltip,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  State<_ExportButton> createState() => _ExportButtonState();
+}
+
+class _ExportButtonState extends State<_ExportButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.color;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: SystemMouseCursors.click,
+      child: Tooltip(
+        message: widget.tooltip,
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: _hovered
+                  ? color.withOpacity(0.12)
+                  : color.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: _hovered
+                    ? color.withOpacity(0.7)
+                    : color.withOpacity(0.35),
+              ),
+            ),
+            child: Icon(
+              widget.icon,
+              color: _hovered ? color : color.withOpacity(0.7),
+              size: 14,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1587,26 +1628,57 @@ class _FilterSection extends StatelessWidget {
     required this.isNarrow,
     required this.months,
     required this.years,
+    required this.types,
     required this.selectedMonth,
     required this.selectedYear,
+    required this.selectedType,
     required this.onMonthChanged,
     required this.onYearChanged,
+    required this.onTypeChanged,
     required this.onClear,
   });
 
   final bool isNarrow;
   final List<String> months;
   final List<String> years;
+  final List<String> types;
   final String selectedMonth;
   final String selectedYear;
+  final String selectedType;
   final void Function(String?) onMonthChanged;
   final void Function(String?) onYearChanged;
+  final void Function(String?) onTypeChanged;
   final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
     final monthValue = selectedMonth.isEmpty ? 'All Months' : selectedMonth;
     final yearValue = selectedYear.isEmpty ? 'All Years' : selectedYear;
+    final typeValue = selectedType.isEmpty ? 'All Types' : selectedType;
+
+    final clearButton = GestureDetector(
+      onTap: onClear,
+      child: Container(
+        height: 38,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.cardBorder),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.clear_rounded, color: AppColors.textGray, size: 14),
+            SizedBox(width: 4),
+            Text(
+              'Clear',
+              style: TextStyle(color: AppColors.textGray, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
 
     if (isNarrow) {
       return Column(
@@ -1614,6 +1686,14 @@ class _FilterSection extends StatelessWidget {
         children: [
           Row(
             children: [
+              Expanded(
+                child: _FilterDropdown(
+                  value: typeValue,
+                  items: types,
+                  onChanged: onTypeChanged,
+                ),
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: _FilterDropdown(
                   value: monthValue,
@@ -1631,12 +1711,22 @@ class _FilterSection extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          Align(alignment: Alignment.centerRight, child: clearButton),
         ],
       );
     }
 
     return Row(
       children: [
+        Expanded(
+          child: _FilterDropdown(
+            value: typeValue,
+            items: types,
+            onChanged: onTypeChanged,
+          ),
+        ),
+        const SizedBox(width: 10),
         Expanded(
           child: _FilterDropdown(
             value: monthValue,
@@ -1653,29 +1743,7 @@ class _FilterSection extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        GestureDetector(
-          onTap: onClear,
-          child: Container(
-            height: 38,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: AppColors.cardBackground,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.cardBorder),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.clear_rounded, color: AppColors.textGray, size: 14),
-                SizedBox(width: 4),
-                Text(
-                  'Clear',
-                  style: TextStyle(color: AppColors.textGray, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        ),
+        clearButton,
       ],
     );
   }

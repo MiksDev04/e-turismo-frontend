@@ -1827,11 +1827,9 @@ class ReportViewerModal extends StatefulWidget {
   const ReportViewerModal({
     super.key,
     required this.batch,
-    required this.onDownload,
   });
 
   final ReportBatch batch;
-  final void Function(String format) onDownload;
 
   @override
   State<ReportViewerModal> createState() => _ReportViewerModalState();
@@ -1841,8 +1839,6 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
   bool _loading = true;
   String? _error;
   Uint8List? _pdfBytes;
-
-  bool _downloading = false;
 
   ReportViewResponse? _viewData;
   TabController? _tabController;
@@ -1910,13 +1906,10 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
     }
   }
 
-  Future<void> _handleDownload(String format) async {
-    setState(() => _downloading = true);
-    try {
-      widget.onDownload(format);
-    } finally {
-      if (mounted) setState(() => _downloading = false);
-    }
+  Future<void> _handlePrint() async {
+    final bytes = _pdfBytes;
+    if (bytes == null) return;
+    await Printing.layoutPdf(onLayout: (_) async => bytes);
   }
 
   @override
@@ -1952,11 +1945,7 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
             _ModalHeader(
               batch: widget.batch,
               onClose: () => Navigator.pop(context),
-              onDownloadExcel: _downloading
-                  ? null
-                  : () => _handleDownload('xlsx'),
-              onDownloadPdf: _downloading ? null : () => _handleDownload('pdf'),
-              downloading: _downloading,
+              onPrint: _pdfBytes == null ? null : _handlePrint,
             ),
             const Divider(color: AppColors.cardBorder, height: 1),
             Expanded(
@@ -1996,8 +1985,9 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
     }
 
     return PdfPreview(
-      allowPrinting: true,
-      allowSharing: true,
+      allowPrinting: false,
+      allowSharing: false,
+      useActions: false,
       canDebug: false,
       canChangePageFormat: false,
       canChangeOrientation: false,
@@ -2988,16 +2978,12 @@ class _ModalHeader extends StatelessWidget {
   const _ModalHeader({
     required this.batch,
     required this.onClose,
-    required this.onDownloadExcel,
-    required this.onDownloadPdf,
-    required this.downloading,
+    required this.onPrint,
   });
 
   final ReportBatch batch;
   final VoidCallback onClose;
-  final VoidCallback? onDownloadExcel;
-  final VoidCallback? onDownloadPdf;
-  final bool downloading;
+  final VoidCallback? onPrint;
 
   @override
   Widget build(BuildContext context) {
@@ -3065,27 +3051,26 @@ class _ModalHeader extends StatelessWidget {
       ],
     );
 
-    final downloadButtons = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _DownloadButton(
-          icon: Icons.table_rows_rounded,
-          label: 'Excel',
-          color: const Color(0xFF1D6F42),
-          isLoading: downloading,
-          onTap: onDownloadExcel,
-          compact: isMobile,
+    final printButton = GestureDetector(
+      onTap: onPrint,
+      child: AnimatedOpacity(
+        opacity: onPrint != null ? 1.0 : 0.4,
+        duration: const Duration(milliseconds: 150),
+        child: Container(
+          width: btnSize,
+          height: btnSize,
+          decoration: BoxDecoration(
+            color: AppColors.backgroundDark,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.cardBorder),
+          ),
+          child: Icon(
+            Icons.print_rounded,
+            color: AppColors.textGray,
+            size: btnIconSize,
+          ),
         ),
-        SizedBox(width: isMobile ? 6 : 8),
-        _DownloadButton(
-          icon: Icons.picture_as_pdf_rounded,
-          label: 'PDF',
-          color: const Color(0xFFD32F2F),
-          isLoading: downloading,
-          onTap: onDownloadPdf,
-          compact: isMobile,
-        ),
-      ],
+      ),
     );
 
     final closeButton = GestureDetector(
@@ -3135,11 +3120,11 @@ class _ModalHeader extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(child: titleSection),
                 const SizedBox(width: 8),
+                printButton,
+                const SizedBox(width: 6),
                 closeButton,
               ],
             ),
-            const SizedBox(height: 8),
-            Row(children: [downloadButtons]),
           ],
         ),
       );
@@ -3170,83 +3155,14 @@ class _ModalHeader extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(child: titleSection),
           const SizedBox(width: 12),
-          downloadButtons,
-          const SizedBox(width: 12),
+          printButton,
+          const SizedBox(width: 8),
           closeButton,
         ],
       ),
     );
   }
 }
-
-class _DownloadButton extends StatelessWidget {
-  const _DownloadButton({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-    this.isLoading = false,
-    this.compact = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback? onTap;
-  final bool isLoading;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = onTap != null && !isLoading;
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: AnimatedOpacity(
-        opacity: enabled ? 1.0 : 0.5,
-        duration: const Duration(milliseconds: 150),
-        child: Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? 8 : 14,
-            vertical: compact ? 5 : 8,
-          ),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withOpacity(0.35)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (isLoading)
-                SizedBox(
-                  width: compact ? 11 : 13,
-                  height: compact ? 11 : 13,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: color,
-                  ),
-                )
-              else
-                Icon(icon, color: color, size: compact ? 12 : 14),
-              if (!compact) ...[
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ── Loading & Error Views ─────────────────────────────────────────────────────
 
 class _LoadingView extends StatelessWidget {
