@@ -1926,7 +1926,7 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
 
   void _zoomPdfBy(double delta) {
     _pdfController.zoomLevel =
-        (_pdfController.zoomLevel + delta).clamp(0.5, 4.0);
+        (_pdfController.zoomLevel + delta).clamp(1.0, 4.0);
   }
 
   /// Zooms the PDF around the cursor position on Ctrl+scroll.
@@ -1945,7 +1945,7 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
     final dy = event.scrollDelta.dy;
     if (dy == 0) return;
 
-    final target = (oldZoom + (dy > 0 ? -0.1 : 0.1)).clamp(0.5, 4.0);
+    final target = (oldZoom + (dy > 0 ? -0.1 : 0.1)).clamp(1.0, 4.0);
     final preScroll = _pdfAnchorOffset;
 
     if (target == oldZoom) {
@@ -2062,7 +2062,7 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
             _pdfAnchorOffset = _pdfController.scrollOffset;
           } else if (event is PointerScaleEvent) {
             final oldZoom = _pdfController.zoomLevel;
-            final target = (oldZoom * event.scale).clamp(0.5, 4.0);
+            final target = (oldZoom * event.scale).clamp(1.0, 4.0);
             if (target == oldZoom) return;
             _pdfController.zoomLevel = target;
           }

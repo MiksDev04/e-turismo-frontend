@@ -78,12 +78,6 @@ dependency_overrides:
   # against win32 ^6, resolving the clash while keeping Syncfusion on xml ^6 (which
   # excel 4.0.6 requires). device_info_plus is only a transitive dep here.
   device_info_plus: ^13.1.0
-  # Vendored patched copy of syncfusion_flutter_pdfviewer: the package hard-codes a
-  # 100% minimum zoom (_minScale = 1). The copy lowers it to 0.5 so the report modal
-  # can zoom out to 50%. Re-apply the one-line patch on any version bump (see
-  # third_party/syncfusion_flutter_pdfviewer/README.md).
-  syncfusion_flutter_pdfviewer:
-    path: third_party/syncfusion_flutter_pdfviewer
 
 
 dev_dependencies:
