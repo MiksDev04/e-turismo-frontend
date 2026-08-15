@@ -1,4 +1,5 @@
-import 'package:flutter/gestures.dart' show PointerScrollEvent;
+import 'package:flutter/gestures.dart'
+    show PointerScrollEvent, PointerScaleEvent;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app/core/constants/app_colors.dart';
@@ -1847,6 +1848,7 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
   double _zoomLevel = 1.0;
   final PdfViewerController _pdfController = PdfViewerController();
   int _pdfZoomPercent = 100;
+  Offset _pdfAnchorOffset = Offset.zero;
 
   final _reportService = ReportService();
 
@@ -1924,7 +1926,46 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
 
   void _zoomPdfBy(double delta) {
     _pdfController.zoomLevel =
-        (_pdfController.zoomLevel + delta).clamp(1.0, 4.0);
+        (_pdfController.zoomLevel + delta).clamp(0.5, 4.0);
+  }
+
+  /// Zooms the PDF around the cursor position on Ctrl+scroll.
+  ///
+  /// SfPdfViewer scrolls the document by [PointerScrollEvent.scrollDelta] on
+  /// every wheel event before this handler runs (its internal Listener fires
+  /// first), so the scroll shift is cancelled by jumping to the offset that
+  /// was current before the event. [_pdfAnchorOffset] is tracked from pointer
+  /// moves, plain scrolls and previous zoom steps, so it is always the exact
+  /// pre-event offset (no delta arithmetic, and immune to Syncfusion's offset
+  /// clamping at the document edges). The point under the cursor stays fixed
+  /// while the zoom level changes; at the zoom limits the scroll shift is
+  /// cancelled so Ctrl+scroll never moves the document.
+  void _zoomPdfToCursor(PointerScrollEvent event) {
+    final oldZoom = _pdfController.zoomLevel;
+    final dy = event.scrollDelta.dy;
+    if (dy == 0) return;
+
+    final target = (oldZoom + (dy > 0 ? -0.1 : 0.1)).clamp(0.5, 4.0);
+    final preScroll = _pdfAnchorOffset;
+
+    if (target == oldZoom) {
+      _pdfController.jumpTo(xOffset: preScroll.dx, yOffset: preScroll.dy);
+      return;
+    }
+
+    final mouse = event.localPosition;
+    final factor = 1 / oldZoom - 1 / target;
+    final targetOffset = Offset(
+      preScroll.dx + mouse.dx * factor,
+      preScroll.dy + mouse.dy * factor,
+    );
+
+    _pdfController.zoomLevel = target;
+    _pdfController.jumpTo(
+      xOffset: targetOffset.dx,
+      yOffset: targetOffset.dy,
+    );
+    _pdfAnchorOffset = targetOffset;
   }
 
   void _onPdfZoomChanged(PdfZoomDetails details) {
@@ -2010,15 +2051,32 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
       data: const SfPdfViewerThemeData(
         backgroundColor: Color(0xFFDDE3EA),
       ),
-      child: SfPdfViewer.memory(
-        bytes,
-        controller: _pdfController,
-        enableDoubleTapZooming: true,
-        canShowScrollHead: true,
-        canShowScrollStatus: true,
-        pageLayoutMode: PdfPageLayoutMode.continuous,
-        maxZoomLevel: 4.0,
-        onZoomLevelChanged: _onPdfZoomChanged,
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerMove: (_) => _pdfAnchorOffset = _pdfController.scrollOffset,
+        onPointerSignal: (event) {
+          if (event is PointerScrollEvent &&
+              HardwareKeyboard.instance.isControlPressed) {
+            _zoomPdfToCursor(event);
+          } else if (event is PointerScrollEvent) {
+            _pdfAnchorOffset = _pdfController.scrollOffset;
+          } else if (event is PointerScaleEvent) {
+            final oldZoom = _pdfController.zoomLevel;
+            final target = (oldZoom * event.scale).clamp(0.5, 4.0);
+            if (target == oldZoom) return;
+            _pdfController.zoomLevel = target;
+          }
+        },
+        child: SfPdfViewer.memory(
+          bytes,
+          controller: _pdfController,
+          enableDoubleTapZooming: true,
+          canShowScrollHead: true,
+          canShowScrollStatus: true,
+          pageLayoutMode: PdfPageLayoutMode.continuous,
+          maxZoomLevel: 4.0,
+          onZoomLevelChanged: _onPdfZoomChanged,
+        ),
       ),
     );
   }

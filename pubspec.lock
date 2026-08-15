@@ -1040,10 +1040,9 @@ packages:
   syncfusion_flutter_pdfviewer:
     dependency: "direct main"
     description:
-      name: syncfusion_flutter_pdfviewer
-      sha256: "7a94a3086b52e75641eb5c76c46b5cbbf8246e390f4f43192a5ceffdf9da3aa9"
-      url: "https://pub.dev"
-    source: hosted
+      path: "third_party/syncfusion_flutter_pdfviewer"
+      relative: true
+    source: path
     version: "33.2.13"
   syncfusion_flutter_signaturepad:
     dependency: transitive
