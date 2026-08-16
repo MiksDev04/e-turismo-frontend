@@ -14,7 +14,6 @@ import 'package:app/ui/admin/pages/admin_accommodations_page.dart';
 import 'package:app/ui/admin/pages/admin_attractions_page.dart';
 import 'package:app/ui/admin/pages/admin_reports_page.dart';
 import 'package:app/ui/admin/pages/admin_messages_page.dart';
-import 'package:app/ui/admin/pages/admin_compliance_page.dart';
 import 'package:app/ui/admin/pages/admin_profile_page.dart';
 import 'package:app/ui/business/pages/business_dashboard_page.dart';
 import 'package:app/ui/business/pages/business_guest_entry_page.dart';
@@ -59,8 +58,7 @@ const _adminRouteMeta = {
   AppRoutes.adminAttractions: _RouteMeta('Attractions', 2),
   AppRoutes.adminReports: _RouteMeta('Reports', 3),
   AppRoutes.adminMessages: _RouteMeta('Messages', 4),
-  AppRoutes.adminCompliance: _RouteMeta('Compliance', 5),
-  AppRoutes.adminProfile: _RouteMeta('Profile', 6),
+  AppRoutes.adminProfile: _RouteMeta('Profile', 5),
 };
 
 const _businessRouteMeta = {
@@ -92,7 +90,6 @@ abstract final class _RoutePermissions {
     AppRoutes.adminAttractions: {'admin'},
     AppRoutes.adminMessages: {'admin'},
     AppRoutes.adminReports: {'admin'},
-    AppRoutes.adminCompliance: {'admin'},
     AppRoutes.adminProfile: {'admin'},
     AppRoutes.businessDashboard: {'business'},
     AppRoutes.businessGuestEntry: {'business'},
@@ -209,7 +206,6 @@ abstract final class AppRouter {
       AppRoutes.adminMessages => _fade(const AdminMessagesPage(), settings),
       AppRoutes.adminReports => _fade(const AdminReportsPage(), settings),
       AppRoutes.adminProfile => _fade(const AdminProfilePage(), settings),
-      AppRoutes.adminCompliance => _fade(const AdminCompliancePage(), settings),
       AppRoutes.businessDashboard => _fade(
         const BusinessDashboardPage(),
         settings,

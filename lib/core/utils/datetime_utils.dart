@@ -36,3 +36,27 @@ DateTime? tryParseDbDateTime(String? value) {
     return null;
   }
 }
+
+/// Formats a date-only [DateTime] as a relative label like "Today",
+/// "1 day ago", "3 weeks ago", or "2 months ago". Returns an em dash for null.
+String formatRelativeDate(DateTime? dt) {
+  if (dt == null) return '—';
+  final now = DateTime.now();
+  final day = DateTime(dt.year, dt.month, dt.day);
+  final today = DateTime(now.year, now.month, now.day);
+  if (day.isAfter(today)) return 'Today';
+  final diff = today.difference(day).inDays;
+  if (diff == 0) return 'Today';
+  if (diff == 1) return '1 day ago';
+  if (diff < 7) return '$diff days ago';
+  if (diff < 30) {
+    final weeks = (diff / 7).floor();
+    return weeks == 1 ? '1 week ago' : '$weeks weeks ago';
+  }
+  if (diff < 365) {
+    final months = (diff / 30).floor();
+    return months == 1 ? '1 month ago' : '$months months ago';
+  }
+  final years = (diff / 365).floor();
+  return years == 1 ? '1 year ago' : '$years years ago';
+}

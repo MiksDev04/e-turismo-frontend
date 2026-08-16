@@ -9,7 +9,6 @@ abstract final class AppRoutes {
   static const adminAttractions = '/admin/attractions';
   static const adminMessages = '/admin/messages';
   static const adminReports = '/admin/reports';
-  static const adminCompliance = '/admin/compliance';
   static const adminProfile = '/admin/profile';
   static const businessDashboard = '/business/dashboard';
   static const businessGuestEntry = '/business/guest-entry';

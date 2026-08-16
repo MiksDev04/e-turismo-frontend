@@ -11,6 +11,8 @@ import '../../../core/services/attraction_export_service.dart';
 import '../../shared/layouts/admin_layout.dart';
 import '../../shared/widgets/paginator.dart';
 import '../widgets/attraction_details_modal.dart';
+import '../widgets/status_change_dialog.dart';
+import '../models/activity_models.dart';
 import '../models/attraction_models.dart';
 import '../../../api/messages_api.dart';
 import '../../../core/services/session_service.dart';
@@ -315,6 +317,94 @@ class _AdminAttractionsPageState extends State<AdminAttractionsPage> {
     }
   }
 
+  // ── Manage status (warning / revert to approved) ──────────────────────────
+
+  void _openStatusDialog(Attraction item) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.7),
+      builder: (_) => StatusChangeDialog(
+        title: 'Manage Attraction Status',
+        entityName: item.name,
+        currentStatusLabel: switch (item.status) {
+          AttractionStatus.approved => 'Approved',
+          AttractionStatus.pending => 'Pending',
+          AttractionStatus.rejected => 'Rejected',
+          AttractionStatus.warning => 'Warning',
+        },
+        currentStatusColor: switch (item.status) {
+          AttractionStatus.approved => AppColors.accentGreen,
+          AttractionStatus.pending => AppColors.accentPurple,
+          AttractionStatus.rejected => AppColors.accentRed,
+          AttractionStatus.warning => AppColors.accentOrange,
+        },
+        currentStatusIcon: switch (item.status) {
+          AttractionStatus.approved => Icons.verified_outlined,
+          AttractionStatus.pending => Icons.schedule_rounded,
+          AttractionStatus.rejected => Icons.cancel_outlined,
+          AttractionStatus.warning => Icons.warning_amber_rounded,
+        },
+        canSetWarning: item.status == AttractionStatus.approved &&
+            (item.activityStatus == ActivityStatus.inactive ||
+                item.activityStatus == ActivityStatus.noActivity),
+        canSetApproved: item.status == AttractionStatus.warning,
+        onConfirm: (newStatus, reason) =>
+            _handleStatusChange(item, newStatus, reason),
+      ),
+    );
+  }
+
+  Future<void> _handleStatusChange(
+    Attraction item,
+    String newStatus,
+    String reason,
+  ) async {
+    final session = SessionService.instance.current;
+    final messageContent = buildOfficialMessageLetter(
+      recipient: item.name,
+      subject: 'Business Status Update',
+      messageContent: reason,
+      senderFullName: session?.fullName ?? 'Tourism Officer',
+      senderEmail: session?.email ?? '',
+      senderPhone: session?.phone ?? '',
+      messageType: MessageType.compliance,
+      recipientKind: MessageRecipientKind.attraction,
+    );
+    final result = await _api.updateStatus(
+      item.id,
+      newStatus,
+      reason: reason,
+      messageContent: messageContent,
+    );
+    if (!mounted) return;
+
+    if (result.success) {
+      unawaited(MessageBadgeController.instance.refresh());
+      _loadAttractions();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            newStatus == 'warning'
+                ? '${item.name} has been flagged with a warning.'
+                : '${item.name} has been restored to approved.',
+          ),
+          backgroundColor: newStatus == 'warning'
+              ? const Color(0xFFFFA000)
+              : const Color(0xFF00C48C),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.error ?? 'Something went wrong.'),
+          backgroundColor: const Color(0xFFFF4D6A),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _searchCtrl.dispose();
@@ -417,11 +507,13 @@ class _AdminAttractionsPageState extends State<AdminAttractionsPage> {
                           _AttractionCardList(
                             rows: _attractions,
                             onStatusUpdate: _updateStatus,
+                            onManage: _openStatusDialog,
                           )
                         else
                           _AttractionTable(
                             rows: _attractions,
                             onStatusUpdate: _updateStatus,
+                            onManage: _openStatusDialog,
                           ),
                         if (!_isLoading) ...[
                           const SizedBox(height: 12),
@@ -1566,11 +1658,16 @@ class _SearchBar extends StatelessWidget {
 // ─── Attraction Table (wide screens) ──────────────────────────────────────
 
 class _AttractionTable extends StatelessWidget {
-  const _AttractionTable({required this.rows, required this.onStatusUpdate});
+  const _AttractionTable({
+    required this.rows,
+    required this.onStatusUpdate,
+    required this.onManage,
+  });
 
   final List<Attraction> rows;
   final Function(Attraction, AttractionStatus, {String? remarks})
   onStatusUpdate;
+  final ValueChanged<Attraction> onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -1599,8 +1696,11 @@ class _AttractionTable extends StatelessWidget {
               itemCount: rows.length,
               separatorBuilder: (_, __) =>
                   const Divider(color: AppColors.cardBorder, height: 1),
-              itemBuilder: (_, i) =>
-                  _TableRow(item: rows[i], onStatusUpdate: onStatusUpdate),
+              itemBuilder: (_, i) => _TableRow(
+                item: rows[i],
+                onStatusUpdate: onStatusUpdate,
+                onManage: onManage,
+              ),
             ),
         ],
       ),
@@ -1647,6 +1747,13 @@ class _TableHeader extends StatelessWidget {
             flex: 2,
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
+              child: _HeaderCell('Last Activity'),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
               child: _HeaderCell('Status'),
             ),
           ),
@@ -1681,11 +1788,16 @@ class _HeaderCell extends StatelessWidget {
 }
 
 class _TableRow extends StatelessWidget {
-  const _TableRow({required this.item, required this.onStatusUpdate});
+  const _TableRow({
+    required this.item,
+    required this.onStatusUpdate,
+    required this.onManage,
+  });
 
   final Attraction item;
   final Function(Attraction, AttractionStatus, {String? remarks})
   onStatusUpdate;
+  final ValueChanged<Attraction> onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -1768,6 +1880,17 @@ class _TableRow extends StatelessWidget {
             flex: 2,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                formatRelativeDate(item.lastActivity),
+                style: const TextStyle(color: AppColors.textGray, fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: _StatusBadge(status: item.status),
@@ -1783,6 +1906,7 @@ class _TableRow extends StatelessWidget {
                 child: _ActionButtons(
                   item: item,
                   onStatusUpdate: onStatusUpdate,
+                  onManage: onManage,
                 ),
               ),
             ),
@@ -1799,11 +1923,13 @@ class _AttractionCardList extends StatelessWidget {
   const _AttractionCardList({
     required this.rows,
     required this.onStatusUpdate,
+    required this.onManage,
   });
 
   final List<Attraction> rows;
   final Function(Attraction, AttractionStatus, {String? remarks})
   onStatusUpdate;
+  final ValueChanged<Attraction> onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -1820,18 +1946,26 @@ class _AttractionCardList extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       itemCount: rows.length,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (_, i) =>
-          _AttractionCard(item: rows[i], onStatusUpdate: onStatusUpdate),
+      itemBuilder: (_, i) => _AttractionCard(
+        item: rows[i],
+        onStatusUpdate: onStatusUpdate,
+        onManage: onManage,
+      ),
     );
   }
 }
 
 class _AttractionCard extends StatelessWidget {
-  const _AttractionCard({required this.item, required this.onStatusUpdate});
+  const _AttractionCard({
+    required this.item,
+    required this.onStatusUpdate,
+    required this.onManage,
+  });
 
   final Attraction item;
   final Function(Attraction, AttractionStatus, {String? remarks})
   onStatusUpdate;
+  final ValueChanged<Attraction> onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -1885,8 +2019,17 @@ class _AttractionCard extends StatelessWidget {
           _CardDetail(label: 'User', value: item.owner),
           const SizedBox(height: 6),
           _CardDetail(label: 'Contact', value: item.contact),
+          const SizedBox(height: 6),
+          _CardDetail(
+            label: 'Last Activity',
+            value: formatRelativeDate(item.lastActivity),
+          ),
           const SizedBox(height: 12),
-          _ActionButtons(item: item, onStatusUpdate: onStatusUpdate),
+          _ActionButtons(
+            item: item,
+            onStatusUpdate: onStatusUpdate,
+            onManage: onManage,
+          ),
         ],
       ),
     );
@@ -2003,11 +2146,16 @@ String _formatRegisteredDate(String? rawValue) {
 // ─── Action Buttons ───────────────────────────────────────────────────────────
 
 class _ActionButtons extends StatelessWidget {
-  const _ActionButtons({required this.item, required this.onStatusUpdate});
+  const _ActionButtons({
+    required this.item,
+    required this.onStatusUpdate,
+    required this.onManage,
+  });
 
   final Attraction item;
   final Function(Attraction, AttractionStatus, {String? remarks})
   onStatusUpdate;
+  final ValueChanged<Attraction> onManage;
 
   Future<void> _showRemarksModal(
     BuildContext context, {
@@ -2247,6 +2395,13 @@ class _ActionButtons extends StatelessWidget {
             ),
           ),
         ],
+        _ActionButton(
+          icon: Icons.manage_accounts_rounded,
+          tooltip: 'Manage Status',
+          color: AppColors.accentOrange,
+          label: 'Manage',
+          onTap: () => onManage(item),
+        ),
       ],
     );
   }

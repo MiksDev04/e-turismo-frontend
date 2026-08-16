@@ -1,5 +1,9 @@
 // lib/ui/admin/models/attraction_models.dart
 
+import 'package:app/core/utils/datetime_utils.dart';
+
+import 'activity_models.dart';
+
 enum AttractionStatus { approved, pending, rejected, warning }
 
 enum AttractionType {
@@ -40,6 +44,8 @@ class Attraction {
     required this.validIdUrl,
     this.remarks,
     this.createdAt,
+    this.lastActivity,
+    this.activityStatus = ActivityStatus.noActivity,
   });
 
   final String id;
@@ -56,6 +62,10 @@ class Attraction {
   final String validIdUrl;
   final String? remarks;
   final String? createdAt;
+  /// Last day visitors were recorded at this attraction
+  /// (date-only, from attraction_visit_logs.visit_date).
+  final DateTime? lastActivity;
+  final ActivityStatus activityStatus;
 
   static AttractionStatus _parseStatus(String s) {
     switch (s) {
@@ -113,10 +123,17 @@ class Attraction {
       validIdUrl: map['valid_id_url'] as String? ?? '',
       remarks: map['remarks'] as String?,
       createdAt: map['created_at'] as String?,
+      lastActivity: tryParseDbDateTime(map['last_activity'] as String?),
+      activityStatus: parseActivityStatus(map['activity_status'] as String?),
     );
   }
 
-  Attraction copyWith({AttractionStatus? status, String? remarks}) {
+  Attraction copyWith({
+    AttractionStatus? status,
+    String? remarks,
+    DateTime? lastActivity,
+    ActivityStatus? activityStatus,
+  }) {
     return Attraction(
       id: id,
       profileId: profileId,
@@ -132,6 +149,8 @@ class Attraction {
       validIdUrl: validIdUrl,
       remarks: remarks ?? this.remarks,
       createdAt: createdAt,
+      lastActivity: lastActivity ?? this.lastActivity,
+      activityStatus: activityStatus ?? this.activityStatus,
     );
   }
 

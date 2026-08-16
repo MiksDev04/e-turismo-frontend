@@ -258,6 +258,30 @@ class AdminAccommodationApi extends BaseApi {
     }
   }
 
+  // ── Update status (manage: warning/approved) with message to owner ────────
+  Future<AccommodationResult> updateStatus(
+    String businessId,
+    String newStatus, {
+    required String reason,
+    required String messageContent,
+  }) async {
+    try {
+      final response = await put(
+        '/api/admin/accommodations/$businessId/status',
+        {
+          'status': newStatus,
+          'reason': reason,
+          'messageContent': messageContent,
+        },
+      );
+      handleResponse(response);
+      return AccommodationResult.ok();
+    } catch (e) {
+      debugPrint('❌ updateStatus error: $e');
+      return AccommodationResult.err('Failed to update status. Please try again.');
+    }
+  }
+
   // ── Soft delete ───────────────────────────────────────────────────────────
   // Named deleteAccommodation to avoid conflict with BaseApi.delete()
   Future<AccommodationResult> deleteAccommodation(String businessId) async {

@@ -219,6 +219,30 @@ class AdminAttractionApi extends BaseApi {
     }
   }
 
+  // ── Update status (manage: warning/approved) with message to owner ────────
+  Future<AttractionResult> updateStatus(
+    String attractionId,
+    String newStatus, {
+    required String reason,
+    required String messageContent,
+  }) async {
+    try {
+      final response = await put(
+        '/api/admin/attractions/$attractionId/status',
+        {
+          'status': newStatus,
+          'reason': reason,
+          'messageContent': messageContent,
+        },
+      );
+      handleResponse(response);
+      return AttractionResult.ok();
+    } catch (e) {
+      debugPrint('❌ updateStatus error: $e');
+      return AttractionResult.err('Failed to update status. Please try again.');
+    }
+  }
+
   // ── Soft delete ───────────────────────────────────────────────────────────
   // Named deleteAttraction to avoid conflict with BaseApi.delete()
   Future<AttractionResult> deleteAttraction(String attractionId) async {

@@ -12,6 +12,8 @@ import '../../../core/services/accommodation_export_service.dart';
 import '../../shared/layouts/admin_layout.dart';
 import '../../shared/widgets/paginator.dart';
 import '../widgets/business_details_modal.dart';
+import '../widgets/status_change_dialog.dart';
+import '../models/activity_models.dart';
 import '../models/accommodation_models.dart';
 import '../../../api/messages_api.dart';
 import '../../../core/services/session_service.dart';
@@ -315,6 +317,94 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
     }
   }
 
+  // ── Manage status (warning / revert to approved) ──────────────────────────
+
+  void _openStatusDialog(Accommodation item) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.7),
+      builder: (_) => StatusChangeDialog(
+        title: 'Manage Business Status',
+        entityName: item.name,
+        currentStatusLabel: switch (item.status) {
+          AccommodationStatus.approved => 'Approved',
+          AccommodationStatus.pending => 'Pending',
+          AccommodationStatus.rejected => 'Rejected',
+          AccommodationStatus.warning => 'Warning',
+        },
+        currentStatusColor: switch (item.status) {
+          AccommodationStatus.approved => AppColors.accentGreen,
+          AccommodationStatus.pending => AppColors.accentPurple,
+          AccommodationStatus.rejected => AppColors.accentRed,
+          AccommodationStatus.warning => AppColors.accentOrange,
+        },
+        currentStatusIcon: switch (item.status) {
+          AccommodationStatus.approved => Icons.verified_outlined,
+          AccommodationStatus.pending => Icons.schedule_rounded,
+          AccommodationStatus.rejected => Icons.cancel_outlined,
+          AccommodationStatus.warning => Icons.warning_amber_rounded,
+        },
+        canSetWarning: item.status == AccommodationStatus.approved &&
+            (item.activityStatus == ActivityStatus.inactive ||
+                item.activityStatus == ActivityStatus.noActivity),
+        canSetApproved: item.status == AccommodationStatus.warning,
+        onConfirm: (newStatus, reason) =>
+            _handleStatusChange(item, newStatus, reason),
+      ),
+    );
+  }
+
+  Future<void> _handleStatusChange(
+    Accommodation item,
+    String newStatus,
+    String reason,
+  ) async {
+    final session = SessionService.instance.current;
+    final messageContent = buildOfficialMessageLetter(
+      recipient: item.name,
+      subject: 'Business Status Update',
+      messageContent: reason,
+      senderFullName: session?.fullName ?? 'Tourism Officer',
+      senderEmail: session?.email ?? '',
+      senderPhone: session?.phone ?? '',
+      messageType: MessageType.compliance,
+      recipientKind: MessageRecipientKind.business,
+    );
+    final result = await _api.updateStatus(
+      item.id,
+      newStatus,
+      reason: reason,
+      messageContent: messageContent,
+    );
+    if (!mounted) return;
+
+    if (result.success) {
+      unawaited(MessageBadgeController.instance.refresh());
+      _loadAccommodations();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            newStatus == 'warning'
+                ? '${item.name} has been flagged with a warning.'
+                : '${item.name} has been restored to approved.',
+          ),
+          backgroundColor: newStatus == 'warning'
+              ? const Color(0xFFFFA000)
+              : const Color(0xFF00C48C),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.error ?? 'Something went wrong.'),
+          backgroundColor: const Color(0xFFFF4D6A),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _searchCtrl.dispose();
@@ -417,11 +507,13 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
                           _AccommodationCardList(
                             rows: _accommodations,
                             onStatusUpdate: _updateStatus,
+                            onManage: _openStatusDialog,
                           )
                         else
                           _AccommodationTable(
                             rows: _accommodations,
                             onStatusUpdate: _updateStatus,
+                            onManage: _openStatusDialog,
                           ),
                         if (!_isLoading) ...[
                           const SizedBox(height: 12),
@@ -1566,11 +1658,16 @@ class _SearchBar extends StatelessWidget {
 // ─── Accommodation Table (wide screens) ──────────────────────────────────────
 
 class _AccommodationTable extends StatelessWidget {
-  const _AccommodationTable({required this.rows, required this.onStatusUpdate});
+  const _AccommodationTable({
+    required this.rows,
+    required this.onStatusUpdate,
+    required this.onManage,
+  });
 
   final List<Accommodation> rows;
   final Function(Accommodation, AccommodationStatus, {String? remarks})
   onStatusUpdate;
+  final ValueChanged<Accommodation> onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -1599,8 +1696,11 @@ class _AccommodationTable extends StatelessWidget {
               itemCount: rows.length,
               separatorBuilder: (_, __) =>
                   const Divider(color: AppColors.cardBorder, height: 1),
-              itemBuilder: (_, i) =>
-                  _TableRow(item: rows[i], onStatusUpdate: onStatusUpdate),
+              itemBuilder: (_, i) => _TableRow(
+                item: rows[i],
+                onStatusUpdate: onStatusUpdate,
+                onManage: onManage,
+              ),
             ),
         ],
       ),
@@ -1620,13 +1720,6 @@ class _TableHeader extends StatelessWidget {
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
               child: _HeaderCell('Business Name'),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8),
-              child: _HeaderCell('Type'),
             ),
           ),
           Expanded(
@@ -1655,6 +1748,13 @@ class _TableHeader extends StatelessWidget {
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
               child: _HeaderCell('Rooms'),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: _HeaderCell('Last Activity'),
             ),
           ),
           Expanded(
@@ -1695,11 +1795,16 @@ class _HeaderCell extends StatelessWidget {
 }
 
 class _TableRow extends StatelessWidget {
-  const _TableRow({required this.item, required this.onStatusUpdate});
+  const _TableRow({
+    required this.item,
+    required this.onStatusUpdate,
+    required this.onManage,
+  });
 
   final Accommodation item;
   final Function(Accommodation, AccommodationStatus, {String? remarks})
   onStatusUpdate;
+  final ValueChanged<Accommodation> onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -1742,17 +1847,6 @@ class _TableRow extends StatelessWidget {
                     ),
                   ),
                 ],
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                item.businessType.label,
-                style: const TextStyle(color: AppColors.textGray, fontSize: 13),
-                overflow: TextOverflow.ellipsis,
               ),
             ),
           ),
@@ -1804,6 +1898,17 @@ class _TableRow extends StatelessWidget {
             flex: 2,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                formatRelativeDate(item.lastActivity),
+                style: const TextStyle(color: AppColors.textGray, fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: _StatusBadge(status: item.status),
@@ -1819,6 +1924,7 @@ class _TableRow extends StatelessWidget {
                 child: _ActionButtons(
                   item: item,
                   onStatusUpdate: onStatusUpdate,
+                  onManage: onManage,
                 ),
               ),
             ),
@@ -1835,11 +1941,13 @@ class _AccommodationCardList extends StatelessWidget {
   const _AccommodationCardList({
     required this.rows,
     required this.onStatusUpdate,
+    required this.onManage,
   });
 
   final List<Accommodation> rows;
   final Function(Accommodation, AccommodationStatus, {String? remarks})
   onStatusUpdate;
+  final ValueChanged<Accommodation> onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -1856,18 +1964,26 @@ class _AccommodationCardList extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       itemCount: rows.length,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (_, i) =>
-          _AccommodationCard(item: rows[i], onStatusUpdate: onStatusUpdate),
+      itemBuilder: (_, i) => _AccommodationCard(
+        item: rows[i],
+        onStatusUpdate: onStatusUpdate,
+        onManage: onManage,
+      ),
     );
   }
 }
 
 class _AccommodationCard extends StatelessWidget {
-  const _AccommodationCard({required this.item, required this.onStatusUpdate});
+  const _AccommodationCard({
+    required this.item,
+    required this.onStatusUpdate,
+    required this.onManage,
+  });
 
   final Accommodation item;
   final Function(Accommodation, AccommodationStatus, {String? remarks})
   onStatusUpdate;
+  final ValueChanged<Accommodation> onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -1916,8 +2032,6 @@ class _AccommodationCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          _CardDetail(label: 'Type', value: item.businessType.label),
-          const SizedBox(height: 6),
           _CardDetail(label: 'Business Line', value: item.businessLineLabel),
           const SizedBox(height: 6),
           _CardDetail(label: 'Owner', value: item.owner),
@@ -1925,8 +2039,17 @@ class _AccommodationCard extends StatelessWidget {
           _CardDetail(label: 'Contact', value: item.contact),
           const SizedBox(height: 6),
           _CardDetail(label: 'Rooms', value: '${item.rooms}'),
+          const SizedBox(height: 6),
+          _CardDetail(
+            label: 'Last Activity',
+            value: formatRelativeDate(item.lastActivity),
+          ),
           const SizedBox(height: 12),
-          _ActionButtons(item: item, onStatusUpdate: onStatusUpdate),
+          _ActionButtons(
+            item: item,
+            onStatusUpdate: onStatusUpdate,
+            onManage: onManage,
+          ),
         ],
       ),
     );
@@ -2043,11 +2166,16 @@ String _formatRegisteredDate(String? rawValue) {
 // ─── Action Buttons ───────────────────────────────────────────────────────────
 
 class _ActionButtons extends StatelessWidget {
-  const _ActionButtons({required this.item, required this.onStatusUpdate});
+  const _ActionButtons({
+    required this.item,
+    required this.onStatusUpdate,
+    required this.onManage,
+  });
 
   final Accommodation item;
   final Function(Accommodation, AccommodationStatus, {String? remarks})
   onStatusUpdate;
+  final ValueChanged<Accommodation> onManage;
 
   Future<void> _showRemarksModal(
     BuildContext context, {
@@ -2298,6 +2426,13 @@ class _ActionButtons extends StatelessWidget {
             ),
           ),
         ],
+        _ActionButton(
+          icon: Icons.manage_accounts_rounded,
+          tooltip: 'Manage Status',
+          color: AppColors.accentOrange,
+          label: 'Manage',
+          onTap: () => onManage(item),
+        ),
       ],
     );
   }

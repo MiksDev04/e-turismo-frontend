@@ -54,15 +54,9 @@ abstract final class AdminNavItems {
       index: 4,
       route: AppRoutes.adminMessages,
     ),
-    NavItem(
-      icon: Icons.shield_outlined,
-      label: 'Compliance',
-      index: 5,
-      route: AppRoutes.adminCompliance,
-    ),
   ];
 
   /// Profile is only reachable via the header, so it is not part of the
   /// sidebar/bottom nav — but it keeps a reserved index for highlight logic.
-  static const int profileIndex = 6;
+  static const int profileIndex = 5;
 }
