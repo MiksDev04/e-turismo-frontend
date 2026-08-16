@@ -540,6 +540,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
           ? null
           : _leadBirthdateCtrl.text.trim(),
       leadSex: _leadSex,
+      originGroups: widget.record.originGroups,
     );
 
     final messenger = ScaffoldMessenger.of(context);

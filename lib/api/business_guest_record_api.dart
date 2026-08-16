@@ -4,6 +4,7 @@ import 'package:app/core/database/local_database.dart';
 import 'package:app/core/services/offline_service.dart';
 import 'package:app/core/services/session_service.dart';
 import 'package:app/core/utils/datetime_utils.dart';
+import 'package:app/models/origin_group.dart';
 import 'package:app/ui/business/pages/business_guest_records_page.dart';
 import 'base_api.dart';
 
@@ -149,6 +150,7 @@ class BusinessGuestRecordApi extends BaseApi {
     List<String>? roomIds,
     required String purposeOfVisit,
     required List<GuestBreakdownEntry> breakdowns,
+    List<OriginGroup>? originGroups,
     int? maleCount,
     int? femaleCount,
     String? leadCountry,
@@ -171,6 +173,7 @@ class BusinessGuestRecordApi extends BaseApi {
           roomIds:                roomIds,
           purposeOfVisit:         purposeOfVisit,
           breakdowns:             breakdowns,
+          originGroups:           originGroups,
           maleCount:              maleCount,
           femaleCount:            femaleCount,
           leadCountry:            leadCountry,
@@ -193,6 +196,7 @@ class BusinessGuestRecordApi extends BaseApi {
             roomIds:                roomIds,
             purposeOfVisit:         purposeOfVisit,
             breakdowns:             breakdowns,
+            originGroups:           originGroups,
             maleCount:              maleCount,
             femaleCount:            femaleCount,
             leadCountry:            leadCountry,
@@ -218,6 +222,7 @@ class BusinessGuestRecordApi extends BaseApi {
       roomIds:                roomIds,
       purposeOfVisit:         purposeOfVisit,
       breakdowns:             breakdowns,
+      originGroups:           originGroups,
       maleCount:              maleCount,
       femaleCount:            femaleCount,
       leadCountry:            leadCountry,
@@ -506,6 +511,7 @@ class BusinessGuestRecordApi extends BaseApi {
     List<String>? roomIds,
     required String purposeOfVisit,
     required List<GuestBreakdownEntry> breakdowns,
+    List<OriginGroup>? originGroups,
     int? maleCount,
     int? femaleCount,
     String? leadCountry,
@@ -521,17 +527,21 @@ class BusinessGuestRecordApi extends BaseApi {
     try {
       final businessId = SessionService.instance.current?.businessId;
 
-      // Male/female counts: optional. Derive the missing one from the other;
-      // if both are blank, fall back to the PSA 47.1%/52.9% split.
       var maleCountInt = maleCount ?? 0;
       var femaleCountInt = femaleCount ?? 0;
-      if (maleCountInt == 0 && femaleCountInt == 0) {
-        maleCountInt = (totalGuests * 0.471).round();
-        femaleCountInt = totalGuests - maleCountInt;
+      var totalGuestsInt = totalGuests;
+
+      if (originGroups != null && originGroups.isNotEmpty) {
+        maleCountInt = originGroups.fold<int>(0, (sum, g) => sum + g.maleCount);
+        femaleCountInt = originGroups.fold<int>(0, (sum, g) => sum + g.femaleCount);
+        totalGuestsInt = maleCountInt + femaleCountInt;
+      } else if (maleCountInt == 0 && femaleCountInt == 0) {
+        maleCountInt = (totalGuestsInt * 0.471).round();
+        femaleCountInt = totalGuestsInt - maleCountInt;
       } else if (maleCountInt == 0) {
-        maleCountInt = totalGuests - femaleCountInt;
+        maleCountInt = totalGuestsInt - femaleCountInt;
       } else if (femaleCountInt == 0) {
-        femaleCountInt = totalGuests - maleCountInt;
+        femaleCountInt = totalGuestsInt - maleCountInt;
       }
 
       final payload = <String, dynamic>{
@@ -540,7 +550,7 @@ class BusinessGuestRecordApi extends BaseApi {
         'checkOut':              checkOut,
         'actualCheckOut':        actualCheckOut,
         'status':                status,
-        'totalGuests':           totalGuests,
+        'totalGuests':           totalGuestsInt,
         'maleCount':             maleCountInt,
         'femaleCount':           femaleCountInt,
         'purposeOfVisit':        purposeOfVisit,
@@ -553,6 +563,9 @@ class BusinessGuestRecordApi extends BaseApi {
         'leadBirthdate':         leadBirthdate,
         'breakdowns':            breakdowns.map((b) => _breakdownEntryToPayload(b)).toList(),
       };
+      if (originGroups != null) {
+        payload['originGroups'] = originGroups.map((g) => g.toJson()).toList();
+      }
       if (roomIds != null) {
         payload['roomIds'] = roomIds;
       }
@@ -580,7 +593,7 @@ class BusinessGuestRecordApi extends BaseApi {
           'check_in':                checkIn,
           'check_out':               checkOut,
           'actual_checkout':         actualCheckOut,
-          'total_guests':            totalGuests,
+          'total_guests':            totalGuestsInt,
           'male_count':              maleCountInt,
           'female_count':            femaleCountInt,
           'purpose_of_visit':        purposeOfVisit,
@@ -630,6 +643,7 @@ class BusinessGuestRecordApi extends BaseApi {
     List<String>? roomIds,
     required String purposeOfVisit,
     required List<GuestBreakdownEntry> breakdowns,
+    List<OriginGroup>? originGroups,
     int? maleCount,
     int? femaleCount,
     String? leadCountry,
@@ -646,10 +660,6 @@ class BusinessGuestRecordApi extends BaseApi {
       final now = DateTime.now().toUtc().toIso8601String();
       final db  = await LocalDatabase.instance.database;
 
-      // Preserve pending_create so the initial POST (with room associations)
-      // is pushed first. Overwriting to pending_update would skip the create
-      // and the subsequent PUT checkout would upsert the record without
-      // junction rows, losing room data.
       final currentState = await db.query(
         LocalDatabase.tableGuestRecords,
         columns: ['sync_status'],
@@ -660,24 +670,28 @@ class BusinessGuestRecordApi extends BaseApi {
       final preserveCreate = currentState.isNotEmpty &&
           currentState.first['sync_status'] == LocalDatabase.syncPendingCreate;
 
-      // Male/female counts: optional. Derive the missing one from the other;
-      // if both are blank, fall back to the PSA 47.1%/52.9% split.
       var maleCountInt = maleCount ?? 0;
       var femaleCountInt = femaleCount ?? 0;
-      if (maleCountInt == 0 && femaleCountInt == 0) {
-        maleCountInt = (totalGuests * 0.471).round();
-        femaleCountInt = totalGuests - maleCountInt;
+      var totalGuestsInt = totalGuests;
+
+      if (originGroups != null && originGroups.isNotEmpty) {
+        maleCountInt = originGroups.fold<int>(0, (sum, g) => sum + g.maleCount);
+        femaleCountInt = originGroups.fold<int>(0, (sum, g) => sum + g.femaleCount);
+        totalGuestsInt = maleCountInt + femaleCountInt;
+      } else if (maleCountInt == 0 && femaleCountInt == 0) {
+        maleCountInt = (totalGuestsInt * 0.471).round();
+        femaleCountInt = totalGuestsInt - maleCountInt;
       } else if (maleCountInt == 0) {
-        maleCountInt = totalGuests - femaleCountInt;
+        maleCountInt = totalGuestsInt - femaleCountInt;
       } else if (femaleCountInt == 0) {
-        femaleCountInt = totalGuests - maleCountInt;
+        femaleCountInt = totalGuestsInt - maleCountInt;
       }
 
       final localUpdate = <String, dynamic>{
         'check_in':                checkIn,
         'check_out':               checkOut,
         'actual_checkout':         actualCheckOut,
-        'total_guests':            totalGuests,
+        'total_guests':            totalGuestsInt,
         'male_count':              maleCountInt,
         'female_count':            femaleCountInt,
         'purpose_of_visit':        purposeOfVisit,
@@ -1062,6 +1076,10 @@ class BusinessGuestRecordApi extends BaseApi {
   List<GuestRecord> _parseNodeRows(List rows) {
     return rows.map((row) {
       final breakdowns = (row['guest_breakdowns'] as List?) ?? [];
+      final originGroups = breakdowns
+          .map((b) => OriginGroup.fromJson(
+              b is Map<String, dynamic> ? b : Map<String, dynamic>.from(b as Map)))
+          .toList();
       final checkIn    = row['check_in']  as String;
       final checkOut   = row['check_out'] as String;
       final statusStr  = row['status']    as String? ?? 'active';
@@ -1102,6 +1120,7 @@ class BusinessGuestRecordApi extends BaseApi {
         leadIsOverseas:         (row['lead_is_overseas'] == true || row['lead_is_overseas'] == 1),
         leadBirthdate:          row['lead_birthdate'] as String?,
         leadSex:                _normaliseSex(row['lead_sex'] as String?),
+        originGroups: originGroups,
       );
     }).toList();
   }

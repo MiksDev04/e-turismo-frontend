@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:app/core/database/local_database.dart';
 import 'package:app/core/services/offline_service.dart';
 import 'package:app/core/services/session_service.dart';
+import 'package:app/models/origin_group.dart';
 import 'base_api.dart';
 
 class GuestEntryResult {
@@ -59,6 +60,7 @@ class GuestEntryData {
     this.leadIsOverseas = false,
     this.leadBirthdate,
     this.leadSex,
+    this.originGroups = const [],
   });
 
   final String businessId;
@@ -76,6 +78,7 @@ class GuestEntryData {
   final bool leadIsOverseas;
   final DateTime? leadBirthdate;
   final String? leadSex;
+  final List<OriginGroup> originGroups;
 }
 
 class BusinessGuestEntryApi extends BaseApi {
@@ -186,6 +189,21 @@ class BusinessGuestEntryApi extends BaseApi {
     final now         = DateTime.now().toUtc().toIso8601String();
     final leadBirthStr = data.leadBirthdate != null ? _formatDate(data.leadBirthdate!) : null;
 
+    final hasGroups = data.originGroups.isNotEmpty;
+    final int maleCountDerived;
+    final int femaleCountDerived;
+    final int totalGuestsDerived;
+
+    if (hasGroups) {
+      maleCountDerived = data.originGroups.fold<int>(0, (sum, g) => sum + g.maleCount);
+      femaleCountDerived = data.originGroups.fold<int>(0, (sum, g) => sum + g.femaleCount);
+      totalGuestsDerived = maleCountDerived + femaleCountDerived;
+    } else {
+      maleCountDerived = data.maleCount ?? 0;
+      femaleCountDerived = data.femaleCount ?? 0;
+      totalGuestsDerived = data.totalGuests;
+    }
+
     // ── Step 1: SQLite first ────────────────────────────────────────────────
     if (!kIsWeb) {
       try {
@@ -194,10 +212,10 @@ class BusinessGuestEntryApi extends BaseApi {
           businessId:         data.businessId,
           checkIn:            checkInStr,
           checkOut:           checkOutStr,
-          totalGuests:        data.totalGuests,
+          totalGuests:        totalGuestsDerived,
           purposeOfVisit:     data.purposeOfVisit,
-          maleCount:          data.maleCount,
-          femaleCount:        data.femaleCount,
+          maleCount:          maleCountDerived,
+          femaleCount:        femaleCountDerived,
           leadCountry:        data.leadCountry,
           leadMunicipality:   data.leadMunicipality,
           leadProvince:       data.leadProvince,
@@ -206,6 +224,7 @@ class BusinessGuestEntryApi extends BaseApi {
           leadBirthdate:      leadBirthStr,
           leadSex:            data.leadSex,
           roomIds:            data.roomIds,
+          originGroups:       data.originGroups,
           createdAt:          now,
           syncStatus:         LocalDatabase.syncPendingCreate,
           localUpdatedAt:     now,
@@ -218,16 +237,16 @@ class BusinessGuestEntryApi extends BaseApi {
 
     // ── Step 2: Push to Node API ─────────────────────────────────────────────
     try {
-      final payload = {
+      final payload = <String, dynamic>{
         'id': guestRecordId,
         'businessId': data.businessId,
         'checkIn': checkInStr,
         'checkOut': checkOutStr,
-        'totalGuests': data.totalGuests,
+        'totalGuests': totalGuestsDerived,
         'roomIds': data.roomIds,
         'purposeOfVisit': data.purposeOfVisit,
-        'maleCount': data.maleCount,
-        'femaleCount': data.femaleCount,
+        'maleCount': maleCountDerived,
+        'femaleCount': femaleCountDerived,
         'leadCountry': data.leadCountry,
         'leadMunicipality': data.leadMunicipality,
         'leadProvince': data.leadProvince,
@@ -235,6 +254,7 @@ class BusinessGuestEntryApi extends BaseApi {
         'leadIsOverseas': data.leadIsOverseas,
         'leadBirthdate': leadBirthStr,
         'leadSex': data.leadSex,
+        'originGroups': data.originGroups.map((g) => g.toJson()).toList(),
       };
 
       final response = await post('/api/business/guest-entries', payload);
@@ -308,15 +328,30 @@ class BusinessGuestEntryApi extends BaseApi {
       final now           = DateTime.now().toUtc().toIso8601String();
       final leadBirthStr  = data.leadBirthdate != null ? _formatDate(data.leadBirthdate!) : null;
 
+      final hasGroups = data.originGroups.isNotEmpty;
+      final int maleCountDerived;
+      final int femaleCountDerived;
+      final int totalGuestsDerived;
+
+      if (hasGroups) {
+        maleCountDerived = data.originGroups.fold<int>(0, (sum, g) => sum + g.maleCount);
+        femaleCountDerived = data.originGroups.fold<int>(0, (sum, g) => sum + g.femaleCount);
+        totalGuestsDerived = maleCountDerived + femaleCountDerived;
+      } else {
+        maleCountDerived = data.maleCount ?? 0;
+        femaleCountDerived = data.femaleCount ?? 0;
+        totalGuestsDerived = data.totalGuests;
+      }
+
       await _upsertLocalRecord(
         recordId:           guestRecordId,
         businessId:         data.businessId,
         checkIn:            checkInStr,
         checkOut:           checkOutStr,
-        totalGuests:        data.totalGuests,
+        totalGuests:        totalGuestsDerived,
         purposeOfVisit:     data.purposeOfVisit,
-        maleCount:          data.maleCount,
-        femaleCount:        data.femaleCount,
+        maleCount:          maleCountDerived,
+        femaleCount:        femaleCountDerived,
         leadCountry:        data.leadCountry,
         leadMunicipality:   data.leadMunicipality,
         leadProvince:       data.leadProvince,
@@ -325,6 +360,7 @@ class BusinessGuestEntryApi extends BaseApi {
         leadBirthdate:      leadBirthStr,
         leadSex:            data.leadSex,
         roomIds:            data.roomIds,
+        originGroups:       data.originGroups,
         createdAt:          now,
         syncStatus:         LocalDatabase.syncPendingCreate,
         localUpdatedAt:     now,
@@ -358,6 +394,7 @@ class BusinessGuestEntryApi extends BaseApi {
     String? leadBirthdate,
     String? leadSex,
     List<String>? roomIds,
+    List<OriginGroup>? originGroups,
     String? createdAt,
     required String syncStatus,
     required String? localUpdatedAt,
@@ -365,17 +402,22 @@ class BusinessGuestEntryApi extends BaseApi {
     final db = await LocalDatabase.instance.database;
     final current = SessionService.instance.current;
 
-    // Male/female counts: optional. Derive the missing one from the other;
-    // if both are blank, fall back to the PSA 47.1%/52.9% split.
+    // Male/female counts: optional. Derive from groups if available, or fill missing.
     var maleCountVal = maleCount ?? 0;
     var femaleCountVal = femaleCount ?? 0;
-    if (maleCountVal == 0 && femaleCountVal == 0) {
-      maleCountVal = (totalGuests * 0.471).round();
-      femaleCountVal = totalGuests - maleCountVal;
+    var totalGuestsVal = totalGuests;
+
+    if (originGroups != null && originGroups.isNotEmpty) {
+      maleCountVal = originGroups.fold<int>(0, (sum, g) => sum + g.maleCount);
+      femaleCountVal = originGroups.fold<int>(0, (sum, g) => sum + g.femaleCount);
+      totalGuestsVal = maleCountVal + femaleCountVal;
+    } else if (maleCountVal == 0 && femaleCountVal == 0) {
+      maleCountVal = (totalGuestsVal * 0.471).round();
+      femaleCountVal = totalGuestsVal - maleCountVal;
     } else if (maleCountVal == 0) {
-      maleCountVal = totalGuests - femaleCountVal;
+      maleCountVal = totalGuestsVal - femaleCountVal;
     } else if (femaleCountVal == 0) {
-      femaleCountVal = totalGuests - maleCountVal;
+      femaleCountVal = totalGuestsVal - maleCountVal;
     }
 
     // Ensure the profile and business exist locally to satisfy foreign key constraints
@@ -452,7 +494,7 @@ class BusinessGuestEntryApi extends BaseApi {
         'business_id':             businessId,
         'check_in':                checkIn,
         'check_out':               checkOut,
-        'total_guests':            totalGuests,
+        'total_guests':            totalGuestsVal,
         'male_count':              maleCountVal,
         'female_count':            femaleCountVal,
         'purpose_of_visit':        purposeOfVisit,

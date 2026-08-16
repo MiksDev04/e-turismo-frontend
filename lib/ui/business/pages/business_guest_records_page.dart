@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/database/local_database.dart';
 import '../../../core/services/offline_service.dart';
+import '../../../models/origin_group.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../shared/widgets/paginator.dart';
 import '../../shared/widgets/action_icon_button.dart';
@@ -98,6 +99,7 @@ class GuestRecord {
     this.leadIsOverseas = false,
     this.leadBirthdate,
     this.leadSex,
+    this.originGroups = const [],
   });
 
   final String id;
@@ -122,6 +124,7 @@ class GuestRecord {
   final bool leadIsOverseas;
   final String? leadBirthdate;
   final String? leadSex;
+  final List<OriginGroup> originGroups;
 }
 
 // ─── Filter Options ───────────────────────────────────────────────────────────
@@ -338,6 +341,7 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       maleCount:              updated.maleCount,
       femaleCount:            updated.femaleCount,
       breakdowns:             updated.demographics?.breakdowns ?? [],
+      originGroups:           updated.originGroups,
       leadCountry:            updated.leadCountry,
       leadMunicipality:       updated.leadMunicipality,
       leadProvince:           updated.leadProvince,
@@ -537,6 +541,7 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       maleCount:              record.maleCount,
       femaleCount:            record.femaleCount,
       breakdowns:             record.demographics?.breakdowns ?? [],
+      originGroups:           record.originGroups,
       leadCountry:            record.leadCountry,
       leadMunicipality:       record.leadMunicipality,
       leadProvince:           record.leadProvince,

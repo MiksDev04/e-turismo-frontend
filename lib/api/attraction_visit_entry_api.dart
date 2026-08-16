@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:app/core/services/offline_service.dart';
 import 'package:app/core/services/session_service.dart';
+import 'package:app/models/origin_group.dart';
 import 'base_api.dart';
 
 class VisitEntryResult {
@@ -28,6 +29,7 @@ class VisitEntryData {
     this.cityMunicipality,
     this.maleCount,
     this.femaleCount,
+    this.originGroups = const [],
   });
 
   final DateTime visitDate;
@@ -38,12 +40,37 @@ class VisitEntryData {
   final String? cityMunicipality;
   final int? maleCount;
   final int? femaleCount;
+  final List<OriginGroup> originGroups;
 
   Map<String, dynamic> toJson() {
     final visitDateStr =
         "${visitDate.year.toString().padLeft(4, '0')}-"
         "${visitDate.month.toString().padLeft(2, '0')}-"
         "${visitDate.day.toString().padLeft(2, '0')}";
+
+    if (originGroups.isNotEmpty) {
+      final male = originGroups.fold<int>(0, (sum, g) => sum + g.maleCount);
+      final female = originGroups.fold<int>(0, (sum, g) => sum + g.femaleCount);
+      final derivedGuestCount = male + female;
+
+      final firstGroup = originGroups.first;
+      final countryVal = firstGroup.country ?? 'Philippines';
+      final provinceVal = firstGroup.province;
+      final cityMunicipalityVal = firstGroup.cityMunicipality;
+      final isForeignVal = countryVal.toLowerCase() != 'philippines';
+
+      return {
+        'visitDate': visitDateStr,
+        'guestCount': derivedGuestCount,
+        'isForeign': isForeignVal,
+        'country': countryVal,
+        'province': provinceVal,
+        'cityMunicipality': cityMunicipalityVal,
+        'maleCount': male,
+        'femaleCount': female,
+        'originGroups': originGroups.map((g) => g.toJson()).toList(),
+      };
+    }
 
     var male = maleCount ?? 0;
     var female = femaleCount ?? 0;
