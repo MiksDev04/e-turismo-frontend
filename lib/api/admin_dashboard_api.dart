@@ -1,6 +1,7 @@
 // ignore_for_file: inference_failure_on_function_invocation
 
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'base_api.dart';
 import '../core/utils/datetime_utils.dart';
 
@@ -10,16 +11,63 @@ class AdminDashboardStats {
   const AdminDashboardStats({
     required this.activeAccommodations,
     required this.touristsThisPeriod,
-    required this.pendingRegistrations,
+    required this.pendingAccommodations,
     required this.activeAttractions,
+    required this.pendingAttractions,
     required this.touristsThisYear,
   });
 
   final int activeAccommodations;
   final int touristsThisPeriod;
-  final int pendingRegistrations;
+  final int pendingAccommodations;
   final int activeAttractions;
+  final int pendingAttractions;
   final int touristsThisYear;
+}
+
+/// Per-type pending registration counts used by the admin navigation badges.
+class PendingCounts {
+  const PendingCounts({
+    required this.pendingAccommodations,
+    required this.pendingAttractions,
+  });
+
+  final int pendingAccommodations;
+  final int pendingAttractions;
+
+  const PendingCounts.empty()
+      : pendingAccommodations = 0,
+        pendingAttractions = 0;
+
+  factory PendingCounts.fromJson(Map<String, dynamic> json) => PendingCounts(
+    pendingAccommodations: (json['pendingAccommodations'] as num?)?.toInt() ?? 0,
+    pendingAttractions: (json['pendingAttractions'] as num?)?.toInt() ?? 0,
+  );
+}
+
+/// Shared pending-count cache for the admin sidebar / bottom nav badges.
+class PendingBadgeController {
+  PendingBadgeController._();
+
+  static final PendingBadgeController instance = PendingBadgeController._();
+
+  final ValueNotifier<PendingCounts> counts = ValueNotifier<PendingCounts>(
+    const PendingCounts.empty(),
+  );
+  bool _isRefreshing = false;
+
+  Future<void> refresh() async {
+    if (_isRefreshing) return;
+    _isRefreshing = true;
+    try {
+      final data = await AdminDashboardApi().fetchPendingCounts();
+      counts.value = data;
+    } catch (_) {
+      counts.value = const PendingCounts.empty();
+    } finally {
+      _isRefreshing = false;
+    }
+  }
 }
 
 typedef DashboardStats = AdminDashboardStats;
@@ -209,8 +257,14 @@ class AdminDashboardApi extends BaseApi {
     final data = handleResponse(response);
     return {
       'active': (data['activeAccommodations'] as num).toInt(),
-      'pending': (data['pendingRegistrations'] as num).toInt(),
+      'pending': (data['pendingAccommodations'] as num).toInt(),
     };
+  }
+
+  Future<PendingCounts> fetchPendingCounts() async {
+    final response = await get('/api/dashboard/pending-counts');
+    final data = handleResponse(response);
+    return PendingCounts.fromJson(data as Map<String, dynamic>);
   }
 
   List<String> _extractBusinessLines(Object? value) {
@@ -365,8 +419,11 @@ class AdminDashboardApi extends BaseApi {
 
     final stats = data['stats'] as Map<String, dynamic>;
     final activeAccommodations = (stats['activeAccommodations'] as num).toInt();
-    final pendingRegistrations = (stats['pendingRegistrations'] as num).toInt();
+    final pendingAccommodations =
+        (stats['pendingAccommodations'] as num?)?.toInt() ?? 0;
     final activeAttractions = (stats['activeAttractions'] as num).toInt();
+    final pendingAttractions =
+        (stats['pendingAttractions'] as num?)?.toInt() ?? 0;
 
     final breakdowns =
         List<Map<String, dynamic>>.from(data['breakdowns'] as List);
@@ -553,8 +610,9 @@ class AdminDashboardApi extends BaseApi {
       stats: AdminDashboardStats(
         activeAccommodations: activeAccommodations,
         touristsThisPeriod: touristsThisPeriod,
-        pendingRegistrations: pendingRegistrations,
+        pendingAccommodations: pendingAccommodations,
         activeAttractions: activeAttractions,
+        pendingAttractions: pendingAttractions,
         touristsThisYear: touristsThisYear,
       ),
       genderDistribution: GenderDistribution(
@@ -567,7 +625,7 @@ class AdminDashboardApi extends BaseApi {
       provinces: provinces,
       compliance: ComplianceData(
         compliant: activeAccommodations,
-        nonCompliant: pendingRegistrations,
+        nonCompliant: pendingAccommodations,
       ),
       accommodationTypes: accommodationTypes,
       attractions: attractions,

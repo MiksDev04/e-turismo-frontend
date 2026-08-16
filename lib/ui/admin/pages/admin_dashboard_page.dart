@@ -1171,6 +1171,7 @@ class _StatCards extends StatelessWidget {
         iconColor: AppColors.primaryCyan,
         value: '${stats.activeAccommodations}',
         label: 'Active Accommodations',
+        pending: stats.pendingAccommodations,
         onTap: () =>
             Navigator.pushReplacementNamed(context, AppRoutes.adminAccommodations),
       ),
@@ -1179,6 +1180,7 @@ class _StatCards extends StatelessWidget {
         iconColor: AppColors.accentOrange,
         value: '${stats.activeAttractions}',
         label: 'Active Attractions',
+        pending: stats.pendingAttractions,
         onTap: () =>
             Navigator.pushReplacementNamed(context, AppRoutes.adminAttractions),
       ),
@@ -1244,6 +1246,7 @@ class _StatCard extends StatelessWidget {
     required this.iconColor,
     required this.value,
     required this.label,
+    this.pending,
     this.infoTooltip,
     this.onTap,
   });
@@ -1252,8 +1255,24 @@ class _StatCard extends StatelessWidget {
   final Color iconColor;
   final String value;
   final String label;
+  final int? pending;
   final String? infoTooltip;
   final VoidCallback? onTap;
+
+  Widget _pendingHint() {
+    if (pending == null || pending! <= 0) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        '${pending!} pending',
+        style: const TextStyle(
+          color: AppColors.accentOrange,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1282,6 +1301,8 @@ class _StatCard extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
+                      const SizedBox(width: 8),
+                      _pendingHint(),
                     ],
                   ),
                   const SizedBox(height: 2),
@@ -1314,13 +1335,20 @@ class _StatCard extends StatelessWidget {
                 children: [
                   Icon(icon, color: iconColor, size: 18),
                   const SizedBox(height: 10),
-                  Text(
-                    value,
-                    style: const TextStyle(
-                      color: AppColors.textWhite,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        value,
+                        style: const TextStyle(
+                          color: AppColors.textWhite,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _pendingHint(),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Row(

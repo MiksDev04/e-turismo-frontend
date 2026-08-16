@@ -9,11 +9,13 @@ class NavItem {
     required this.label,
     required this.index,
     required this.route,
+    this.badge,
   });
 
   final IconData icon;
   final String label;
   final int index;
+  final int? badge;
   final String route;
 }
 
