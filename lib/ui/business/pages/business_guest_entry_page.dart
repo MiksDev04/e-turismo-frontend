@@ -84,9 +84,16 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
   @override
   void initState() {
     super.initState();
+    final now = DateTime.now();
+    _checkIn = DateTime(now.year, now.month, now.day);
+    _checkOut = _checkIn;
+    _purpose = 'Leisure';
+    _leadCountry = 'Philippines';
+    _leadNationality = 'Filipino';
     _isOffline = !ConnectivityService.instance.isOnline;
     _subscribeToConnectivity();
     _loadBusinessId();
+    _loadPsgcDefaults();
   }
 
   @override
@@ -146,6 +153,34 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
     } catch (e) {
       if (mounted) setState(() => _isLoadingRooms = false);
     }
+  }
+
+  // ── Defaults ──────────────────────────────────────────────────────────────
+
+  ({String? provinceCode, String? cityCode}) _defaultOrigin() {
+    final repo = PsgcRepository.instance;
+    final laguna = repo.allProvinces
+        .where((p) => p.name.toLowerCase() == 'laguna')
+        .firstOrNull;
+    final sanPablo = laguna != null
+        ? repo
+            .citiesFor(laguna.code)
+            .where((c) => c.name.toLowerCase() == 'city of san pablo')
+            .firstOrNull
+        : null;
+    return (provinceCode: laguna?.code, cityCode: sanPablo?.code);
+  }
+
+  Future<void> _loadPsgcDefaults() async {
+    if (!PsgcRepository.instance.isLoaded) {
+      await PsgcRepository.instance.load();
+    }
+    if (!mounted) return;
+    final defaults = _defaultOrigin();
+    setState(() {
+      _selectedProvinceCode ??= defaults.provinceCode;
+      _selectedCityCode ??= defaults.cityCode;
+    });
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -220,21 +255,24 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
   }
 
   void _clearForm() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final defaults = _defaultOrigin();
     setState(() {
-      _checkIn = null;
-      _checkOut = null;
+      _checkIn = today;
+      _checkOut = today;
       _totalGuestsCtrl.clear();
       _maleGuestsCtrl.clear();
       _femaleGuestsCtrl.clear();
-      _purpose = null;
+      _purpose = 'Leisure';
       _purposeOtherCtrl.clear();
       _showPurposeOther = false;
       _selectedRoomIds.clear();
-      _leadCountry = null;
-      _leadNationality = null;
+      _leadCountry = 'Philippines';
+      _leadNationality = 'Filipino';
       _leadIsOverseas = false;
-      _selectedProvinceCode = null;
-      _selectedCityCode = null;
+      _selectedProvinceCode = defaults.provinceCode;
+      _selectedCityCode = defaults.cityCode;
       _leadBirthdate = null;
       _leadSex = null;
       _errors = {};
@@ -624,6 +662,11 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                           _leadNationality = null;
                           _selectedProvinceCode = null;
                           _selectedCityCode = null;
+                        } else {
+                          final defaults = _defaultOrigin();
+                          _leadNationality = 'Filipino';
+                          _selectedProvinceCode = defaults.provinceCode;
+                          _selectedCityCode = defaults.cityCode;
                         }
                       });
                       _clearFieldError('leadCountry');
@@ -636,6 +679,12 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                           _leadNationality = null;
                           _selectedProvinceCode = null;
                           _selectedCityCode = null;
+                        } else {
+                          final defaults = _defaultOrigin();
+                          _leadCountry = 'Philippines';
+                          _leadNationality = 'Filipino';
+                          _selectedProvinceCode = defaults.provinceCode;
+                          _selectedCityCode = defaults.cityCode;
                         }
                       });
                     },
