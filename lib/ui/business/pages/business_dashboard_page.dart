@@ -371,6 +371,13 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
       }
       buf.writeln();
 
+      buf.writeln('TOP CITY/MUNICIPALITIES');
+      buf.writeln('City/Municipality,Guests');
+      for (final cm in d.cityMunicipalities) {
+        buf.writeln('${_csvCell(cm.cityMunicipality)},${cm.count}');
+      }
+      buf.writeln();
+
       // ── Purpose of Visit ───────────────────────────────────────────────────
       buf.writeln('PURPOSE OF VISIT');
       buf.writeln('Purpose,Guests');
@@ -583,6 +590,27 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
               headers: ['Province', 'Guests'],
               data: d.provinces
                   .map((p) => [p.province, '${p.count}'])
+                  .toList(),
+              cellStyle: const pw.TextStyle(fontSize: 10),
+              headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 10,
+              ),
+            ),
+            pw.SizedBox(height: 16),
+
+            pw.Text(
+              'Top City/Municipality',
+              style: pw.TextStyle(
+                fontSize: 14,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 8),
+            pw.Table.fromTextArray(
+              headers: ['City/Municipality', 'Guests'],
+              data: d.cityMunicipalities
+                  .map((c) => [c.cityMunicipality, '${c.count}'])
                   .toList(),
               cellStyle: const pw.TextStyle(fontSize: 10),
               headerStyle: pw.TextStyle(
@@ -884,6 +912,8 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
                               ageGroups: _dashData!.ageGroups,
                               topCountries: _dashData!.topCountries,
                               provinces: _dashData!.provinces,
+                              cityMunicipalities:
+                                  _dashData!.cityMunicipalities,
                               purposeOfVisit: _dashData!.purposeOfVisit,
                             ),
                           ],
@@ -1516,6 +1546,7 @@ class _DonutChartsRow extends StatelessWidget {
     required this.ageGroups,
     required this.topCountries,
     required this.provinces,
+    required this.cityMunicipalities,
     required this.purposeOfVisit,
   });
 
@@ -1523,6 +1554,7 @@ class _DonutChartsRow extends StatelessWidget {
   final List<AgeGroupCount> ageGroups;
   final List<CountryCount> topCountries;
   final List<ProvinceCount> provinces;
+  final List<CityMunicipalityCount> cityMunicipalities;
   final List<PurposeCount> purposeOfVisit;
 
   @override
@@ -1542,6 +1574,7 @@ class _DonutChartsRow extends StatelessWidget {
         );
         final purposeCard = _PurposeOfVisitCard(
           purposeOfVisit: purposeOfVisit,
+          cityMunicipalities: cityMunicipalities,
         );
 
         if (isNarrow) {
@@ -1890,14 +1923,25 @@ class _CountriesCardState extends State<_CountriesCard> {
   }
 }
 
-// ─── Purpose of Visit Card ────────────────────────────────────────────────────
+// ─── Purpose / City-Municipality Card ────────────────────────────────────────
 
-class _PurposeOfVisitCard extends StatelessWidget {
-  const _PurposeOfVisitCard({required this.purposeOfVisit});
+class _PurposeOfVisitCard extends StatefulWidget {
+  const _PurposeOfVisitCard({
+    required this.purposeOfVisit,
+    required this.cityMunicipalities,
+  });
 
   final List<PurposeCount> purposeOfVisit;
+  final List<CityMunicipalityCount> cityMunicipalities;
 
-  static const _colors = [
+  @override
+  State<_PurposeOfVisitCard> createState() => _PurposeOfVisitCardState();
+}
+
+class _PurposeOfVisitCardState extends State<_PurposeOfVisitCard> {
+  int _tab = 0; // 0 = Purpose, 1 = City / Municipality
+
+  static const _purposeColors = [
     AppColors.chartPurple,
     AppColors.chartOrange,
     AppColors.chartBlue,
@@ -1906,57 +1950,85 @@ class _PurposeOfVisitCard extends StatelessWidget {
     AppColors.chartGray,
   ];
 
+  static const _cityColors = [
+    AppColors.chartBlue,
+    AppColors.chartGreen,
+    AppColors.chartOrange,
+    AppColors.chartPurple,
+    AppColors.chartCyan,
+    AppColors.chartGray,
+  ];
+
+  List<({String label, int count})> get _list => _tab == 0
+      ? widget.purposeOfVisit
+          .map((p) => (label: p.purpose, count: p.count))
+          .toList()
+      : widget.cityMunicipalities
+          .map((c) => (label: c.cityMunicipality, count: c.count))
+          .toList();
+
+  List<Color> get _colors => _tab == 0 ? _purposeColors : _cityColors;
+
+  List<_Segment> get _segments {
+    final list = _list;
+    if (list.isEmpty) {
+      return List.generate(
+        5,
+        (i) => _Segment(
+          value: 0.2,
+          color: _colors[i % _colors.length],
+          isEmpty: true,
+        ),
+      );
+    }
+    final total = list.fold<int>(0, (s, n) => s + n.count);
+    return list.asMap().entries.map((e) {
+      final ratio = total == 0 ? 1 / list.length : e.value.count / total;
+      return _Segment(
+        value: ratio,
+        color: _colors[e.key % _colors.length],
+        label: e.value.label,
+        count: e.value.count,
+      );
+    }).toList();
+  }
+
+  List<_LegendItem> get _legend => _list
+      .asMap()
+      .entries
+      .map(
+        (e) => _LegendItem(
+          label: e.value.label,
+          color: _colors[e.key % _colors.length],
+        ),
+      )
+      .toList();
+
+  String? get _emptyHint => _list.isEmpty ? 'No data for this period' : null;
+
   @override
   Widget build(BuildContext context) {
-    final isEmpty = purposeOfVisit.isEmpty;
-    final total = purposeOfVisit.fold<int>(0, (s, p) => s + p.count);
-
-    final segments = isEmpty
-        ? List.generate(
-            5,
-            (i) => _Segment(
-              value: 0.2,
-              color: _colors[i % _colors.length],
-              isEmpty: true,
-            ),
-          )
-        : purposeOfVisit.asMap().entries.map((e) {
-            final ratio = total == 0 ? 1 / purposeOfVisit.length : e.value.count / total;
-            return _Segment(
-              value: ratio,
-              color: _colors[e.key % _colors.length],
-              label: e.value.purpose,
-              count: e.value.count,
-            );
-          }).toList();
-
-    final legend = purposeOfVisit
-        .asMap()
-        .entries
-        .map(
-          (e) => _LegendItem(
-            label: e.value.purpose,
-            color: _colors[e.key % _colors.length],
-          ),
-        )
-        .toList();
-
     return _DashCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _CardTitle(title: 'Purpose of Visit'),
-          if (isEmpty) ...[
+          _ToggleCardTitle(
+            options: const ['Purpose', 'City / Municipality'],
+            selectedIndex: _tab,
+            onChanged: (i) => setState(() => _tab = i),
+          ),
+          if (_emptyHint != null) ...[
             const SizedBox(height: 6),
-            const Text(
-              'No data for this period',
-              style: TextStyle(color: AppColors.textSubtle, fontSize: 11),
+            Text(
+              _emptyHint!,
+              style: const TextStyle(color: AppColors.textSubtle, fontSize: 11),
             ),
           ],
           const SizedBox(height: 16),
           _DonutContent(
-            segments: segments,
-            legend: legend,
+            key: ValueKey(_tab),
+            segments: _segments,
+            legend: _legend,
           ),
         ],
       ),

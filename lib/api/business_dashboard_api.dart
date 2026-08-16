@@ -54,6 +54,16 @@ class ProvinceCount {
   final int count;
 }
 
+class CityMunicipalityCount {
+  const CityMunicipalityCount({
+    required this.cityMunicipality,
+    required this.count,
+  });
+
+  final String cityMunicipality;
+  final int count;
+}
+
 class MonthlyCount {
   const MonthlyCount({required this.month, required this.count});
 
@@ -81,6 +91,7 @@ class DashboardData {
     required this.sexDistribution,
     required this.topCountries,
     required this.provinces,
+    required this.cityMunicipalities,
     required this.ageGroups,
     required this.purposeOfVisit,
   });
@@ -89,6 +100,7 @@ class DashboardData {
   final SexDistribution sexDistribution;
   final List<CountryCount> topCountries;
   final List<ProvinceCount> provinces;
+  final List<CityMunicipalityCount> cityMunicipalities;
   final List<AgeGroupCount> ageGroups;
   final List<PurposeCount> purposeOfVisit;
 }
@@ -519,6 +531,7 @@ class BusinessDashboardApi extends BaseApi {
       'SELECT id as guest_record_id, '
       '  lead_country as country, '
       '  lead_province as province, '
+      '  lead_city_municipality as city_municipality, '
       '  lead_sex as sex, '
       '  lead_is_overseas as is_overseas, '
       '  lead_birthdate, '
@@ -561,6 +574,7 @@ class BusinessDashboardApi extends BaseApi {
         'guest_record_id':     r['guest_record_id'],
         'country':             country,
         'province':            r['province'],
+        'city_municipality':   r['city_municipality'],
         'sex':                 sex,
         'age_group':           ageGroup,
         'count':               1,
@@ -723,6 +737,29 @@ class BusinessDashboardApi extends BaseApi {
             .take(5)
             .toList();
 
+    // Top 5 city/municipalities (domestic leads only — lead_city_municipality
+    // is null for foreign leads).
+    final cityMunicipalityMap = <String, int>{};
+    for (final b in breakdowns) {
+      final cityMunicipality =
+          _stringValue(b, 'city_municipality')?.trim() ?? '';
+      if (cityMunicipality.isEmpty) continue;
+      final recordId = _stringValue(b, 'guest_record_id') ?? '';
+      final guestDays = recordGuestDays[recordId] ?? 1;
+      cityMunicipalityMap[cityMunicipality] =
+          (cityMunicipalityMap[cityMunicipality] ?? 0) + guestDays;
+    }
+    final cityMunicipalities =
+        (cityMunicipalityMap.entries
+                .map((e) => CityMunicipalityCount(
+                      cityMunicipality: e.key,
+                      count: e.value,
+                    ))
+                .toList()
+              ..sort((a, b) => b.count.compareTo(a.count)))
+            .take(5)
+            .toList();
+
     // Purpose of visit
     final purposeMap = <String, int>{};
     for (final record in periodRecords) {
@@ -749,6 +786,7 @@ class BusinessDashboardApi extends BaseApi {
       ),
       topCountries: topCountries,
       provinces: provinces,
+      cityMunicipalities: cityMunicipalities,
       ageGroups: ageGroups,
       purposeOfVisit: purposeOfVisit,
     );
