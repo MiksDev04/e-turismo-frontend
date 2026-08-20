@@ -8,6 +8,8 @@ import '../../../core/services/psgc_repository.dart';
 import '../../../core/models/psgc_models.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../../api/business_guest_entry_api.dart';
+import '../../../models/origin_group.dart';
+import '../widgets/origin_groups_editor.dart';
 
 // ─── Light input colours ──────────────────────────────────────────────────────
 
@@ -72,6 +74,9 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
   String? _selectedCityCode;
   DateTime? _leadBirthdate;
   String? _leadSex;
+
+  // ── Origin groups ───────────────────────────────────────────────────────
+  List<OriginGroup> _originGroups = [];
 
   Map<String, String?> _errors = {};
 
@@ -199,6 +204,10 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
   bool get _isPhilippines =>
       !_leadIsOverseas && _leadCountry == 'Philippines';
 
+  bool get _hasOriginGroups => _originGroups.isNotEmpty;
+  int get _groupMaleSum => _originGroups.fold<int>(0, (s, g) => s + g.maleCount);
+  int get _groupFemaleSum => _originGroups.fold<int>(0, (s, g) => s + g.femaleCount);
+
   void _clearFieldError(String key) {
     if (_errors.containsKey(key)) {
       setState(() => _errors = Map.from(_errors)..remove(key));
@@ -275,6 +284,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
       _selectedCityCode = defaults.cityCode;
       _leadBirthdate = null;
       _leadSex = null;
+      _originGroups = [];
       _errors = {};
     });
   }
@@ -429,15 +439,16 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
       }
     }
 
-    final maleCount = int.tryParse(_maleGuestsCtrl.text);
-    final femaleCount = int.tryParse(_femaleGuestsCtrl.text);
+    final hasGroups = _hasOriginGroups;
+    final maleCount = hasGroups ? _groupMaleSum : int.tryParse(_maleGuestsCtrl.text);
+    final femaleCount = hasGroups ? _groupFemaleSum : int.tryParse(_femaleGuestsCtrl.text);
 
     final result = await _api.saveGuestEntry(
       GuestEntryData(
         businessId: _businessId!,
         checkIn: _checkIn!,
         checkOut: _checkOut!,
-        totalGuests: _totalGuests,
+        totalGuests: hasGroups ? (_groupMaleSum + _groupFemaleSum) : _totalGuests,
         roomIds: _selectedRoomIds.toList(),
         purposeOfVisit: purposeValue,
         maleCount: maleCount,
@@ -449,6 +460,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
         leadIsOverseas: _leadIsOverseas,
         leadBirthdate: _leadBirthdate,
         leadSex: _leadSex,
+        originGroups: _originGroups,
       ),
     );
 
@@ -598,6 +610,9 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                     selectedRoomIds: _selectedRoomIds,
                     isLoadingRooms: _isLoadingRooms,
                     errors: _errors,
+                    maleFemaleLocked: _hasOriginGroups,
+                    lockedMaleCount: _groupMaleSum,
+                    lockedFemaleCount: _groupFemaleSum,
                     onPickCheckIn: () => _pickDate(context, true),
                     onPickCheckOut: () => _pickDate(context, false),
                     onPurposeChanged: (v) {
@@ -706,6 +721,24 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                       setState(() => _leadSex = v);
                       _clearFieldError('leadSex');
                     },
+                  ),
+                  const SizedBox(height: 20),
+
+                  OriginGroupsEditor(
+                    groups: _originGroups,
+                    onGroupsChanged: (groups) {
+                      setState(() => _originGroups = groups);
+                      if (_hasOriginGroups) {
+                        _maleGuestsCtrl.text = '$_groupMaleSum';
+                        _femaleGuestsCtrl.text = '$_groupFemaleSum';
+                      }
+                    },
+                    totalGuests: _totalGuests,
+                    leadProvinceCode: _selectedProvinceCode,
+                    leadCityCode: _selectedCityCode,
+                    leadCountry: _leadCountry,
+                    maleGuestsCtrl: _maleGuestsCtrl,
+                    femaleGuestsCtrl: _femaleGuestsCtrl,
                   ),
                   const SizedBox(height: 20),
 
@@ -843,6 +876,9 @@ class _StayInfoCard extends StatelessWidget {
     required this.onFemaleGuestsChanged,
     required this.onRoomToggled,
     required this.onPurposeOtherChanged,
+    this.maleFemaleLocked = false,
+    this.lockedMaleCount = 0,
+    this.lockedFemaleCount = 0,
   });
 
   final DateTime? checkIn;
@@ -866,6 +902,9 @@ class _StayInfoCard extends StatelessWidget {
   final ValueChanged<String> onFemaleGuestsChanged;
   final ValueChanged<String> onRoomToggled;
   final ValueChanged<String> onPurposeOtherChanged;
+  final bool maleFemaleLocked;
+  final int lockedMaleCount;
+  final int lockedFemaleCount;
 
   String _fmt(DateTime? dt) {
     if (dt == null) return '';
@@ -884,39 +923,53 @@ class _StayInfoCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Row 1: Check-in / Check-out ──────────────────────────────
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _FieldCol(
+                  label: 'Check-in Date *',
+                  errorText: errors['checkIn'],
+                  child: _EntryDateField(
+                    value: _fmt(checkIn),
+                    hasError: errors['checkIn'] != null,
+                    onTap: onPickCheckIn,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _FieldCol(
+                  label: 'Check-out Date *',
+                  errorText: errors['checkOut'],
+                  child: _EntryDateField(
+                    value: _fmt(checkOut),
+                    hasError: errors['checkOut'] != null,
+                    onTap: onPickCheckOut,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── Row 2: Length of Stay / Total Guests ────────────────────
           if (isMobile) ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: _FieldCol(
-                    label: 'Check-in Date *',
-                    errorText: errors['checkIn'],
-                    child: _EntryDateField(
-                      value: _fmt(checkIn),
-                      hasError: errors['checkIn'] != null,
-                      onTap: onPickCheckIn,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _FieldCol(
-                    label: 'Check-out Date *',
-                    errorText: errors['checkOut'],
-                    child: _EntryDateField(
-                      value: _fmt(checkOut),
-                      hasError: errors['checkOut'] != null,
-                      onTap: onPickCheckOut,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
             _FieldCol(
               label: 'Length of Stay',
               child: _EntryReadOnlyField(value: nightsLabel),
+            ),
+            const SizedBox(height: 14),
+            _FieldCol(
+              label: 'Total Guests *',
+              errorText: errors['totalGuests'],
+              child: _EntryNumberField(
+                controller: totalGuestsCtrl,
+                hint: 'e.g. 10',
+                hasError: errors['totalGuests'] != null,
+                onChanged: onGuestsChanged,
+              ),
             ),
           ] else ...[
             Row(
@@ -924,32 +977,21 @@ class _StayInfoCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _FieldCol(
-                    label: 'Check-in Date *',
-                    errorText: errors['checkIn'],
-                    child: _EntryDateField(
-                      value: _fmt(checkIn),
-                      hasError: errors['checkIn'] != null,
-                      onTap: onPickCheckIn,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _FieldCol(
-                    label: 'Check-out Date *',
-                    errorText: errors['checkOut'],
-                    child: _EntryDateField(
-                      value: _fmt(checkOut),
-                      hasError: errors['checkOut'] != null,
-                      onTap: onPickCheckOut,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _FieldCol(
                     label: 'Length of Stay',
                     child: _EntryReadOnlyField(value: nightsLabel),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _FieldCol(
+                    label: 'Total Guests *',
+                    errorText: errors['totalGuests'],
+                    child: _EntryNumberField(
+                      controller: totalGuestsCtrl,
+                      hint: 'e.g. 10',
+                      hasError: errors['totalGuests'] != null,
+                      onChanged: onGuestsChanged,
+                    ),
                   ),
                 ),
               ],
@@ -957,33 +999,20 @@ class _StayInfoCard extends StatelessWidget {
           ],
           const SizedBox(height: 14),
 
-          _FieldCol(
-            label: 'Total Guests *',
-            errorText: errors['totalGuests'],
-            child: _EntryNumberField(
-              controller: totalGuestsCtrl,
-              hint: 'e.g. 10',
-              hasError: errors['totalGuests'] != null,
-              onChanged: onGuestsChanged,
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // ── Room Selection ─────────────────────────────────────────────
-          _FieldCol(
-            label: 'Rooms (optional)',
-            errorText: errors['rooms'],
-            child: _RoomSelector(
-              vacantRooms: vacantRooms,
-              selectedRoomIds: selectedRoomIds,
-              isLoading: isLoadingRooms,
-              hasError: errors['rooms'] != null,
-              onRoomToggled: onRoomToggled,
-            ),
-          ),
-          const SizedBox(height: 14),
-
+          // ── Row 3: Rooms / Purpose of Visit ─────────────────────────
           if (isMobile) ...[
+            _FieldCol(
+              label: 'Rooms (optional)',
+              errorText: errors['rooms'],
+              child: _RoomSelector(
+                vacantRooms: vacantRooms,
+                selectedRoomIds: selectedRoomIds,
+                isLoading: isLoadingRooms,
+                hasError: errors['rooms'] != null,
+                onRoomToggled: onRoomToggled,
+              ),
+            ),
+            const SizedBox(height: 14),
             _FieldCol(
               label: 'Purpose of Visit *',
               errorText: errors['purpose'],
@@ -1008,41 +1037,24 @@ class _StayInfoCard extends StatelessWidget {
                 ),
               ),
             ],
-            const SizedBox(height: 14),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: _FieldCol(
-                    label: 'Male Guests (optional)',
-                    errorText: errors['maleGuests'],
-                    child: _EntryNumberField(
-                      controller: maleGuestsCtrl,
-                      hint: 'e.g. 5',
-                      hasError: errors['maleGuests'] != null,
-                      onChanged: onMaleGuestsChanged,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _FieldCol(
-                    label: 'Female Guests (optional)',
-                    errorText: errors['femaleGuests'],
-                    child: _EntryNumberField(
-                      controller: femaleGuestsCtrl,
-                      hint: 'e.g. 5',
-                      hasError: errors['femaleGuests'] != null,
-                      onChanged: onFemaleGuestsChanged,
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ] else ...[
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Expanded(
+                  child: _FieldCol(
+                    label: 'Rooms (optional)',
+                    errorText: errors['rooms'],
+                    child: _RoomSelector(
+                      vacantRooms: vacantRooms,
+                      selectedRoomIds: selectedRoomIds,
+                      isLoading: isLoadingRooms,
+                      hasError: errors['rooms'] != null,
+                      onRoomToggled: onRoomToggled,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1074,38 +1086,46 @@ class _StayInfoCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _FieldCol(
-                        label: 'Male Guests (optional)',
-                        errorText: errors['maleGuests'],
-                        child: _EntryNumberField(
+              ],
+            ),
+          ],
+          const SizedBox(height: 14),
+
+          // ── Row 4: Male / Female ────────────────────────────────────
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _FieldCol(
+                  label: 'Male Guests (optional)',
+                  errorText: maleFemaleLocked ? null : errors['maleGuests'],
+                  child: maleFemaleLocked
+                      ? _EntryReadOnlyField(value: '$lockedMaleCount')
+                      : _EntryNumberField(
                           controller: maleGuestsCtrl,
                           hint: 'e.g. 5',
                           hasError: errors['maleGuests'] != null,
                           onChanged: onMaleGuestsChanged,
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      _FieldCol(
-                        label: 'Female Guests (optional)',
-                        errorText: errors['femaleGuests'],
-                        child: _EntryNumberField(
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _FieldCol(
+                  label: 'Female Guests (optional)',
+                  errorText: maleFemaleLocked ? null : errors['femaleGuests'],
+                  child: maleFemaleLocked
+                      ? _EntryReadOnlyField(value: '$lockedFemaleCount')
+                      : _EntryNumberField(
                           controller: femaleGuestsCtrl,
                           hint: 'e.g. 5',
                           hasError: errors['femaleGuests'] != null,
                           onChanged: onFemaleGuestsChanged,
                         ),
-                      ),
-                    ],
-                  ),
                 ),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -1473,7 +1493,6 @@ class _LeadGuestCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  flex: 3,
                   child: _FieldCol(
                     label: 'Country *',
                     errorText: errors['leadCountry'],
@@ -1489,7 +1508,6 @@ class _LeadGuestCard extends StatelessWidget {
                 if (isPhilippines) ...[
                   const SizedBox(width: 12),
                   Expanded(
-                    flex: 2,
                     child: _FieldCol(
                       label: 'Nationality *',
                       errorText: errors['leadNationality'],

@@ -26,7 +26,7 @@ class LocalDatabase {
   static const String _kDbName = 'tourism_local.db';
 
   // ── schema version ─────────────────────────────────────────────────────────
-  static const int _kDbVersion = 13;
+  static const int _kDbVersion = 15;
 
   // ── table names ────────────────────────────────────────────────────────────
   static const String tableLocalProfiles   = 'local_profiles';
@@ -34,6 +34,7 @@ class LocalDatabase {
   static const String tableGuestRecords    = 'local_guest_records';
   static const String tableGuestRecordRooms = 'local_guest_record_rooms';
   static const String tableLocalRooms      = 'local_rooms';
+  static const String tableGuestOriginBreakdowns = 'local_guest_origin_breakdowns';
 
   // ── sync status constants ──────────────────────────────────────────────────
   /// Record exists on Backend and matches local copy.
@@ -89,12 +90,14 @@ class LocalDatabase {
       await txn.execute(_sqlCreateGuestRecords);
       await txn.execute(_sqlCreateLocalRooms);
       await txn.execute(_sqlCreateGuestRecordRooms);
+      await txn.execute(_sqlCreateGuestOriginBreakdowns);
 
       await txn.execute(_sqlIndexGuestRecordsBusiness);
       await txn.execute(_sqlIndexGuestRecordsSyncStatus);
       await txn.execute(_sqlIndexLocalRoomsBusiness);
       await txn.execute(_sqlIndexGuestRecordRoomsRecord);
       await txn.execute(_sqlIndexLocalRoomsSyncStatus);
+      await txn.execute(_sqlIndexGuestOriginBreakdownsRecord);
     });
   }
 
@@ -359,6 +362,31 @@ class LocalDatabase {
         await db.execute("ALTER TABLE $tableGuestRecords DROP COLUMN length_of_stay");
       }
     }
+
+    // v13 → v14: Add local_guest_origin_breakdowns table for offline origin
+    //            group storage. Mirrors the backend guest_origin_breakdowns table.
+    if (oldVersion < 14) {
+      final tables = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='$tableGuestOriginBreakdowns'",
+      );
+      if (tables.isEmpty) {
+        await db.execute(_sqlCreateGuestOriginBreakdowns);
+        await db.execute(_sqlIndexGuestOriginBreakdownsRecord);
+      }
+    }
+
+    // v14 → v15: Add nationality column to local_guest_origin_breakdowns.
+    if (oldVersion < 15) {
+      final cols = await db.rawQuery(
+        "PRAGMA table_info($tableGuestOriginBreakdowns)",
+      );
+      final colNames = cols.map((c) => c['name'] as String).toSet();
+      if (!colNames.contains('nationality')) {
+        await db.execute(
+          "ALTER TABLE $tableGuestOriginBreakdowns ADD COLUMN nationality TEXT",
+        );
+      }
+    }
   }
 
   // ── helper: close (mainly for tests) ──────────────────────────────────────
@@ -496,6 +524,28 @@ class LocalDatabase {
     )
   ''';
 
+  /// Origin groups: repeatable Country / Province / City-Municipality /
+  /// Male / Female rows. Shared by accommodation guest records
+  /// (guest_record_id). country may be NULL when is_overseas = 1.
+  /// province / city_municipality are Philippines-only.
+  static const String _sqlCreateGuestOriginBreakdowns = '''
+    CREATE TABLE $tableGuestOriginBreakdowns (
+      id                    TEXT PRIMARY KEY,
+      guest_record_id       TEXT NOT NULL,
+      country               TEXT,
+      nationality           TEXT,
+      is_overseas           INTEGER NOT NULL DEFAULT 0,
+      province              TEXT,
+      city_municipality     TEXT,
+      male_count            INTEGER NOT NULL DEFAULT 0,
+      female_count          INTEGER NOT NULL DEFAULT 0,
+      created_at            TEXT,
+      updated_at            TEXT,
+      deleted_at            TEXT,
+      FOREIGN KEY (guest_record_id) REFERENCES $tableGuestRecords (id) ON DELETE CASCADE
+    )
+  ''';
+
   // ---------------------------------------------------------------------------
   // SQL — indexes
   // ---------------------------------------------------------------------------
@@ -528,5 +578,11 @@ class LocalDatabase {
   static const String _sqlIndexLocalRoomsSyncStatus = '''
     CREATE INDEX idx_local_rooms_sync_status
       ON $tableLocalRooms (sync_status)
+  ''';
+
+  /// Fast look-up of origin breakdowns for a guest record.
+  static const String _sqlIndexGuestOriginBreakdownsRecord = '''
+    CREATE INDEX idx_lgob_guest_record_id
+      ON $tableGuestOriginBreakdowns (guest_record_id)
   ''';
 }

@@ -7,7 +7,6 @@ import '../../../core/constants/country_constants.dart';
 import '../../../core/services/psgc_repository.dart';
 import '../../../core/models/psgc_models.dart';
 import '../../../api/attraction_visit_entry_api.dart';
-// import '../../../router/app_routes.dart';
 import '../../shared/layouts/attraction_layout.dart';
 
 const _kInputFill = Color(0xFFF8FAFC);
@@ -92,6 +91,13 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
     if (_errors.containsKey(key)) {
       setState(() => _errors = Map.from(_errors)..remove(key));
     }
+  }
+
+  String _fmtVisitDate() {
+    if (_visitDate == null) return "";
+    return "${_visitDate!.year.toString().padLeft(4, '0')}-"
+        "${_visitDate!.month.toString().padLeft(2, '0')}-"
+        "${_visitDate!.day.toString().padLeft(2, '0')}";
   }
 
   void _recomputeMissingSexCount() {
@@ -333,49 +339,301 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
                     _GlobalErrorBanner(message: _errors["submit"]!),
                     const SizedBox(height: 12),
                   ],
-                  _VisitInfoCard(
-                    visitDate: _visitDate,
-                    guestCountCtrl: _guestCountCtrl,
-                    errors: _errors,
-                    onPickDate: _pickDate,
-                    onGuestCountChanged: (_) {
-                      setState(() {});
-                      _clearFieldError("guestCount");
-                      _recomputeMissingSexCount();
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  _OriginCard(
-                    isForeign: _isForeign,
-                    selectedCountry: _selectedCountry,
-                    selectedProvinceCode: _selectedProvinceCode,
-                    selectedCityCode: _selectedCityCode,
-                    provinces: provinces,
-                    cities: cities,
-                    psgcLoaded: _psgcLoaded,
-                    foreignCountries: foreignCountries,
-                    errors: _errors,
-                    onForeignToggled: _toggleForeign,
-                    onCountryChanged: _onCountryChanged,
-                    onProvinceChanged: _onProvinceChanged,
-                    onCityChanged: _onCityChanged,
-                  ),
-                  const SizedBox(height: 16),
-                  _GenderCard(
-                    guestCount: _guestCount,
-                    maleCountCtrl: _maleCountCtrl,
-                    femaleCountCtrl: _femaleCountCtrl,
-                    errors: _errors,
-                    onMaleChanged: (_) {
-                      setState(() {});
-                      _clearFieldError("maleCount");
-                      _recomputeMissingSexCount();
-                    },
-                    onFemaleChanged: (_) {
-                      setState(() {});
-                      _clearFieldError("femaleCount");
-                      _recomputeMissingSexCount();
-                    },
+                  _SectionCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ── Visit Information ──
+                        const Text(
+                          "Visit Information",
+                          style: TextStyle(
+                            color: AppColors.textWhite,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (isMobile) ...[
+                          _FieldCol(
+                            label: "Visit Date *",
+                            errorText: _errors["visitDate"],
+                            child: _EntryDateField(
+                              value: _fmtVisitDate(),
+                              hasError: _errors["visitDate"] != null,
+                              onTap: _pickDate,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          _FieldCol(
+                            label: "Visitor/s Count *",
+                            errorText: _errors["guestCount"],
+                            child: _EntryNumberField(
+                              controller: _guestCountCtrl,
+                              hint: "e.g. 25",
+                              hasError: _errors["guestCount"] != null,
+                              onChanged: (_) {
+                                setState(() {});
+                                _clearFieldError("guestCount");
+                                _recomputeMissingSexCount();
+                              },
+                            ),
+                          ),
+                        ] else
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: _FieldCol(
+                                  label: "Visit Date *",
+                                  errorText: _errors["visitDate"],
+                                  child: _EntryDateField(
+                                    value: _fmtVisitDate(),
+                                    hasError: _errors["visitDate"] != null,
+                                    onTap: _pickDate,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: _FieldCol(
+                                  label: "Visitor/s Count *",
+                                  errorText: _errors["guestCount"],
+                                  child: _EntryNumberField(
+                                    controller: _guestCountCtrl,
+                                    hint: "e.g. 25",
+                                    hasError: _errors["guestCount"] != null,
+                                    onChanged: (_) {
+                                      setState(() {});
+                                      _clearFieldError("guestCount");
+                                      _recomputeMissingSexCount();
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+
+                        Divider(height: 32, color: AppColors.cardBorder),
+
+                        // ── Tourist Origin ──
+                        const Text(
+                          "Tourist Origin",
+                          style: TextStyle(
+                            color: AppColors.textWhite,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (!_psgcLoaded)
+                          const _EntryReadOnlyField(
+                              value: "Loading location data...")
+                        else ...[
+                          GestureDetector(
+                            onTap: () => _toggleForeign(!_isForeign),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: Checkbox(
+                                    value: _isForeign,
+                                    onChanged: _toggleForeign,
+                                    activeColor: const Color(0xFF3B82F6),
+                                    side: const BorderSide(
+                                        color: AppColors.textGray,
+                                        width: 1.4),
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  "Foreign tourist",
+                                  style: TextStyle(
+                                      color: AppColors.textGray,
+                                      fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          if (_isForeign)
+                            _FieldCol(
+                              label: "Country *",
+                              errorText: _errors["country"],
+                              child: _EntryDropdownField(
+                                value: _selectedCountry,
+                                items: foreignCountries,
+                                hint: "Select country",
+                                hasError: _errors["country"] != null,
+                                onChanged: _onCountryChanged,
+                              ),
+                            )
+                          else if (!isMobile &&
+                              _selectedProvinceCode != null)
+                            Row(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: _FieldCol(
+                                    label: "Province *",
+                                    errorText: _errors["province"],
+                                    child: _EntryDropdownField(
+                                      value: _selectedProvinceCode,
+                                      items: provinces
+                                          .map((p) => p.code)
+                                          .toList(),
+                                      displayLabels: {
+                                        for (final p in provinces)
+                                          p.code: p.name
+                                      },
+                                      hint: "Select province",
+                                      hasError:
+                                          _errors["province"] != null,
+                                      onChanged: _onProvinceChanged,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: _FieldCol(
+                                    label: "City / Municipality *",
+                                    errorText: _errors["city"],
+                                    child: _EntryDropdownField(
+                                      value: _selectedCityCode,
+                                      items: cities
+                                          .map((c) => c.code)
+                                          .toList(),
+                                      displayLabels: {
+                                        for (final c in cities)
+                                          c.code: c.name
+                                      },
+                                      hint:
+                                          "Select city / municipality",
+                                      hasError:
+                                          _errors["city"] != null,
+                                      onChanged: _onCityChanged,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            )
+                          else ...[
+                            _FieldCol(
+                              label: "Province *",
+                              errorText: _errors["province"],
+                              child: _EntryDropdownField(
+                                value: _selectedProvinceCode,
+                                items: provinces
+                                    .map((p) => p.code)
+                                    .toList(),
+                                displayLabels: {
+                                  for (final p in provinces)
+                                    p.code: p.name
+                                },
+                                hint: "Select province",
+                                hasError:
+                                    _errors["province"] != null,
+                                onChanged: _onProvinceChanged,
+                              ),
+                            ),
+                            if (_selectedProvinceCode !=
+                                null) ...[
+                              const SizedBox(height: 12),
+                              _FieldCol(
+                                label: "City / Municipality *",
+                                errorText: _errors["city"],
+                                child: _EntryDropdownField(
+                                  value: _selectedCityCode,
+                                  items: cities
+                                      .map((c) => c.code)
+                                      .toList(),
+                                  displayLabels: {
+                                    for (final c in cities)
+                                      c.code: c.name
+                                  },
+                                  hint:
+                                      "Select city / municipality",
+                                  hasError:
+                                      _errors["city"] != null,
+                                  onChanged: _onCityChanged,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ],
+
+                        Divider(height: 32, color: AppColors.cardBorder),
+
+                        // ── Gender Distribution ──
+                        const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Gender Distribution",
+                              style: TextStyle(
+                                color: AppColors.textWhite,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              "Optional - leave blank to auto-calculate (PSA 52.9% female / 47.1% male split)",
+                              style: TextStyle(
+                                  color: AppColors.primaryCyan,
+                                  fontSize: 11.5),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: _FieldCol(
+                                label: "Male Count",
+                                errorText: _errors["maleCount"],
+                                child: _EntryNumberField(
+                                  controller: _maleCountCtrl,
+                                  hint: "e.g. 12",
+                                  hasError: _errors["maleCount"] !=
+                                      null,
+                                  onChanged: (_) {
+                                    setState(() {});
+                                    _clearFieldError("maleCount");
+                                    _recomputeMissingSexCount();
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _FieldCol(
+                                label: "Female Count",
+                                errorText: _errors["femaleCount"],
+                                child: _EntryNumberField(
+                                  controller: _femaleCountCtrl,
+                                  hint: "e.g. 13",
+                                  hasError:
+                                      _errors["femaleCount"] != null,
+                                  onChanged: (_) {
+                                    setState(() {});
+                                    _clearFieldError("femaleCount");
+                                    _recomputeMissingSexCount();
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 20),
                   _FormActions(
@@ -397,7 +655,7 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
   }
 }
 
-// --- Page Header --------------------------------------------------------------
+// --- Page Header ------------------------------------------------------------------------------
 
 class _PageHeader extends StatelessWidget {
   const _PageHeader();
@@ -425,7 +683,7 @@ class _PageHeader extends StatelessWidget {
   }
 }
 
-// --- Global Error Banner ------------------------------------------------------
+// --- Global Error Banner ------------------------------------------------------------------------------
 
 class _GlobalErrorBanner extends StatelessWidget {
   const _GlobalErrorBanner({required this.message});
@@ -461,282 +719,7 @@ class _GlobalErrorBanner extends StatelessWidget {
   }
 }
 
-// --- Visit Info Card ----------------------------------------------------------
-
-class _VisitInfoCard extends StatelessWidget {
-  const _VisitInfoCard({
-    required this.visitDate,
-    required this.guestCountCtrl,
-    required this.errors,
-    required this.onPickDate,
-    required this.onGuestCountChanged,
-  });
-
-  final DateTime? visitDate;
-  final TextEditingController guestCountCtrl;
-  final Map<String, String?> errors;
-  final VoidCallback onPickDate;
-  final ValueChanged<String> onGuestCountChanged;
-
-  String _fmt(DateTime? dt) {
-    if (dt == null) return "";
-    return "${dt.year.toString().padLeft(4, '0')}-"
-        "${dt.month.toString().padLeft(2, '0')}-"
-        "${dt.day.toString().padLeft(2, '0')}";
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _SectionCard(
-      title: "Visit Information",
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _FieldCol(
-            label: "Visit Date *",
-            errorText: errors["visitDate"],
-            child: _EntryDateField(
-              value: _fmt(visitDate),
-              hasError: errors["visitDate"] != null,
-              onTap: onPickDate,
-            ),
-          ),
-          const SizedBox(height: 14),
-          _FieldCol(
-            label: "Visitor/s Count *",
-            errorText: errors["guestCount"],
-            child: _EntryNumberField(
-              controller: guestCountCtrl,
-              hint: "e.g. 25",
-              hasError: errors["guestCount"] != null,
-              onChanged: onGuestCountChanged,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// --- Origin Card --------------------------------------------------------------
-
-class _OriginCard extends StatelessWidget {
-  const _OriginCard({
-    required this.isForeign,
-    this.selectedCountry,
-    this.selectedProvinceCode,
-    this.selectedCityCode,
-    required this.provinces,
-    required this.cities,
-    required this.psgcLoaded,
-    required this.foreignCountries,
-    required this.errors,
-    required this.onForeignToggled,
-    required this.onCountryChanged,
-    required this.onProvinceChanged,
-    required this.onCityChanged,
-  });
-
-  final bool isForeign;
-  final String? selectedCountry;
-  final String? selectedProvinceCode;
-  final String? selectedCityCode;
-  final List<Province> provinces;
-  final List<CityMunicipality> cities;
-  final bool psgcLoaded;
-  final List<String> foreignCountries;
-  final Map<String, String?> errors;
-  final ValueChanged<bool?> onForeignToggled;
-  final ValueChanged<String?> onCountryChanged;
-  final ValueChanged<String?> onProvinceChanged;
-  final ValueChanged<String?> onCityChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!psgcLoaded) {
-      return _SectionCard(
-        title: "Tourist Origin",
-        child: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _EntryReadOnlyField(value: "Loading location data..."),
-          ],
-        ),
-      );
-    }
-
-    return _SectionCard(
-      title: "Tourist Origin",
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // -- Foreign checkbox ---------------------------------------------
-          GestureDetector(
-            onTap: () => onForeignToggled(!isForeign),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: Checkbox(
-                    value: isForeign,
-                    onChanged: onForeignToggled,
-                    activeColor: const Color(0xFF3B82F6),
-                    side: const BorderSide(
-                        color: AppColors.textGray, width: 1.4),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                const Text(
-                  "Foreign tourist",
-                  style: TextStyle(color: AppColors.textGray, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // -- Conditional fields -------------------------------------------
-          if (isForeign) ...[
-            _FieldCol(
-              label: "Country *",
-              errorText: errors["country"],
-              child: _EntryDropdownField(
-                value: selectedCountry,
-                items: foreignCountries,
-                hint: "Select country",
-                hasError: errors["country"] != null,
-                onChanged: onCountryChanged,
-              ),
-            ),
-          ] else ...[
-            _FieldCol(
-              label: "Province *",
-              errorText: errors["province"],
-              child: _EntryDropdownField(
-                value: selectedProvinceCode,
-                items: provinces.map((p) => p.code).toList(),
-                displayLabels:
-                    {for (final p in provinces) p.code: p.name},
-                hint: "Select province",
-                hasError: errors["province"] != null,
-                onChanged: onProvinceChanged,
-              ),
-            ),
-            if (selectedProvinceCode != null) ...[
-              const SizedBox(height: 12),
-              _FieldCol(
-                label: "City / Municipality *",
-                errorText: errors["city"],
-                child: _EntryDropdownField(
-                  value: selectedCityCode,
-                  items: cities.map((c) => c.code).toList(),
-                  displayLabels:
-                      {for (final c in cities) c.code: c.name},
-                  hint: "Select city / municipality",
-                  hasError: errors["city"] != null,
-                  onChanged: onCityChanged,
-                ),
-              ),
-            ],
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-// --- Gender Card --------------------------------------------------------------
-
-class _GenderCard extends StatelessWidget {
-  const _GenderCard({
-    required this.guestCount,
-    required this.maleCountCtrl,
-    required this.femaleCountCtrl,
-    required this.errors,
-    required this.onMaleChanged,
-    required this.onFemaleChanged,
-  });
-
-  final int guestCount;
-  final TextEditingController maleCountCtrl;
-  final TextEditingController femaleCountCtrl;
-  final Map<String, String?> errors;
-  final ValueChanged<String> onMaleChanged;
-  final ValueChanged<String> onFemaleChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final isMobile = MediaQuery.of(context).size.width < 600;
-
-    return _SectionCard(
-      title: "Gender Distribution",
-      subtitle: "Optional - leave blank to auto-calculate (PSA 52.9% female / 47.1% male split)",
-      child: isMobile
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _FieldCol(
-                  label: "Male Count (optional)",
-                  errorText: errors["maleCount"],
-                  child: _EntryNumberField(
-                    controller: maleCountCtrl,
-                    hint: "e.g. 12",
-                    hasError: errors["maleCount"] != null,
-                    onChanged: onMaleChanged,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _FieldCol(
-                  label: "Female Count (optional)",
-                  errorText: errors["femaleCount"],
-                  child: _EntryNumberField(
-                    controller: femaleCountCtrl,
-                    hint: "e.g. 13",
-                    hasError: errors["femaleCount"] != null,
-                    onChanged: onFemaleChanged,
-                  ),
-                ),
-              ],
-            )
-          : Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: _FieldCol(
-                    label: "Male Count (optional)",
-                    errorText: errors["maleCount"],
-                    child: _EntryNumberField(
-                      controller: maleCountCtrl,
-                      hint: "e.g. 12",
-                      hasError: errors["maleCount"] != null,
-                      onChanged: onMaleChanged,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _FieldCol(
-                    label: "Female Count (optional)",
-                    errorText: errors["femaleCount"],
-                    child: _EntryNumberField(
-                      controller: femaleCountCtrl,
-                      hint: "e.g. 13",
-                      hasError: errors["femaleCount"] != null,
-                      onChanged: onFemaleChanged,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-    );
-  }
-}
-
-// --- Form Actions -------------------------------------------------------------
+// --- Form Actions ------------------------------------------------------------------------------
 
 class _FormActions extends StatelessWidget {
   const _FormActions({
@@ -753,8 +736,6 @@ class _FormActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isMobile = MediaQuery.of(context).size.width < 600;
-
     final saveBtn = SizedBox(
       height: 46,
       child: ElevatedButton.icon(
@@ -803,21 +784,11 @@ class _FormActions extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 22),
         ),
         child: const Text(
-          "Clear Form",
+          "Clear",
           style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
         ),
       ),
     );
-
-    if (isMobile) {
-      return Column(
-        children: [
-          SizedBox(width: double.infinity, child: saveBtn),
-          const SizedBox(height: 10),
-          SizedBox(width: double.infinity, child: clearBtn),
-        ],
-      );
-    }
 
     return Row(
       children: [
@@ -829,16 +800,16 @@ class _FormActions extends StatelessWidget {
   }
 }
 
-// --- Shared Section Card ------------------------------------------------------
+// --- Shared Section Card ------------------------------------------------------------------------------
 
 class _SectionCard extends StatelessWidget {
   const _SectionCard({
-    required this.title,
+    this.title,
     required this.child,
     this.subtitle,
   });
 
-  final String title;
+  final String? title;
   final String? subtitle;
   final Widget child;
 
@@ -855,30 +826,32 @@ class _SectionCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: AppColors.textWhite,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              if (subtitle != null) ...[
-                const SizedBox(height: 2),
+          if (title != null) ...[
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  subtitle!,
+                  title!,
                   style: const TextStyle(
-                    color: AppColors.primaryCyan,
-                    fontSize: 11.5,
+                    color: AppColors.textWhite,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    style: const TextStyle(
+                      color: AppColors.primaryCyan,
+                      fontSize: 11.5,
+                    ),
+                  ),
+                ],
               ],
-            ],
-          ),
-          const SizedBox(height: 18),
+            ),
+            const SizedBox(height: 18),
+          ],
           child,
         ],
       ),
@@ -886,7 +859,7 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
-// --- Field Column -------------------------------------------------------------
+// --- Field Column ------------------------------------------------------------------------------
 
 class _FieldCol extends StatelessWidget {
   const _FieldCol({required this.label, required this.child, this.errorText});
@@ -919,7 +892,7 @@ class _FieldCol extends StatelessWidget {
   }
 }
 
-// --- Inline Error -------------------------------------------------------------
+// --- Inline Error ------------------------------------------------------------------------------
 
 class _InlineError extends StatelessWidget {
   const _InlineError({required this.message});
@@ -947,7 +920,7 @@ class _InlineError extends StatelessWidget {
   }
 }
 
-// -- Input Decoration ----------------------------------------------------------
+// -- Input Decoration ------------------------------------------------------------------------------
 
 InputDecoration _lightDecoration(
     {String? hint, bool hasError = false}) {
@@ -977,7 +950,7 @@ InputDecoration _lightDecoration(
   );
 }
 
-// --- Date Field ---------------------------------------------------------------
+// --- Date Field ------------------------------------------------------------------------------
 
 class _EntryDateField extends StatelessWidget {
   const _EntryDateField({
@@ -1028,7 +1001,7 @@ class _EntryDateField extends StatelessWidget {
   }
 }
 
-// --- Read-only Field ----------------------------------------------------------
+// --- Read-only Field ------------------------------------------------------------------------------
 
 class _EntryReadOnlyField extends StatelessWidget {
   const _EntryReadOnlyField({required this.value});
@@ -1054,7 +1027,7 @@ class _EntryReadOnlyField extends StatelessWidget {
   }
 }
 
-// --- Number Field -------------------------------------------------------------
+// --- Number Field ------------------------------------------------------------------------------
 
 class _EntryNumberField extends StatelessWidget {
   const _EntryNumberField({
@@ -1084,7 +1057,7 @@ class _EntryNumberField extends StatelessWidget {
   }
 }
 
-// --- Dropdown Field -----------------------------------------------------------
+// --- Dropdown Field ------------------------------------------------------------------------------
 
 class _EntryDropdownField extends StatelessWidget {
   const _EntryDropdownField({

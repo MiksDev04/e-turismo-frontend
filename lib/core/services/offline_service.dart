@@ -480,9 +480,21 @@ class SyncService {
         );
         final roomIds = roomLinks.map((r) => r['room_id'] as String).toList();
 
+        // Read origin groups for this record
+        final originGroupRows = await db.query(
+          LocalDatabase.tableGuestOriginBreakdowns,
+          where: 'guest_record_id = ? AND deleted_at IS NULL',
+          whereArgs: [recordId],
+        );
+
         // Build payload and include the local UUID so the backend stores the
         // same ID — keeps SQLite and MySQL in sync without a remapping step.
-        final payload = _toApiPayload(record, roomIds, isCreate: true);
+        final payload = _toApiPayload(
+          record,
+          roomIds,
+          isCreate: true,
+          originGroups: originGroupRows.isNotEmpty ? originGroupRows : null,
+        );
         payload['id'] = recordId;
 
         final response = await http
@@ -509,6 +521,12 @@ class SyncService {
             whereArgs: [recordId],
           );
           await _markJunctionSynced(db, recordId);
+          // Remove local origin groups — they are replaced by the next pull
+          await db.delete(
+            LocalDatabase.tableGuestOriginBreakdowns,
+            where: 'guest_record_id = ?',
+            whereArgs: [recordId],
+          );
           debugPrint('✅ _pushPendingCreates: synced $recordId');
         } else if (response.statusCode == 401) {
           debugPrint(
@@ -535,6 +553,11 @@ class SyncService {
             whereArgs: [recordId],
           );
           await _markJunctionSynced(db, recordId);
+          await db.delete(
+            LocalDatabase.tableGuestOriginBreakdowns,
+            where: 'guest_record_id = ?',
+            whereArgs: [recordId],
+          );
           debugPrint(
             '♻️ _pushPendingCreates: $recordId already existed on server — marking synced',
           );
@@ -605,7 +628,19 @@ class SyncService {
         );
         final roomIds = roomLinks.map((r) => r['room_id'] as String).toList();
 
-        final payload = _toApiPayload(record, roomIds, isCreate: false);
+        // Read origin groups for this record
+        final originGroupRows = await db.query(
+          LocalDatabase.tableGuestOriginBreakdowns,
+          where: 'guest_record_id = ? AND deleted_at IS NULL',
+          whereArgs: [recordId],
+        );
+
+        final payload = _toApiPayload(
+          record,
+          roomIds,
+          isCreate: false,
+          originGroups: originGroupRows.isNotEmpty ? originGroupRows : null,
+        );
 
         final response = await http
             .put(
@@ -631,6 +666,12 @@ class SyncService {
             whereArgs: [recordId],
           );
           await _markJunctionSynced(db, recordId);
+          // Remove local origin groups — they are replaced by the next pull
+          await db.delete(
+            LocalDatabase.tableGuestOriginBreakdowns,
+            where: 'guest_record_id = ?',
+            whereArgs: [recordId],
+          );
           debugPrint('✅ _pushPendingUpdates: synced $recordId');
         } else if (response.statusCode == 401) {
           debugPrint(
@@ -1176,6 +1217,11 @@ class SyncService {
                 where: 'guest_record_id = ?',
                 whereArgs: [id],
               );
+              await db.delete(
+                LocalDatabase.tableGuestOriginBreakdowns,
+                where: 'guest_record_id = ?',
+                whereArgs: [id],
+              );
             }
           }
         }
@@ -1194,6 +1240,11 @@ class SyncService {
             );
             await db.delete(
               LocalDatabase.tableGuestRecordRooms,
+              where: 'guest_record_id = ?',
+              whereArgs: [recordId],
+            );
+            await db.delete(
+              LocalDatabase.tableGuestOriginBreakdowns,
               where: 'guest_record_id = ?',
               whereArgs: [recordId],
             );
@@ -1253,6 +1304,35 @@ class SyncService {
                 'updated_at':       r['updated_at'] ?? r['updatedAt'] ?? remote['updated_at'],
                 'sync_status':      LocalDatabase.syncSynced,
                 'local_updated_at': null,
+              },
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+          }
+
+          // Replace origin breakdown rows
+          await db.delete(
+            LocalDatabase.tableGuestOriginBreakdowns,
+            where: 'guest_record_id = ?',
+            whereArgs: [recordId],
+          );
+
+          final breakdowns = remote['guest_breakdowns'] as List<dynamic>? ?? [];
+          for (final b in breakdowns) {
+            await db.insert(
+              LocalDatabase.tableGuestOriginBreakdowns,
+              {
+                'id':                  _generateUuid(),
+                'guest_record_id':     recordId,
+                'country':             b['country'],
+                'nationality':         b['nationality'],
+                'is_overseas':         b['isOverseas'] == true ? 1 : 0,
+                'province':            b['province'],
+                'city_municipality':   b['cityMunicipality'],
+                'male_count':          b['maleCount'] ?? 0,
+                'female_count':        b['femaleCount'] ?? 0,
+                'created_at':          b['created_at'] ?? remote['created_at'],
+                'updated_at':          b['updated_at'] ?? remote['updated_at'],
+                'deleted_at':          null,
               },
               conflictAlgorithm: ConflictAlgorithm.replace,
             );
@@ -1487,6 +1567,7 @@ class SyncService {
     Map<String, dynamic> record,
     List<String> roomIds, {
     bool isCreate = false,
+    List<Map<String, dynamic>>? originGroups,
   }) {
     final actualCheckOut = record['actual_checkout'];
     final isCheckout = actualCheckOut != null &&
@@ -1516,6 +1597,17 @@ class SyncService {
     //   (e.g. PUT arrives before the offline create's POST was pushed)
     // - Checkout branch: ignores roomIds and works from existing junction rows
     payload['roomIds'] = roomIds;
+
+    if (originGroups != null && originGroups.isNotEmpty) {
+      payload['originGroups'] = originGroups.map((g) => {
+        'country':          g['country'],
+        'isOverseas':       g['is_overseas'] == 1,
+        'province':         g['province'],
+        'cityMunicipality': g['city_municipality'],
+        'maleCount':        g['male_count'],
+        'femaleCount':      g['female_count'],
+      }).toList();
+    }
 
     return payload;
   }

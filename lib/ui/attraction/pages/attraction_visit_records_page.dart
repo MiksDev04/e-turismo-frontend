@@ -12,11 +12,6 @@ String _fmtDate(DateTime dt) {
   return "${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}";
 }
 
-String _fmtDateTime(DateTime? dt) {
-  if (dt == null) return '-';
-  return "${_fmtDate(dt)} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-}
-
 String _locationDisplay(VisitRecord r) {
   if (r.isForeign) {
     if (r.country != null && r.country!.isNotEmpty) return r.country!;
@@ -28,21 +23,6 @@ String _locationDisplay(VisitRecord r) {
   if (parts.isEmpty) return '-';
   return parts.join(', ');
 }
-
-String _nationalityLabel(VisitRecord r) {
-  if (r.nationality != null && r.nationality!.isNotEmpty) return r.nationality!;
-  return r.isForeign ? 'Foreign' : 'Filipino';
-}
-
-String _originLabel(VisitRecord r) => r.isForeign ? 'International' : 'Domestic';
-
-// ─── Filter Options ───────────────────────────────────────────────────────────
-
-const List<String> _originOptions = [
-  'All Nationalities',
-  'Domestic',
-  'International',
-];
 
 // ─── Visit Records Page ───────────────────────────────────────────────────────
 
@@ -69,7 +49,6 @@ class _AttractionVisitRecordsPageState extends State<AttractionVisitRecordsPage>
 
   DateTime? _dateFrom;
   DateTime? _dateTo;
-  String? _selectedOrigin;
 
   static const List<int> _pageSizeOptions = [10, 20, 30];
 
@@ -85,20 +64,12 @@ class _AttractionVisitRecordsPageState extends State<AttractionVisitRecordsPage>
       _loadError = null;
     });
 
-    String? originParam;
-    if (_selectedOrigin == 'Domestic') {
-      originParam = 'domestic';
-    } else if (_selectedOrigin == 'International') {
-      originParam = 'international';
-    }
-
     try {
       final result = await _api.fetchVisitRecords(
         page: _currentPage + 1,
         pageSize: _pageSize,
         dateFrom: _dateFrom?.toIso8601String().split('T').first,
         dateTo: _dateTo?.toIso8601String().split('T').first,
-        origin: originParam,
       );
 
       if (!mounted) return;
@@ -178,7 +149,6 @@ class _AttractionVisitRecordsPageState extends State<AttractionVisitRecordsPage>
     setState(() {
       _dateFrom = null;
       _dateTo = null;
-      _selectedOrigin = null;
       _currentPage = 0;
     });
     _loadRecords();
@@ -223,14 +193,8 @@ class _AttractionVisitRecordsPageState extends State<AttractionVisitRecordsPage>
                         _FiltersSection(
                           dateFrom: _dateFrom,
                           dateTo: _dateTo,
-                          selectedOrigin: _selectedOrigin,
-                          originOptions: _originOptions,
                           onDateFromTap: () => _pickDate(context, true),
                           onDateToTap: () => _pickDate(context, false),
-                          onOriginChanged: (v) {
-                            setState(() => _selectedOrigin = v);
-                            _reload();
-                          },
                           onClearAll: _clearAllFilters,
                           isNarrow: isNarrow,
                         ),
@@ -344,29 +308,20 @@ class _FiltersSection extends StatelessWidget {
   const _FiltersSection({
     required this.dateFrom,
     required this.dateTo,
-    required this.selectedOrigin,
-    required this.originOptions,
     required this.onDateFromTap,
     required this.onDateToTap,
-    required this.onOriginChanged,
     required this.onClearAll,
     required this.isNarrow,
   });
 
   final DateTime? dateFrom;
   final DateTime? dateTo;
-  final String? selectedOrigin;
-  final List<String> originOptions;
   final VoidCallback onDateFromTap;
   final VoidCallback onDateToTap;
-  final ValueChanged<String?> onOriginChanged;
   final VoidCallback onClearAll;
   final bool isNarrow;
 
-  bool get _hasActiveFilters =>
-      dateFrom != null ||
-      dateTo != null ||
-      (selectedOrigin != null && selectedOrigin != 'All Nationalities');
+  bool get _hasActiveFilters => dateFrom != null || dateTo != null;
 
   @override
   Widget build(BuildContext context) {
@@ -392,14 +347,6 @@ class _FiltersSection extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 10),
-          _DropFilter(
-            label: 'Nationality',
-            value: selectedOrigin,
-            items: originOptions,
-            onChanged: onOriginChanged,
-            icon: Icons.flag_outlined,
           ),
           if (_hasActiveFilters) ...[
             const SizedBox(height: 10),
@@ -428,15 +375,6 @@ class _FiltersSection extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        Expanded(
-          child: _DropFilter(
-            label: 'Nationality',
-            value: selectedOrigin,
-            items: originOptions,
-            onChanged: onOriginChanged,
-            icon: Icons.flag_outlined,
-          ),
-        ),
         if (_hasActiveFilters) ...[
           const SizedBox(width: 12),
           _ClearAllBtn(onTap: onClearAll),
@@ -508,89 +446,6 @@ class _DateFilter extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DropFilter extends StatelessWidget {
-  const _DropFilter({
-    required this.label,
-    required this.value,
-    required this.items,
-    required this.onChanged,
-    required this.icon,
-  });
-
-  final String label;
-  final String? value;
-  final List<String> items;
-  final ValueChanged<String?> onChanged;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.textGray,
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 7),
-          decoration: BoxDecoration(
-            color: AppColors.cardBackground,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.cardBorder),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: value,
-              isDense: true,
-              isExpanded: true,
-              hint: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Row(
-                  children: [
-                    Icon(icon, color: AppColors.textSubtle, size: 14),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'All',
-                      style: TextStyle(
-                        color: AppColors.textSubtle,
-                        fontSize: 12.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              dropdownColor: AppColors.cardBackground,
-              iconEnabledColor: AppColors.textGray,
-              style: const TextStyle(
-                color: AppColors.textWhite,
-                fontSize: 12.5,
-              ),
-              items: items
-                  .map(
-                    (e) => DropdownMenuItem(
-                      value: e,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        child: Text(e),
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged: onChanged,
             ),
           ),
         ),
@@ -826,8 +681,7 @@ class _TableHeader extends StatelessWidget {
         children: [
           Expanded(flex: 3, child: _HeaderCell('Date')),
           Expanded(flex: 1, child: _HeaderCell('Visitors')),
-          Expanded(flex: 3, child: _HeaderCell('Nationality')),
-          Expanded(flex: 3, child: _HeaderCell('Location')),
+          Expanded(flex: 3, child: _HeaderCell('From')),
           Expanded(flex: 2, child: _HeaderCell('Actions')),
         ],
       ),
@@ -891,13 +745,6 @@ class _RecordRow extends StatelessWidget {
           Expanded(
             flex: 3,
             child: Text(
-              _nationalityLabel(r),
-              style: const TextStyle(color: AppColors.textGray, fontSize: 13),
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: Text(
               _locationDisplay(r),
               style: const TextStyle(color: AppColors.textGray, fontSize: 13),
             ),
@@ -943,14 +790,6 @@ class _RecordCard extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _originLabel(r),
-                      style: const TextStyle(
-                        color: AppColors.textGray,
-                        fontSize: 12,
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -963,8 +802,7 @@ class _RecordCard extends StatelessWidget {
             spacing: 16,
             runSpacing: 4,
             children: [
-              _InfoChip(label: 'Nationality', value: _nationalityLabel(r)),
-              _InfoChip(label: 'Location', value: _locationDisplay(r)),
+              _InfoChip(label: 'From', value: _locationDisplay(r)),
             ],
           ),
           const SizedBox(height: 10),
@@ -1227,8 +1065,6 @@ class _VisitInfoGrid extends StatelessWidget {
       (Icons.people_outline,        'Total Visitors',  '${record.guestCount}'),
       (Icons.male_outlined,         'Male Visitors',   record.maleCount?.toString() ?? '-'),
       (Icons.female_outlined,       'Female Visitors', record.femaleCount?.toString() ?? '-'),
-      (Icons.schedule_rounded,      'Created At',    _fmtDateTime(record.createdAt)),
-      (Icons.update_rounded,        'Updated At',    _fmtDateTime(record.updatedAt)),
     ];
 
     const spacing = 12.0;
@@ -1266,8 +1102,6 @@ class _GuestDemoGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = [
-      (Icons.flag_outlined,             'Nationality',     _nationalityLabel(record)),
-      (Icons.flight_outlined,           'Origin',          _originLabel(record)),
       (Icons.public_outlined,           'Country',         record.isForeign
           ? (record.country ?? '-')
           : 'Philippines'),

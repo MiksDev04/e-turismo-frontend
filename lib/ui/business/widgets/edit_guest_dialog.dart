@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
 import '../pages/business_guest_records_page.dart';
 import '../../../api/business_guest_entry_api.dart';
+import '../../../models/origin_group.dart';
+import 'origin_groups_editor.dart';
 import 'dart:async';
 import '../../../core/services/offline_service.dart';
 import '../../../core/services/psgc_repository.dart';
@@ -144,6 +146,9 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
   bool _leadIsOverseas = false;
   String? _leadSex;
 
+  // ── Origin groups ──────────────────────────────────────────────────────
+  List<OriginGroup> _originGroups = [];
+
   // ── Room selection ───────────────────────────────────────────────────────
   final Set<String> _selectedRoomIds = {};
   List<RoomInfo> _vacantRooms = [];
@@ -231,6 +236,9 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       _selectedRoomIds.addAll(r.roomIds);
     }
 
+    // Origin groups
+    _originGroups = List.of(r.originGroups);
+
     _isOffline = !ConnectivityService.instance.isOnline;
     _connectivitySub = ConnectivityService.instance.onConnectivityChanged
         .listen((isOnline) {
@@ -262,6 +270,20 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       .fold<int>(0, (sum, r) => sum + r.capacity);
 
   bool get _isPhilippines => !_leadIsOverseas && _leadCountry == 'Philippines';
+
+  bool get _hasOriginGroups => _originGroups.isNotEmpty;
+  int get _groupMaleSum => _originGroups.fold<int>(0, (s, g) => s + g.maleCount);
+  int get _groupFemaleSum => _originGroups.fold<int>(0, (s, g) => s + g.femaleCount);
+
+  void _onOriginGroupsChanged(List<OriginGroup> groups) {
+    setState(() {
+      _originGroups = groups;
+      if (groups.isNotEmpty) {
+        _maleGuestsCtrl.text = _groupMaleSum.toString();
+        _femaleGuestsCtrl.text = _groupFemaleSum.toString();
+      }
+    });
+  }
 
   // ─── Room loading ────────────────────────────────────────────────────────
 
@@ -512,8 +534,13 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       }
     }
 
-    final maleCount = int.tryParse(_maleGuestsCtrl.text);
-    final femaleCount = int.tryParse(_femaleGuestsCtrl.text);
+    final maleCount = _hasOriginGroups
+        ? _groupMaleSum
+        : int.tryParse(_maleGuestsCtrl.text);
+    final femaleCount = _hasOriginGroups
+        ? _groupFemaleSum
+        : int.tryParse(_femaleGuestsCtrl.text);
+    final guestsTotal = _hasOriginGroups ? _groupMaleSum + _groupFemaleSum : _totalGuests;
 
     final updated = GuestRecord(
       id: widget.record.id,
@@ -521,7 +548,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       checkOut: _isPostCheckout ? widget.record.checkOut : _checkOutCtrl.text.trim(),
       actualCheckOut: widget.record.actualCheckOut,
       nights: _lengthOfStay,
-      guests: _totalGuests,
+      guests: guestsTotal,
       rooms: _isPostCheckout ? widget.record.rooms : _selectedRoomIds.length,
       roomDetails: widget.record.roomDetails,
       roomIds: _isPostCheckout ? widget.record.roomIds : _selectedRoomIds.toList(),
@@ -540,7 +567,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
           ? null
           : _leadBirthdateCtrl.text.trim(),
       leadSex: _leadSex,
-      originGroups: widget.record.originGroups,
+      originGroups: _originGroups,
     );
 
     final messenger = ScaffoldMessenger.of(context);
@@ -583,6 +610,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       _selectedCityCode = null;
       _leadSex = null;
       _selectedRoomIds.clear();
+      _originGroups = [];
       _errors = {};
     });
   }
@@ -679,58 +707,76 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // ── Check-in / Check-out / Length of Stay ──
+                            // ── Row 1: Check-in / Check-out ────────────
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: _FieldCol(
+                                    label: 'Check-in Date *',
+                                    errorText: _isPostCheckout ? null : _errors['checkIn'],
+                                    child: _isPostCheckout
+                                        ? _ReadOnlyField(value: _checkInCtrl.text)
+                                        : _DateField(
+                                            controller: _checkInCtrl,
+                                            hint: 'yyyy-mm-dd',
+                                            hasError: _errors['checkIn'] != null,
+                                            lastDate: DateTime.now(),
+                                            onPicked: () {
+                                              _recalcNights();
+                                              _clearFieldError('checkIn');
+                                              _clearFieldError('checkOut');
+                                            },
+                                          ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _FieldCol(
+                                    label: 'Check-out Date *',
+                                    errorText: _isPostCheckout ? null : _errors['checkOut'],
+                                    child: _isPostCheckout
+                                        ? _ReadOnlyField(value: _checkOutCtrl.text)
+                                        : _DateField(
+                                            controller: _checkOutCtrl,
+                                            hint: 'yyyy-mm-dd',
+                                            hasError: _errors['checkOut'] != null,
+                                            firstDate: DateTime.tryParse(
+                                                  _checkInCtrl.text.trim(),
+                                                ) ??
+                                                DateTime(2020),
+                                            onPicked: () {
+                                              _recalcNights();
+                                              _clearFieldError('checkOut');
+                                            },
+                                          ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+
+                            // ── Row 2: Length of Stay / Total Guests ────
                             if (isNarrow) ...[
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: _FieldCol(
-                                      label: 'Check-in Date *',
-                                      errorText: _isPostCheckout ? null : _errors['checkIn'],
-                                      child: _isPostCheckout
-                                          ? _ReadOnlyField(value: _checkInCtrl.text)
-                                          : _DateField(
-                                              controller: _checkInCtrl,
-                                              hint: 'yyyy-mm-dd',
-                                              hasError: _errors['checkIn'] != null,
-                                              lastDate: DateTime.now(),
-                                              onPicked: () {
-                                                _recalcNights();
-                                                _clearFieldError('checkIn');
-                                                _clearFieldError('checkOut');
-                                              },
-                                            ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: _FieldCol(
-                                      label: 'Check-out Date *',
-                                      errorText: _isPostCheckout ? null : _errors['checkOut'],
-                                      child: _isPostCheckout
-                                          ? _ReadOnlyField(value: _checkOutCtrl.text)
-                                          : _DateField(
-                                              controller: _checkOutCtrl,
-                                              hint: 'yyyy-mm-dd',
-                                              hasError: _errors['checkOut'] != null,
-                                              firstDate: DateTime.tryParse(
-                                                    _checkInCtrl.text.trim(),
-                                                  ) ??
-                                                  DateTime(2020),
-                                              onPicked: () {
-                                                _recalcNights();
-                                                _clearFieldError('checkOut');
-                                              },
-                                            ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
                               _FieldCol(
                                 label: 'Length of Stay',
                                 child: _ReadOnlyField(value: _lengthOfStay),
+                              ),
+                              const SizedBox(height: 14),
+                              _FieldCol(
+                                label: 'Total Guests *',
+                                errorText: _errors['totalGuests'],
+                                child: _NumberField(
+                                  controller: _guestsCtrl,
+                                  hint: 'e.g. 10',
+                                  hasError: _errors['totalGuests'] != null,
+                                  onChanged: (_) {
+                                    setState(() {});
+                                    _clearFieldError('totalGuests');
+                                    _validateRoomCapacity();
+                                    _recomputeMissingSexCount();
+                                  },
+                                ),
                               ),
                             ] else ...[
                               Row(
@@ -738,51 +784,25 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                                 children: [
                                   Expanded(
                                     child: _FieldCol(
-                                      label: 'Check-in Date *',
-                                      errorText: _isPostCheckout ? null : _errors['checkIn'],
-                                      child: _isPostCheckout
-                                          ? _ReadOnlyField(value: _checkInCtrl.text)
-                                          : _DateField(
-                                              controller: _checkInCtrl,
-                                              hint: 'yyyy-mm-dd',
-                                              hasError: _errors['checkIn'] != null,
-                                              lastDate: DateTime.now(),
-                                              onPicked: () {
-                                                _recalcNights();
-                                                _clearFieldError('checkIn');
-                                                _clearFieldError('checkOut');
-                                              },
-                                            ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: _FieldCol(
-                                      label: 'Check-out Date *',
-                                      errorText: _isPostCheckout ? null : _errors['checkOut'],
-                                      child: _isPostCheckout
-                                          ? _ReadOnlyField(value: _checkOutCtrl.text)
-                                          : _DateField(
-                                              controller: _checkOutCtrl,
-                                              hint: 'yyyy-mm-dd',
-                                              hasError: _errors['checkOut'] != null,
-                                              firstDate: DateTime.tryParse(
-                                                    _checkInCtrl.text.trim(),
-                                                  ) ??
-                                                  DateTime(2020),
-                                              onPicked: () {
-                                                _recalcNights();
-                                                _clearFieldError('checkOut');
-                                              },
-                                            ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: _FieldCol(
                                       label: 'Length of Stay',
-                                      child: _ReadOnlyField(
-                                        value: _lengthOfStay,
+                                      child: _ReadOnlyField(value: _lengthOfStay),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _FieldCol(
+                                      label: 'Total Guests *',
+                                      errorText: _errors['totalGuests'],
+                                      child: _NumberField(
+                                        controller: _guestsCtrl,
+                                        hint: 'e.g. 10',
+                                        hasError: _errors['totalGuests'] != null,
+                                        onChanged: (_) {
+                                          setState(() {});
+                                          _clearFieldError('totalGuests');
+                                          _validateRoomCapacity();
+                                          _recomputeMissingSexCount();
+                                        },
                                       ),
                                     ),
                                   ),
@@ -791,64 +811,41 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                             ],
                             const SizedBox(height: 14),
 
-                            // ── Total Guests ──────────────────────────
-                            _FieldCol(
-                              label: 'Total Guests *',
-                              errorText: _errors['totalGuests'],
-                              child: _NumberField(
-                                controller: _guestsCtrl,
-                                hint: 'e.g. 10',
-                                hasError:
-                                    _errors['totalGuests'] != null,
-                                onChanged: (_) {
-                                  setState(() {});
-                                  _clearFieldError('totalGuests');
-                                  _validateRoomCapacity();
-                                  _recomputeMissingSexCount();
-                                },
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-
-                            // ── Rooms ─────────────────────────────────
-                            _FieldCol(
-                              label: _isPostCheckout
-                                  ? 'Rooms (locked after check-out)'
-                                  : 'Rooms (optional)',
-                              errorText: _isPostCheckout ? null : _errors['rooms'],
-                              child: _EditRoomSelector(
-                                vacantRooms: _vacantRooms,
-                                selectedRoomIds: _selectedRoomIds,
-                                isLoading: _isLoadingRooms,
-                                hasError: _errors['rooms'] != null,
-                                readOnly: _isPostCheckout,
-                                onRoomToggled: (roomId) {
-                                  setState(() {
-                                    if (_selectedRoomIds.contains(roomId)) {
-                                      _selectedRoomIds.remove(roomId);
-                                    } else {
-                                      _selectedRoomIds.add(roomId);
-                                    }
-                                  });
-                                  _clearFieldError('rooms');
-                                  _validateRoomCapacity();
-                                },
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-
-                            // ── Purpose / Transport ─────────────────────
+                            // ── Row 3: Rooms / Purpose of Visit ─────────
                             if (isNarrow) ...[
+                              _FieldCol(
+                                label: _isPostCheckout
+                                    ? 'Rooms (locked after check-out)'
+                                    : 'Rooms (optional)',
+                                errorText: _isPostCheckout ? null : _errors['rooms'],
+                                child: _EditRoomSelector(
+                                  vacantRooms: _vacantRooms,
+                                  selectedRoomIds: _selectedRoomIds,
+                                  isLoading: _isLoadingRooms,
+                                  hasError: _errors['rooms'] != null,
+                                  readOnly: _isPostCheckout,
+                                  onRoomToggled: (roomId) {
+                                    setState(() {
+                                      if (_selectedRoomIds.contains(roomId)) {
+                                        _selectedRoomIds.remove(roomId);
+                                      } else {
+                                        _selectedRoomIds.add(roomId);
+                                      }
+                                    });
+                                    _clearFieldError('rooms');
+                                    _validateRoomCapacity();
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 14),
                               _FieldCol(
                                 label: 'Purpose of Visit *',
                                 errorText: _errors['purpose'],
                                 child: _DropdownField(
-                                  value:
-                                      _purpose.isEmpty ? null : _purpose,
+                                  value: _purpose.isEmpty ? null : _purpose,
                                   items: _purposes,
                                   hint: 'Select purpose',
-                                  hasError:
-                                      _errors['purpose'] != null,
+                                  hasError: _errors['purpose'] != null,
                                   onChanged: (v) {
                                     setState(() {
                                       _purpose = v ?? '';
@@ -870,98 +867,64 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                                   child: _PlainTextField(
                                     controller: _purposeOtherCtrl,
                                     hint: 'Specify purpose',
-                                    hasError:
-                                        _errors['purposeOther'] != null,
-                                    onChanged: (_) => _clearFieldError(
-                                        'purposeOther'),
+                                    hasError: _errors['purposeOther'] != null,
+                                    onChanged: (_) => _clearFieldError('purposeOther'),
                                   ),
                                 ),
                               ],
-                              const SizedBox(height: 14),
-                              Row(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: _FieldCol(
-                                      label: 'Male Guests (optional)',
-                                      errorText:
-                                          _errors['maleGuests'],
-                                      child: _NumberField(
-                                        controller: _maleGuestsCtrl,
-                                        hint: 'e.g. 5',
-                                        hasError: _errors[
-                                                'maleGuests'] !=
-                                            null,
-                                        onChanged: (_) {
-                                          setState(() {});
-                                          _clearFieldError(
-                                              'maleGuests');
-                                          _recomputeMissingSexCount();
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: _FieldCol(
-                                      label: 'Female Guests (optional)',
-                                      errorText:
-                                          _errors['femaleGuests'],
-                                      child: _NumberField(
-                                        controller: _femaleGuestsCtrl,
-                                        hint: 'e.g. 5',
-                                        hasError: _errors[
-                                                'femaleGuests'] !=
-                                            null,
-                                        onChanged: (_) {
-                                          setState(() {});
-                                          _clearFieldError(
-                                              'femaleGuests');
-                                          _recomputeMissingSexCount();
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
                             ] else ...[
                               Row(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                Expanded(
+                  child: _FieldCol(
+                    label: _isPostCheckout
+                        ? 'Rooms (locked after check-out)'
+                        : 'Rooms (optional)',
+                    errorText: _isPostCheckout ? null : _errors['rooms'],
+                    child: _EditRoomSelector(
+                      vacantRooms: _vacantRooms,
+                      selectedRoomIds: _selectedRoomIds,
+                      isLoading: _isLoadingRooms,
+                      hasError: _errors['rooms'] != null,
+                      readOnly: _isPostCheckout,
+                      onRoomToggled: (roomId) {
+                        setState(() {
+                          if (_selectedRoomIds.contains(roomId)) {
+                            _selectedRoomIds.remove(roomId);
+                          } else {
+                            _selectedRoomIds.add(roomId);
+                          }
+                        });
+                        _clearFieldError('rooms');
+                        _validateRoomCapacity();
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         _FieldCol(
                                           label: 'Purpose of Visit *',
-                                          errorText:
-                                              _errors['purpose'],
+                                          errorText: _errors['purpose'],
                                           child: _DropdownField(
-                                            value: _purpose.isEmpty
-                                                ? null
-                                                : _purpose,
+                                            value: _purpose.isEmpty ? null : _purpose,
                                             items: _purposes,
                                             hint: 'Select purpose',
-                                            hasError: _errors[
-                                                    'purpose'] !=
-                                                null,
+                                            hasError: _errors['purpose'] != null,
                                             onChanged: (v) {
                                               setState(() {
                                                 _purpose = v ?? '';
-                                                _showPurposeOther =
-                                                    v == 'Others';
+                                                _showPurposeOther = v == 'Others';
                                                 if (!_showPurposeOther) {
-                                                  _purposeOtherCtrl
-                                                      .clear();
+                                                  _purposeOtherCtrl.clear();
                                                 }
                                               });
-                                              _clearFieldError(
-                                                  'purpose');
-                                              _clearFieldError(
-                                                  'purposeOther');
+                                              _clearFieldError('purpose');
+                                              _clearFieldError('purposeOther');
                                             },
                                           ),
                                         ),
@@ -969,78 +932,64 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                                           const SizedBox(height: 10),
                                           _FieldCol(
                                             label: 'Please specify *',
-                                            errorText: _errors[
-                                                'purposeOther'],
+                                            errorText: _errors['purposeOther'],
                                             child: _PlainTextField(
-                                              controller:
-                                                  _purposeOtherCtrl,
+                                              controller: _purposeOtherCtrl,
                                               hint: 'Specify purpose',
-                                              hasError: _errors[
-                                                      'purposeOther'] !=
-                                                  null,
-                                              onChanged: (_) =>
-                                                  _clearFieldError(
-                                                    'purposeOther',
-                                                  ),
+                                              hasError: _errors['purposeOther'] != null,
+                                              onChanged: (_) => _clearFieldError('purposeOther'),
                                             ),
                                           ),
                                         ],
                                       ],
                                     ),
                                   ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        _FieldCol(
-                                          label:
-                                              'Male Guests (optional)',
-                                          errorText:
-                                              _errors['maleGuests'],
-                                          child: _NumberField(
-                                            controller:
-                                                _maleGuestsCtrl,
-                                            hint: 'e.g. 5',
-                                            hasError: _errors[
-                                                    'maleGuests'] !=
-                                                null,
-                                            onChanged: (_) {
-                                              setState(() {});
-                                              _clearFieldError(
-                                                  'maleGuests');
-                                              _recomputeMissingSexCount();
-                                            },
-                                          ),
-                                        ),
-                                        const SizedBox(height: 10),
-                                        _FieldCol(
-                                          label:
-                                              'Female Guests (optional)',
-                                          errorText: _errors[
-                                              'femaleGuests'],
-                                          child: _NumberField(
-                                            controller:
-                                                _femaleGuestsCtrl,
-                                            hint: 'e.g. 5',
-                                            hasError: _errors[
-                                                    'femaleGuests'] !=
-                                                null,
-                                            onChanged: (_) {
-                                              setState(() {});
-                                              _clearFieldError(
-                                                  'femaleGuests');
-                                              _recomputeMissingSexCount();
-                                            },
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
                                 ],
                               ),
                             ],
+                            const SizedBox(height: 14),
+
+                            // ── Row 4: Male / Female ────────────────────
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: _FieldCol(
+                                    label: 'Male Guests (optional)',
+                                    errorText: _errors['maleGuests'],
+                                    child: _NumberField(
+                                      controller: _maleGuestsCtrl,
+                                      hint: 'e.g. 5',
+                                      enabled: !_hasOriginGroups,
+                                      hasError: _errors['maleGuests'] != null,
+                                      onChanged: (_) {
+                                        setState(() {});
+                                        _clearFieldError('maleGuests');
+                                        _recomputeMissingSexCount();
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _FieldCol(
+                                    label: 'Female Guests (optional)',
+                                    errorText: _errors['femaleGuests'],
+                                    child: _NumberField(
+                                      controller: _femaleGuestsCtrl,
+                                      hint: 'e.g. 5',
+                                      enabled: !_hasOriginGroups,
+                                      hasError: _errors['femaleGuests'] != null,
+                                      onChanged: (_) {
+                                        setState(() {});
+                                        _clearFieldError('femaleGuests');
+                                        _recomputeMissingSexCount();
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
                         ),
                       ),
@@ -1104,6 +1053,26 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                           setState(() => _leadSex = v);
                           _clearFieldError('leadSex');
                         },
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // ── Origin Groups ───────────────────────────────
+                      _SectionCard(
+                        title: 'Origin Groups',
+                        subtitle: 'Optional — add per-country/per-origin guest breakdowns',
+                        child: OriginGroupsEditor(
+                          groups: _originGroups,
+                          onGroupsChanged: _onOriginGroupsChanged,
+                          totalGuests: _hasOriginGroups
+                              ? _groupMaleSum + _groupFemaleSum
+                              : _totalGuests,
+                          leadProvinceCode: _selectedProvinceCode,
+                          leadCityCode: _selectedCityCode,
+                          leadCountry: _leadCountry,
+                          maleGuestsCtrl: _maleGuestsCtrl,
+                          femaleGuestsCtrl: _femaleGuestsCtrl,
+                        ),
                       ),
                     ],
                   ),
@@ -1322,7 +1291,6 @@ class _LeadGuestCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  flex: 3,
                   child: _FieldCol(
                     label: 'Country *',
                     errorText: errors['leadCountry'],
@@ -1341,7 +1309,6 @@ class _LeadGuestCard extends StatelessWidget {
                 if (isPhilippines) ...[
                   const SizedBox(width: 12),
                   Expanded(
-                    flex: 2,
                     child: _FieldCol(
                       label: 'Nationality *',
                       errorText: errors['leadNationality'],
@@ -2109,11 +2076,13 @@ class _NumberField extends StatelessWidget {
     required this.hint,
     this.hasError = false,
     this.onChanged,
+    this.enabled = true,
   });
   final TextEditingController controller;
   final String hint;
   final bool hasError;
   final ValueChanged<String>? onChanged;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -2125,6 +2094,7 @@ class _NumberField extends StatelessWidget {
         inputFormatters: [
           FilteringTextInputFormatter.digitsOnly
         ],
+        enabled: enabled,
         style:
             const TextStyle(color: _kInputText, fontSize: 13),
         decoration:

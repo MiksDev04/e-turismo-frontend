@@ -542,6 +542,35 @@ class BusinessGuestEntryApi extends BaseApi {
       }
     }
 
+    // Write origin groups to local table
+    if (originGroups != null && originGroups.isNotEmpty) {
+      await db.delete(
+        LocalDatabase.tableGuestOriginBreakdowns,
+        where: 'guest_record_id = ?',
+        whereArgs: [recordId],
+      );
+      for (final group in originGroups) {
+        await db.insert(
+          LocalDatabase.tableGuestOriginBreakdowns,
+          {
+            'id':                  _generateId(),
+            'guest_record_id':     recordId,
+            'country':             group.country,
+            'nationality':         group.nationality,
+            'is_overseas':         group.isOverseas ? 1 : 0,
+            'province':            group.province,
+            'city_municipality':   group.cityMunicipality,
+            'male_count':          group.maleCount,
+            'female_count':        group.femaleCount,
+            'created_at':          createdAt,
+            'updated_at':          localUpdatedAt,
+            'deleted_at':          null,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    }
+
     debugPrint('💾 SQLite: saved record $recordId (status: $syncStatus, business: $businessId)');
   }
 

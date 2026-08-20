@@ -1526,6 +1526,8 @@ class _RecordCard extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
+              _GuestBadge(count: r.guests),
             ],
           ),
           const SizedBox(height: 8),
@@ -1533,7 +1535,6 @@ class _RecordCard extends StatelessWidget {
             spacing: 16,
             runSpacing: 4,
             children: [
-              _InfoChip(label: 'Guests', value: '${r.guests}'),
               _InfoChip(label: 'Room(s)', value: _roomsDisplay(r)),
               _InfoChip(label: 'Purpose', value: r.purpose),
             ],
@@ -1597,6 +1598,42 @@ class _InfoChip extends StatelessWidget {
           TextSpan(
             text: value,
             style: const TextStyle(color: AppColors.textGray),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GuestBadge extends StatelessWidget {
+  const _GuestBadge({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.primaryCyan.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: AppColors.primaryCyan.withOpacity(0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.people_outline,
+            color: AppColors.primaryCyan,
+            size: 13,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '$count',
+            style: const TextStyle(
+              color: AppColors.primaryCyan,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -1789,6 +1826,28 @@ class _RecordDetailModal extends StatelessWidget {
                     const SizedBox(height: 12),
 
                     _LeadGuestDemoGrid(record: record),
+
+                    if (record.originGroups.isNotEmpty) ...[
+                      const SizedBox(height: 24),
+                      Container(
+                        width: double.infinity,
+                        height: 1,
+                        color: AppColors.cardBorder.withOpacity(0.6),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: AppColors.inputBackground,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.cardBorder.withOpacity(0.4)),
+                        ),
+                        child: const _ModalSectionLabel('Origin Groups'),
+                      ),
+                      const SizedBox(height: 12),
+                      _OriginGroupsDisplay(record: record),
+                    ],
                   ],
                 ),
               ),
@@ -1937,6 +1996,163 @@ class _DetailField extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
+      ],
+    );
+  }
+}
+
+// ─── Origin Groups Display ────────────────────────────────────────────────────
+
+class _OriginGroupsDisplay extends StatelessWidget {
+  const _OriginGroupsDisplay({required this.record});
+  final GuestRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = record.originGroups;
+    final totalMale = groups.fold<int>(0, (s, g) => s + g.maleCount);
+    final totalFemale = groups.fold<int>(0, (s, g) => s + g.femaleCount);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 500;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final g in groups) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.inputBackground,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.cardBorder.withOpacity(0.4)),
+                ),
+                child: isNarrow
+                    ? _buildGroupContent(g, true)
+                    : Row(
+                        children: [
+                          Expanded(flex: 3, child: _buildGroupContent(g, false)),
+                          const SizedBox(width: 12),
+                          _buildSexCounts(g),
+                        ],
+                      ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            // Total row
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.primaryCyan.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.primaryCyan.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.summarize_outlined, color: AppColors.primaryCyan, size: 14),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Total: $totalMale male, $totalFemale female (${totalMale + totalFemale} guests)',
+                    style: const TextStyle(
+                      color: AppColors.textWhite,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildGroupContent(OriginGroup g, bool stacked) {
+    final locationParts = <String>[];
+    if (g.isOverseas) {
+      locationParts.add('Overseas Filipino');
+    } else {
+      if (g.country != null) locationParts.add(g.country!);
+      if (g.province != null) locationParts.add(g.province!);
+      if (g.cityMunicipality != null) locationParts.add(g.cityMunicipality!);
+    }
+    final location = locationParts.join(', ');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            if (g.isOverseas)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'OFW/Balikbayan',
+                  style: TextStyle(color: Color(0xFFF59E0B), fontSize: 10, fontWeight: FontWeight.w600),
+                ),
+              )
+            else
+              Icon(Icons.public_outlined, color: AppColors.textSubtle, size: 13),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                location.isNotEmpty ? location : '—',
+                style: const TextStyle(color: AppColors.textWhite, fontSize: 12.5),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (g.nationality != null) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: (g.nationality == 'Filipino'
+                          ? AppColors.primaryCyan
+                          : AppColors.accentGreen)
+                      .withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(
+                  g.nationality!,
+                  style: TextStyle(
+                    color: g.nationality == 'Filipino'
+                        ? AppColors.primaryCyan
+                        : AppColors.accentGreen,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        if (stacked) ...[
+          const SizedBox(height: 6),
+          _buildSexCounts(g),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSexCounts(OriginGroup g) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.male_outlined, color: AppColors.textSubtle, size: 13),
+        const SizedBox(width: 3),
+        Text('${g.maleCount}', style: const TextStyle(color: AppColors.textWhite, fontSize: 12)),
+        const SizedBox(width: 10),
+        Icon(Icons.female_outlined, color: AppColors.textSubtle, size: 13),
+        const SizedBox(width: 3),
+        Text('${g.femaleCount}', style: const TextStyle(color: AppColors.textWhite, fontSize: 12)),
       ],
     );
   }

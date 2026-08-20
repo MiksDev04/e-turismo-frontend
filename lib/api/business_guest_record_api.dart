@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:app/core/database/local_database.dart';
@@ -623,6 +625,14 @@ class BusinessGuestRecordApi extends BaseApi {
         if (roomIds != null && actualCheckOut == null) {
           await _updateLocalRoomAssignments(db, recordId, businessId ?? '', roomIds);
         }
+        // Update origin groups locally
+        await _writeOriginGroups(
+          db,
+          recordId,
+          originGroups,
+          createdAt: localUpdate['updated_at'] as String?,
+          localUpdatedAt: localUpdate['local_updated_at'] as String?,
+        );
       }
 
       return const ApiResult.success(null);
@@ -723,6 +733,15 @@ class BusinessGuestRecordApi extends BaseApi {
         final businessId = SessionService.instance.current?.businessId ?? '';
         await _updateLocalRoomAssignments(db, recordId, businessId, roomIds);
       }
+
+      // Update origin groups locally
+      await _writeOriginGroups(
+        db,
+        recordId,
+        originGroups,
+        createdAt: now,
+        localUpdatedAt: now,
+      );
 
       return const ApiResult.success(null);
     } catch (e) {
@@ -1336,6 +1355,54 @@ class BusinessGuestRecordApi extends BaseApi {
       case 'prefer_not_to_say':
       case 'prefer not to say': return 'prefer_not_to_say';
       default:                  return 'prefer_not_to_say';
+    }
+  }
+
+  String _generateId() {
+    final rand = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rand.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20)}';
+  }
+
+  Future<void> _writeOriginGroups(
+    dynamic db,
+    String recordId,
+    List<OriginGroup>? originGroups, {
+    required String? createdAt,
+    required String? localUpdatedAt,
+  }) async {
+    if (originGroups == null) return;
+
+    await db.delete(
+      LocalDatabase.tableGuestOriginBreakdowns,
+      where: 'guest_record_id = ?',
+      whereArgs: [recordId],
+    );
+
+    for (final group in originGroups) {
+      await db.insert(
+        LocalDatabase.tableGuestOriginBreakdowns,
+        {
+          'id':                  _generateId(),
+          'guest_record_id':     recordId,
+          'country':             group.country,
+          'nationality':         group.nationality,
+          'is_overseas':         group.isOverseas ? 1 : 0,
+          'province':            group.province,
+          'city_municipality':   group.cityMunicipality,
+          'male_count':          group.maleCount,
+          'female_count':        group.femaleCount,
+          'created_at':          createdAt,
+          'updated_at':          localUpdatedAt,
+          'deleted_at':          null,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
     }
   }
 }
