@@ -22,6 +22,15 @@ class OriginGroup {
   int get total => maleCount + femaleCount;
   bool get isDomestic => country?.toLowerCase() == 'philippines';
 
+  /// True when the group carries origin information (an overseas flag or a
+  /// selected country). Overseas groups have no country by design.
+  bool get hasOrigin => isOverseas || (country?.trim().isNotEmpty ?? false);
+
+  /// A group is only worth persisting/pushing when it has at least one guest
+  /// AND an origin — matches the backend rule
+  /// "Each origin group must have at least one guest (maleCount + femaleCount >= 1)".
+  bool get isComplete => total > 0 && hasOrigin;
+
   /// Computed fallback when nationality is not stored.
   String get resolvedNationality =>
       nationality ?? (isDomestic || isOverseas ? 'Filipino' : 'Foreign');

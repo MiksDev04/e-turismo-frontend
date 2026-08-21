@@ -21,6 +21,17 @@ String _roomsDisplay(GuestRecord r) => r.roomDetails.isNotEmpty
 
 String _dateOnly(String v) => v.length >= 10 ? v.substring(0, 10) : v;
 
+String _birthdateWithAge(String? birthdate) {
+  if (birthdate == null || birthdate.trim().isEmpty) return '-';
+  final b = DateTime.tryParse(birthdate);
+  if (b == null) return birthdate;
+  final now = DateTime.now();
+  var age = now.year - b.year;
+  if (now.month < b.month || (now.month == b.month && now.day < b.day)) age--;
+  if (age < 0) return birthdate;
+  return '$birthdate ($age yrs)';
+}
+
 String _actualCheckOutDate(GuestRecord r) {
   final v = r.actualCheckOut;
   if (v == null || v.isEmpty) return '—';
@@ -1920,7 +1931,7 @@ class _LeadGuestDemoGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = [
       (Icons.person_outline,            'Sex',               record.leadSex ?? '-'),
-      (Icons.cake_outlined,             'Birthdate',         record.leadBirthdate ?? '-'),
+      (Icons.cake_outlined,             'Birthdate',         _birthdateWithAge(record.leadBirthdate)),
       (Icons.flag_outlined,             'Country',           record.leadCountry ?? '-'),
       (Icons.account_balance_outlined,  'Nationality',       record.leadNationality ?? '-'),
       (Icons.map_outlined,              'Province',          record.leadProvince ?? '-'),
@@ -2010,8 +2021,6 @@ class _OriginGroupsDisplay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final groups = record.originGroups;
-    final totalMale = groups.fold<int>(0, (s, g) => s + g.maleCount);
-    final totalFemale = groups.fold<int>(0, (s, g) => s + g.femaleCount);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -2039,32 +2048,8 @@ class _OriginGroupsDisplay extends StatelessWidget {
                         ],
                       ),
               ),
-              const SizedBox(height: 8),
+              if (g != groups.last) const SizedBox(height: 8),
             ],
-            // Total row
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppColors.primaryCyan.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.primaryCyan.withOpacity(0.2)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.summarize_outlined, color: AppColors.primaryCyan, size: 14),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Total: $totalMale male, $totalFemale female (${totalMale + totalFemale} guests)',
-                    style: const TextStyle(
-                      color: AppColors.textWhite,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ],
         );
       },

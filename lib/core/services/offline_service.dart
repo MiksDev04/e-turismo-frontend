@@ -480,12 +480,15 @@ class SyncService {
         );
         final roomIds = roomLinks.map((r) => r['room_id'] as String).toList();
 
-        // Read origin groups for this record
-        final originGroupRows = await db.query(
+        // Read origin groups for this record, dropping incomplete rows
+        // (no guest counts or no origin) that the backend would reject.
+        final originGroupRows = (await db.query(
           LocalDatabase.tableGuestOriginBreakdowns,
           where: 'guest_record_id = ? AND deleted_at IS NULL',
           whereArgs: [recordId],
-        );
+        ))
+            .where(_originGroupRowIsComplete)
+            .toList();
 
         // Build payload and include the local UUID so the backend stores the
         // same ID — keeps SQLite and MySQL in sync without a remapping step.
@@ -628,12 +631,15 @@ class SyncService {
         );
         final roomIds = roomLinks.map((r) => r['room_id'] as String).toList();
 
-        // Read origin groups for this record
-        final originGroupRows = await db.query(
+        // Read origin groups for this record, dropping incomplete rows
+        // (no guest counts or no origin) that the backend would reject.
+        final originGroupRows = (await db.query(
           LocalDatabase.tableGuestOriginBreakdowns,
           where: 'guest_record_id = ? AND deleted_at IS NULL',
           whereArgs: [recordId],
-        );
+        ))
+            .where(_originGroupRowIsComplete)
+            .toList();
 
         final payload = _toApiPayload(
           record,
@@ -1560,6 +1566,20 @@ class SyncService {
   // ---------------------------------------------------------------------------
   // Payload Mappers
   // ---------------------------------------------------------------------------
+
+  /// Mirrors [OriginGroup.isComplete] at the SQLite-row level: a breakdown row
+  /// must have at least one guest AND an origin (overseas flag or country).
+  /// Incomplete rows are excluded from sync payloads so the backend never
+  /// rejects a record with
+  /// "Each origin group must have at least one guest (maleCount + femaleCount >= 1)".
+  bool _originGroupRowIsComplete(Map<String, dynamic> g) {
+    final male = (g['male_count'] as num?)?.toInt() ?? 0;
+    final female = (g['female_count'] as num?)?.toInt() ?? 0;
+    final isOverseas = g['is_overseas'] == 1 || g['is_overseas'] == true;
+    final country = (g['country'] as String?)?.trim();
+    return male + female > 0 &&
+        (isOverseas || (country != null && country.isNotEmpty));
+  }
 
   /// Converts a SQLite row + its room IDs into the JSON body expected by
   /// both POST /api/business/guest-entries and PUT /api/business/guest-records/:id.

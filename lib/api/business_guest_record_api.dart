@@ -355,6 +355,7 @@ class BusinessGuestRecordApi extends BaseApi {
 
         final roomDetails = await _fetchLocalRoomDetails(db, recordId);
         final roomIds = roomDetails.map((r) => r.id).toList();
+        final originGroups = await _fetchLocalOriginGroups(db, recordId);
 
         records.add(GuestRecord(
           id:           recordId,
@@ -381,6 +382,7 @@ class BusinessGuestRecordApi extends BaseApi {
           leadIsOverseas:         (row['lead_is_overseas'] as int?) == 1,
           leadBirthdate:          row['lead_birthdate'] as String?,
           leadSex:                _normaliseSex(row['lead_sex'] as String?),
+          originGroups:     originGroups,
         ));
       }
       return records;
@@ -465,6 +467,7 @@ class BusinessGuestRecordApi extends BaseApi {
 
         final roomDetails = await _fetchLocalRoomDetails(db, recordId);
         final roomIds = roomDetails.map((r) => r.id).toList();
+        final originGroups = await _fetchLocalOriginGroups(db, recordId);
 
         records.add(GuestRecord(
           id:           recordId,
@@ -491,6 +494,7 @@ class BusinessGuestRecordApi extends BaseApi {
           leadIsOverseas:         (row['lead_is_overseas'] as int?) == 1,
           leadBirthdate:          row['lead_birthdate'] as String?,
           leadSex:                _normaliseSex(row['lead_sex'] as String?),
+          originGroups:     originGroups,
         ));
       }
 
@@ -529,13 +533,18 @@ class BusinessGuestRecordApi extends BaseApi {
     try {
       final businessId = SessionService.instance.current?.businessId;
 
+      // Drop incomplete rows (no guest counts or no origin) so the backend
+      // never rejects the update with
+      // "Each origin group must have at least one guest".
+      final groups = originGroups?.where((g) => g.isComplete).toList();
+
       var maleCountInt = maleCount ?? 0;
       var femaleCountInt = femaleCount ?? 0;
       var totalGuestsInt = totalGuests;
 
-      if (originGroups != null && originGroups.isNotEmpty) {
-        maleCountInt = originGroups.fold<int>(0, (sum, g) => sum + g.maleCount);
-        femaleCountInt = originGroups.fold<int>(0, (sum, g) => sum + g.femaleCount);
+      if (groups != null && groups.isNotEmpty) {
+        maleCountInt = groups.fold<int>(0, (sum, g) => sum + g.maleCount);
+        femaleCountInt = groups.fold<int>(0, (sum, g) => sum + g.femaleCount);
         totalGuestsInt = maleCountInt + femaleCountInt;
       } else if (maleCountInt == 0 && femaleCountInt == 0) {
         maleCountInt = (totalGuestsInt * 0.471).round();
@@ -565,8 +574,8 @@ class BusinessGuestRecordApi extends BaseApi {
         'leadBirthdate':         leadBirthdate,
         'breakdowns':            breakdowns.map((b) => _breakdownEntryToPayload(b)).toList(),
       };
-      if (originGroups != null) {
-        payload['originGroups'] = originGroups.map((g) => g.toJson()).toList();
+      if (groups != null) {
+        payload['originGroups'] = groups.map((g) => g.toJson()).toList();
       }
       if (roomIds != null) {
         payload['roomIds'] = roomIds;
@@ -629,7 +638,7 @@ class BusinessGuestRecordApi extends BaseApi {
         await _writeOriginGroups(
           db,
           recordId,
-          originGroups,
+          groups,
           createdAt: localUpdate['updated_at'] as String?,
           localUpdatedAt: localUpdate['local_updated_at'] as String?,
         );
@@ -680,13 +689,17 @@ class BusinessGuestRecordApi extends BaseApi {
       final preserveCreate = currentState.isNotEmpty &&
           currentState.first['sync_status'] == LocalDatabase.syncPendingCreate;
 
+      // Drop incomplete rows (no guest counts or no origin) so the sync push
+      // is never rejected by the backend.
+      final groups = originGroups?.where((g) => g.isComplete).toList();
+
       var maleCountInt = maleCount ?? 0;
       var femaleCountInt = femaleCount ?? 0;
       var totalGuestsInt = totalGuests;
 
-      if (originGroups != null && originGroups.isNotEmpty) {
-        maleCountInt = originGroups.fold<int>(0, (sum, g) => sum + g.maleCount);
-        femaleCountInt = originGroups.fold<int>(0, (sum, g) => sum + g.femaleCount);
+      if (groups != null && groups.isNotEmpty) {
+        maleCountInt = groups.fold<int>(0, (sum, g) => sum + g.maleCount);
+        femaleCountInt = groups.fold<int>(0, (sum, g) => sum + g.femaleCount);
         totalGuestsInt = maleCountInt + femaleCountInt;
       } else if (maleCountInt == 0 && femaleCountInt == 0) {
         maleCountInt = (totalGuestsInt * 0.471).round();
@@ -738,7 +751,7 @@ class BusinessGuestRecordApi extends BaseApi {
       await _writeOriginGroups(
         db,
         recordId,
-        originGroups,
+        groups,
         createdAt: now,
         localUpdatedAt: now,
       );
@@ -780,6 +793,27 @@ class BusinessGuestRecordApi extends BaseApi {
     } catch (e) {
       debugPrint('⚠️ _fetchLocalRoomDetails error: $e');
       return [];
+    }
+  }
+
+  Future<List<OriginGroup>> _fetchLocalOriginGroups(dynamic db, String recordId) async {
+    try {
+      final rows = await db.query(
+        LocalDatabase.tableGuestOriginBreakdowns,
+        where: 'guest_record_id = ? AND deleted_at IS NULL',
+        whereArgs: [recordId],
+      ) as List<Map<String, Object?>>;
+
+      // Build imperatively with an explicitly-typed list — avoids any
+      // implicit List<dynamic> → List<OriginGroup> downcast at runtime.
+      final groups = <OriginGroup>[];
+      for (final r in rows) {
+        groups.add(OriginGroup.fromJson(Map<String, dynamic>.from(r)));
+      }
+      return groups;
+    } catch (e) {
+      debugPrint('⚠️ _fetchLocalOriginGroups error: $e');
+      return <OriginGroup>[];
     }
   }
 

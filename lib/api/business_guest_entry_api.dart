@@ -189,14 +189,18 @@ class BusinessGuestEntryApi extends BaseApi {
     final now         = DateTime.now().toUtc().toIso8601String();
     final leadBirthStr = data.leadBirthdate != null ? _formatDate(data.leadBirthdate!) : null;
 
-    final hasGroups = data.originGroups.isNotEmpty;
+    // Drop incomplete rows (no guest counts or no origin) so they never
+    // reach SQLite or the backend — keeps male/female tallies consistent.
+    final groups = data.originGroups.where((g) => g.isComplete).toList();
+
+    final hasGroups = groups.isNotEmpty;
     final int maleCountDerived;
     final int femaleCountDerived;
     final int totalGuestsDerived;
 
     if (hasGroups) {
-      maleCountDerived = data.originGroups.fold<int>(0, (sum, g) => sum + g.maleCount);
-      femaleCountDerived = data.originGroups.fold<int>(0, (sum, g) => sum + g.femaleCount);
+      maleCountDerived = groups.fold<int>(0, (sum, g) => sum + g.maleCount);
+      femaleCountDerived = groups.fold<int>(0, (sum, g) => sum + g.femaleCount);
       totalGuestsDerived = maleCountDerived + femaleCountDerived;
     } else {
       maleCountDerived = data.maleCount ?? 0;
@@ -224,7 +228,7 @@ class BusinessGuestEntryApi extends BaseApi {
           leadBirthdate:      leadBirthStr,
           leadSex:            data.leadSex,
           roomIds:            data.roomIds,
-          originGroups:       data.originGroups,
+          originGroups:       groups,
           createdAt:          now,
           syncStatus:         LocalDatabase.syncPendingCreate,
           localUpdatedAt:     now,
@@ -254,7 +258,7 @@ class BusinessGuestEntryApi extends BaseApi {
         'leadIsOverseas': data.leadIsOverseas,
         'leadBirthdate': leadBirthStr,
         'leadSex': data.leadSex,
-        'originGroups': data.originGroups.map((g) => g.toJson()).toList(),
+        'originGroups': groups.map((g) => g.toJson()).toList(),
       };
 
       final response = await post('/api/business/guest-entries', payload);
@@ -328,14 +332,19 @@ class BusinessGuestEntryApi extends BaseApi {
       final now           = DateTime.now().toUtc().toIso8601String();
       final leadBirthStr  = data.leadBirthdate != null ? _formatDate(data.leadBirthdate!) : null;
 
-      final hasGroups = data.originGroups.isNotEmpty;
+      // Drop incomplete rows (no guest counts or no origin) so they never
+      // reach SQLite — the sync push would otherwise be rejected by the
+      // backend ("Each origin group must have at least one guest").
+      final groups = data.originGroups.where((g) => g.isComplete).toList();
+
+      final hasGroups = groups.isNotEmpty;
       final int maleCountDerived;
       final int femaleCountDerived;
       final int totalGuestsDerived;
 
       if (hasGroups) {
-        maleCountDerived = data.originGroups.fold<int>(0, (sum, g) => sum + g.maleCount);
-        femaleCountDerived = data.originGroups.fold<int>(0, (sum, g) => sum + g.femaleCount);
+        maleCountDerived = groups.fold<int>(0, (sum, g) => sum + g.maleCount);
+        femaleCountDerived = groups.fold<int>(0, (sum, g) => sum + g.femaleCount);
         totalGuestsDerived = maleCountDerived + femaleCountDerived;
       } else {
         maleCountDerived = data.maleCount ?? 0;
@@ -360,7 +369,7 @@ class BusinessGuestEntryApi extends BaseApi {
         leadBirthdate:      leadBirthStr,
         leadSex:            data.leadSex,
         roomIds:            data.roomIds,
-        originGroups:       data.originGroups,
+        originGroups:       groups,
         createdAt:          now,
         syncStatus:         LocalDatabase.syncPendingCreate,
         localUpdatedAt:     now,
