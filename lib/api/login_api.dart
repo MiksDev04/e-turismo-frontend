@@ -75,10 +75,10 @@ class LoginApi extends BaseApi {
       await SessionService.instance.save(updated);
       await SessionService.instance.loadAndCache();
 
-      // Refresh cache for future offline logins (business only — web is
-      // excluded and attraction/admin accounts are online-only)
+      // Refresh cache for future offline logins (web is excluded and admin
+      // accounts are online-only)
       final roleStr = user['role'] as String?;
-      if (!kIsWeb && roleStr == 'business') {
+      if (!kIsWeb && (roleStr == 'business' || roleStr == 'attraction')) {
         await OfflineAuthService.instance.cacheProfile(
         id: user['id'].toString(),
         username: user['username'],
@@ -90,6 +90,7 @@ class LoginApi extends BaseApi {
         createdAt: user['created_at'],
         updatedAt: user['updated_at'],
         business: biz,
+        attraction: att,
         );
       }
 
@@ -131,21 +132,7 @@ class LoginApi extends BaseApi {
           );
         }
 
-        // 1b. Attraction accounts are online-only — mirror the admin block.
-        final attractionCheck = await db.query(
-          LocalDatabase.tableLocalProfiles,
-          where: '(username = ? OR email = ?) AND role = ?',
-          whereArgs: [username, username, 'attraction'],
-          limit: 1,
-        );
-
-        if (attractionCheck.isNotEmpty) {
-          return LoginResult.err(
-            'Attraction login requires an internet connection. Please connect to the internet to sign in.',
-          );
-        }
-
-        // 2. Otherwise, attempt to verify business user credentials.
+        // 2. Attempt to verify credentials against cached profiles.
         final profile = await OfflineAuthService.instance.verifyOfflineLogin(
           username: username,
           password: password,
@@ -156,13 +143,52 @@ class LoginApi extends BaseApi {
         }
 
         final roleStr = profile['role'] as String? ?? 'business';
-        // Redundant but safe: check role again
-        if (roleStr == 'admin' || roleStr == 'attraction') {
+
+        if (roleStr == 'admin') {
           return LoginResult.err(
-            roleStr == 'admin'
-                ? 'Admin login is only supported online. Please connect to the internet to sign in.'
-                : 'Attraction login is only supported online. Please connect to the internet to sign in.',
+            'Admin login is only supported online. Please connect to the internet to sign in.',
           );
+        }
+
+        // ── Attraction offline session ──────────────────────────────────────
+        if (roleStr == 'attraction') {
+          final attRows = await db.query(
+            LocalDatabase.tableLocalAttractions,
+            where: 'profile_id = ?',
+            whereArgs: [profile['id']],
+            limit: 1,
+          );
+
+          final att = attRows.isNotEmpty ? attRows.first : null;
+
+          List<String>? attType;
+          final rawType = att?['attraction_type'];
+          if (rawType is String && rawType.isNotEmpty) {
+            try {
+              final decoded = jsonDecode(rawType);
+              if (decoded is List) attType = decoded.cast<String>();
+            } catch (_) {}
+          }
+
+          final session = SessionData(
+            userId: profile['id'] as String,
+            fullName: profile['full_name'] as String? ?? '',
+            username: profile['username'] as String?,
+            email: profile['email'] as String? ?? '',
+            phone: profile['phone'] as String? ?? '',
+            role: roleStr,
+            token: null, // No token in offline session
+            password: password, // Save for auto-connect
+            isOfflineSession: true,
+            attractionId: att?['id'] as String?,
+            attractionName: att?['attraction_name'] as String?,
+            attractionType: attType,
+          );
+
+          await SessionService.instance.save(session);
+          await SessionService.instance.loadAndCache();
+
+          return LoginResult.ok(Role.attraction);
         }
 
         // Load business data
@@ -276,9 +302,9 @@ class LoginApi extends BaseApi {
             : (att?['attraction_type'] as List?)?.cast<String>(),
       );
 
-      // Cache for future offline login (business only — web is excluded and
-      // attraction/admin accounts are online-only)
-      if (!kIsWeb && roleStr == 'business') {
+      // Cache for future offline login (web is excluded and admin accounts
+      // are online-only)
+      if (!kIsWeb && (roleStr == 'business' || roleStr == 'attraction')) {
         await OfflineAuthService.instance.cacheProfile(
         id: user['id'].toString(),
         username: user['username'],
@@ -290,6 +316,7 @@ class LoginApi extends BaseApi {
         createdAt: user['created_at'],
         updatedAt: user['updated_at'],
         business: biz,
+        attraction: att,
         );
       }
 

@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:app/core/constants/app_colors.dart';
+import 'package:app/core/services/offline_service.dart';
 import 'package:app/api/attraction_visit_record_api.dart';
+import '../widgets/offline_banner.dart';
 import '../../shared/layouts/attraction_layout.dart';
 import '../../shared/widgets/paginator.dart';
 import '../../shared/widgets/action_icon_button.dart';
@@ -52,17 +56,56 @@ class _AttractionVisitRecordsPageState extends State<AttractionVisitRecordsPage>
 
   static const List<int> _pageSizeOptions = [10, 20, 30];
 
+  // ── Connectivity / sync state ─────────────────────────────────────────────
+  bool _isOffline = false;
+  StreamSubscription<bool>? _connectivitySub;
+  StreamSubscription<SyncState>? _syncSub;
+
   @override
   void initState() {
     super.initState();
+    _isOffline = !ConnectivityService.instance.isOnline;
+    _subscribeToConnectivity();
+    _subscribeToSync();
     _loadRecords();
   }
 
-  Future<void> _loadRecords() async {
-    setState(() {
-      _isLoading = true;
-      _loadError = null;
+  @override
+  void dispose() {
+    _connectivitySub?.cancel();
+    _syncSub?.cancel();
+    super.dispose();
+  }
+
+  void _subscribeToConnectivity() {
+    _connectivitySub =
+        ConnectivityService.instance.onConnectivityChanged.listen((isOnline) {
+      if (!mounted) return;
+
+      if (isOnline && _isOffline) {
+        setState(() => _isOffline = false);
+      } else if (!isOnline && !_isOffline) {
+        setState(() => _isOffline = true);
+      }
     });
+  }
+
+  void _subscribeToSync() {
+    _syncSub = SyncService.instance.syncStateStream.listen((state) {
+      if (!mounted) return;
+      if (state.status == SyncStatus.synced) {
+        _loadRecords(silent: true);
+      }
+    });
+  }
+
+  Future<void> _loadRecords({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _isLoading = true;
+        _loadError = null;
+      });
+    }
 
     try {
       final result = await _api.fetchVisitRecords(
@@ -173,6 +216,11 @@ class _AttractionVisitRecordsPageState extends State<AttractionVisitRecordsPage>
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (_isOffline)
+                const OfflineBanner(
+                  message:
+                      "You're offline — showing locally saved records.",
+                ),
               Expanded(
                 child: SingleChildScrollView(
                   padding: EdgeInsets.all(isNarrow ? 16 : 24),

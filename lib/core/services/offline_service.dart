@@ -35,6 +35,7 @@ class OfflineAuthService {
     String? createdAt,
     String? updatedAt,
     Map<String, dynamic>? business,
+    Map<String, dynamic>? attraction,
   }) async {
     final db = await LocalDatabase.instance.database;
     final hash = _hashPassword(password, id);
@@ -95,6 +96,35 @@ class OfflineAuthService {
         );
         if (bCount == 0) {
           await txn.insert(LocalDatabase.tableLocalBusinesses, bizData);
+        }
+      }
+
+      if (attraction != null) {
+        final attType = attraction['attraction_type'];
+        final attData = {
+          'id': attraction['id'],
+          'profile_id': id,
+          'attraction_name': attraction['attraction_name'],
+          'attraction_type': attType is String
+              ? attType
+              : attType == null
+                  ? null
+                  : jsonEncode(attType),
+          'street': attraction['street'],
+          'barangay': attraction['barangay'],
+          'status': attraction['status'],
+          'created_at': attraction['created_at'],
+          'updated_at': attraction['updated_at'],
+        };
+
+        final aCount = await txn.update(
+          LocalDatabase.tableLocalAttractions,
+          attData,
+          where: 'id = ?',
+          whereArgs: [attraction['id']],
+        );
+        if (aCount == 0) {
+          await txn.insert(LocalDatabase.tableLocalAttractions, attData);
         }
       }
     });
@@ -209,6 +239,10 @@ class SyncService {
   static const _fullSyncInterval = Duration(hours: 24);
   static const _prefKeyLastSync = 'sync_lastSyncTimestamp';
   static const _prefKeyLastFullSync = 'sync_lastFullSyncTimestamp';
+  // Attraction-side timestamps use SEPARATE keys so business deltas are
+  // never touched by attraction syncs (and vice versa).
+  static const _prefKeyAttractionLastSync = 'attraction_sync_lastSync';
+  static const _prefKeyAttractionLastFullSync = 'attraction_sync_lastFullSync';
   DateTime? _lastSyncEnd;
 
   void listenForConnectivity() {
@@ -235,8 +269,8 @@ class SyncService {
       return;
     }
 
-    // Session loaded but not a business account — stop, no sync needed.
-    if (session.role != 'business') {
+    // Session loaded but neither a business nor attraction account — stop.
+    if (session.role != 'business' && session.role != 'attraction') {
       debugPrint('⏭ _handleOnlineTransition: skipped — role is ${session.role}');
       return;
     }
@@ -256,6 +290,44 @@ class SyncService {
       } catch (e) {
         debugPrint('⚠️ SyncService: Auto-auth error: $e');
       }
+    }
+
+    // ── Attraction online transition ────────────────────────────────────────
+    if (session.role == 'attraction') {
+      try {
+        await _pullProfileAndAttraction();
+
+        final current = SessionService.instance.current;
+        String? attractionId = current?.attractionId;
+
+        if (attractionId == null && current != null) {
+          final db = await LocalDatabase.instance.database;
+          final rows = await db.query(
+            LocalDatabase.tableLocalAttractions,
+            where: 'profile_id = ?',
+            whereArgs: [current.userId],
+            limit: 1,
+          );
+          if (rows.isNotEmpty) {
+            attractionId = rows.first['id'] as String?;
+          }
+        }
+
+        await _pullVisitEntriesFromBackend(
+          attractionId: attractionId,
+          forceFullSync: true,
+        );
+      } catch (e) {
+        debugPrint(
+          '⚠️ _handleOnlineTransition: initial attraction pulls failed: $e',
+        );
+      }
+
+      await _clearOfflineSessionFlag();
+
+      // Give a small delay for state to settle before full sync.
+      Future.delayed(_syncDelay, sync);
+      return;
     }
 
     try {
@@ -310,8 +382,9 @@ class SyncService {
     }
 
     final session = SessionService.instance.current;
-    if (session == null || session.role != 'business') {
-      debugPrint('⏭ sync: skipped — only for business accounts');
+    if (session == null ||
+        (session.role != 'business' && session.role != 'attraction')) {
+      debugPrint('⏭ sync: skipped — only for business/attraction accounts');
       return;
     }
 
@@ -341,6 +414,48 @@ class SyncService {
     final initialPending = await _countPending();
     debugPrint('🔄 sync: starting sync process. Initial pending count: $initialPending');
     _emit(SyncState(status: SyncStatus.syncing, pendingCount: initialPending));
+
+    // ── Attraction path ─────────────────────────────────────────────────────
+    if (session.role == 'attraction') {
+      try {
+        await _pullProfileAndAttraction();
+
+        final createResult = await _pushPendingVisitCreates();
+        if (createResult.networkLost) {
+          final remaining = await _countPending();
+          _emit(SyncState(
+            status: SyncStatus.error,
+            errorMessage: 'Connection lost during sync — will retry automatically',
+            pendingCount: remaining,
+          ));
+          return;
+        }
+
+        await _pullVisitEntriesFromBackend();
+
+        final remaining = await _countPending();
+        if (createResult.failed > 0) {
+          _emit(SyncState(
+            status: SyncStatus.error,
+            errorMessage: '$remaining record(s) failed to sync',
+            pendingCount: remaining,
+          ));
+        } else {
+          _emit(SyncState(status: SyncStatus.synced, pendingCount: remaining));
+        }
+      } catch (e) {
+        _emit(
+          SyncState(
+            status: SyncStatus.error,
+            errorMessage: e.toString(),
+            pendingCount: await _countPending(),
+          ),
+        );
+      } finally {
+        _lastSyncEnd = DateTime.now();
+      }
+      return;
+    }
 
     try {
       await _pullProfileAndBusiness();
@@ -1442,6 +1557,393 @@ class SyncService {
   }
 
   // ---------------------------------------------------------------------------
+  // ATTRACTION SYNC
+  // Mirrors the business flow but simpler: visit entries have no junction
+  // tables, and the backend always issues its own UUID on create — so a
+  // successful push remaps the local row's primary key from the response.
+  // ---------------------------------------------------------------------------
+
+  Future<void> _pullProfileAndAttraction() async {
+    if (!await _canReachBackend()) return;
+
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/api/profile'),
+        headers: _headers,
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        final user = decoded['user'];
+        final att = decoded['attraction'];
+
+        final db = await LocalDatabase.instance.database;
+
+        if (user != null) {
+          final profileData = {
+            'id': user['id'],
+            'username': user['username'],
+            'full_name': user['full_name'],
+            'email': user['email'],
+            'phone': user['phone'],
+            'role': user['role'],
+            'created_at': user['created_at'],
+            'updated_at': user['updated_at'],
+          };
+          final count = await db.update(
+            LocalDatabase.tableLocalProfiles,
+            profileData,
+            where: 'id = ?',
+            whereArgs: [user['id']],
+          );
+          if (count == 0) {
+            profileData['password_hash'] = 'sync_dummy_hash';
+            await db.insert(LocalDatabase.tableLocalProfiles, profileData);
+          }
+        }
+
+        if (att != null) {
+          final attType = att['attraction_type'];
+          final attData = {
+            'id': att['id'],
+            'profile_id': att['user_id'] ?? user?['id'],
+            'attraction_name': att['attraction_name'],
+            'attraction_type': attType is String
+                ? attType
+                : attType == null
+                    ? null
+                    : jsonEncode(attType),
+            'street': att['street'],
+            'barangay': att['barangay'],
+            'status': att['status'],
+            'created_at': att['created_at'],
+            'updated_at': att['updated_at'],
+          };
+          final count = await db.update(
+            LocalDatabase.tableLocalAttractions,
+            attData,
+            where: 'id = ?',
+            whereArgs: [att['id']],
+          );
+          if (count == 0) {
+            await db.insert(LocalDatabase.tableLocalAttractions, attData);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ _pullProfileAndAttraction failed: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // PUSH PENDING VISIT ENTRY CREATES
+  // POST /api/attraction/visit-entry/visit-entries — entries saved offline.
+  // ONE reachability check before the batch; inside the loop a dropped
+  // connection is detected via isNetworkError only (fast-sync requirement).
+  // ---------------------------------------------------------------------------
+  Future<_PushResult> _pushPendingVisitCreates() async {
+    if (!await _canReachBackend()) {
+      debugPrint('⏭ _pushPendingVisitCreates: skipped — Backend unreachable');
+      return const _PushResult();
+    }
+
+    final db = await LocalDatabase.instance.database;
+
+    final records = await db.query(
+      LocalDatabase.tableVisitEntries,
+      where: 'sync_status = ?',
+      whereArgs: [LocalDatabase.syncPendingCreate],
+    );
+
+    if (records.isNotEmpty) {
+      debugPrint(
+        '📤 _pushPendingVisitCreates: ${records.length} entry(ies) to push',
+      );
+    }
+
+    int failed = 0;
+
+    for (final record in records) {
+      final recordId = record['id'] as String;
+
+      try {
+        final country = record['country'] as String?;
+        final payload = <String, dynamic>{
+          'id':               recordId,
+          'attractionId':     record['attraction_id'],
+          'visitDate':        record['visit_date'],
+          'guestCount':       record['guest_count'],
+          'maleCount':        record['male_count'],
+          'femaleCount':      record['female_count'],
+          'isForeign':        country != null && country != 'Philippines',
+          'country':          country,
+          'province':         record['province'],
+          'cityMunicipality': record['city_municipality'],
+        };
+
+        final response = await http
+            .post(
+              Uri.parse('$_baseUrl/api/attraction/visit-entry/visit-entries'),
+              headers: _headers,
+              body: jsonEncode(payload),
+            )
+            .timeout(
+              const Duration(seconds: 15),
+              onTimeout: () => throw TimeoutException(
+                'POST visit-entries/$recordId timed out',
+              ),
+            );
+
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          // The backend ignores our client id and stores its own UUID —
+          // remap the local primary key so SQLite matches the cloud row.
+          String syncedId = recordId;
+          try {
+            final body = jsonDecode(response.body);
+            final serverId =
+                body is Map ? body['visitEntryId'] as String? : null;
+            if (serverId != null && serverId.isNotEmpty && serverId != recordId) {
+              await db.update(
+                LocalDatabase.tableVisitEntries,
+                {'id': serverId},
+                where: 'id = ?',
+                whereArgs: [recordId],
+              );
+              syncedId = serverId;
+            }
+          } catch (_) {}
+
+          await db.update(
+            LocalDatabase.tableVisitEntries,
+            {
+              'sync_status':      LocalDatabase.syncSynced,
+              'local_updated_at': DateTime.now().toUtc().toIso8601String(),
+            },
+            where: 'id = ?',
+            whereArgs: [syncedId],
+          );
+          debugPrint('✅ _pushPendingVisitCreates: synced $recordId → $syncedId');
+        } else if (response.statusCode == 401) {
+          debugPrint(
+            '🔐 _pushPendingVisitCreates: 401 — token expired, refreshing and aborting for retry',
+          );
+          await _tryRefreshToken();
+          return _PushResult(failed: failed); // Stop batch — next sync uses fresh token.
+        } else if (response.statusCode == 409) {
+          // Defensive: the server generates its own ids so a clash should not
+          // happen; treat it like an already-landed create instead of failing.
+          await db.update(
+            LocalDatabase.tableVisitEntries,
+            {
+              'sync_status':      LocalDatabase.syncSynced,
+              'local_updated_at': DateTime.now().toUtc().toIso8601String(),
+            },
+            where: 'id = ?',
+            whereArgs: [recordId],
+          );
+          debugPrint(
+            '♻️ _pushPendingVisitCreates: $recordId already existed on server — marking synced',
+          );
+        } else {
+          failed++;
+          debugPrint(
+            '❌ _pushPendingVisitCreates: failed for $recordId — '
+            '${response.statusCode} ${response.body}',
+          );
+        }
+      } catch (e) {
+        if (isNetworkError(e)) {
+          debugPrint(
+            '🌐 _pushPendingVisitCreates: connection lost mid-push for $recordId — aborting batch ($e)',
+          );
+          return _PushResult(failed: failed, networkLost: true);
+        }
+        failed++;
+        debugPrint('❌ _pushPendingVisitCreates: exception for $recordId — $e');
+      }
+    }
+
+    return _PushResult(failed: failed);
+  }
+
+  // ---------------------------------------------------------------------------
+  // PULL VISIT ENTRIES FROM BACKEND
+  // The endpoint has no delta support, so every pull walks all pages with a
+  // wide date range (cheap at pageSize 100). needsFull only gates pruning +
+  // timestamp bookkeeping. Rows with local pending changes are never clobbered.
+  // ---------------------------------------------------------------------------
+  Future<void> _pullVisitEntriesFromBackend({
+    String? attractionId,
+    bool forceFullSync = false,
+  }) async {
+    if (!await _canReachBackend()) {
+      debugPrint('⏭ _pullVisitEntriesFromBackend: skipped — Backend unreachable');
+      return;
+    }
+
+    final db = await LocalDatabase.instance.database;
+
+    final attractions = attractionId != null
+        ? [{'id': attractionId}]
+        : await db.query(
+            LocalDatabase.tableLocalAttractions,
+            columns: ['id'],
+          );
+
+    final needsFull = forceFullSync || await _needsAttractionFullSync();
+
+    for (final attraction in attractions) {
+      final attId = attraction['id'] as String;
+
+      try {
+        final allRemote = <Map<String, dynamic>>[];
+        var totalCount = 0;
+        var page = 1;
+        const pageSize = 100; // backend caps pageSize at 100
+
+        while (true) {
+          final url = '$_baseUrl/api/attraction/visit-records'
+              '?page=$page&pageSize=$pageSize'
+              '&dateFrom=2000-01-01&dateTo=2099-12-31';
+          final response = await http.get(Uri.parse(url), headers: _headers);
+
+          if (response.statusCode < 200 || response.statusCode >= 300) {
+            debugPrint(
+              '⚠️ _pullVisitEntriesFromBackend: HTTP ${response.statusCode} for $attId',
+            );
+            // Abort before pruning — an incomplete fetch must never look like
+            // "everything was deleted on the cloud".
+            return;
+          }
+
+          final decoded = jsonDecode(response.body);
+          if (decoded is! Map) break;
+          totalCount = (decoded['totalCount'] as num?)?.toInt() ?? 0;
+          final rows = decoded['data'] as List? ?? [];
+          for (final r in rows) {
+            allRemote.add(Map<String, dynamic>.from(r));
+          }
+
+          if (allRemote.length >= totalCount || rows.isEmpty) break;
+          page++;
+        }
+
+        final remoteIds = <String>{};
+
+        for (final r in allRemote) {
+          final entryId = r['id'] as String?;
+          if (entryId == null || entryId.isEmpty) continue;
+          remoteIds.add(entryId);
+
+          // Skip entries that have local pending changes (saved offline).
+          final existing = await db.query(
+            LocalDatabase.tableVisitEntries,
+            columns: ['sync_status'],
+            where: 'id = ?',
+            whereArgs: [entryId],
+            limit: 1,
+          );
+          if (existing.isNotEmpty) {
+            final localSync = existing.first['sync_status'] as String?;
+            if (localSync != null && localSync != LocalDatabase.syncSynced) {
+              debugPrint(
+                '⏳ _pullVisitEntriesFromBackend: skipping entry $entryId (local pending: $localSync)',
+              );
+              continue;
+            }
+          }
+
+          await db.insert(
+            LocalDatabase.tableVisitEntries,
+            {
+              'id':                entryId,
+              'attraction_id':     r['attraction_id'] ?? r['attractionId'] ?? attId,
+              'visit_date':        r['visit_date'] ?? r['visitDate'],
+              'guest_count':
+                  (r['guest_count'] as num?)?.toInt() ??
+                  (r['guestCount'] as num?)?.toInt() ??
+                  0,
+              'male_count':
+                  (r['male_count'] as num?)?.toInt() ??
+                  (r['maleCount'] as num?)?.toInt() ??
+                  0,
+              'female_count':
+                  (r['female_count'] as num?)?.toInt() ??
+                  (r['femaleCount'] as num?)?.toInt() ??
+                  0,
+              'country':           r['country'],
+              'province':          r['province'],
+              'city_municipality': r['city_municipality'] ?? r['cityMunicipality'],
+              'nationality':       r['nationality'],
+              'created_at':        r['created_at'] ?? r['createdAt'],
+              'updated_at':        r['updated_at'] ?? r['updatedAt'],
+              'sync_status':       LocalDatabase.syncSynced,
+              'local_updated_at':  null,
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+
+        // Prune local synced rows absent from the cloud — full sync only
+        // (delta-style partial fetches can't infer deletion from absence).
+        if (needsFull) {
+          final localSynced = await db.query(
+            LocalDatabase.tableVisitEntries,
+            columns: ['id', 'local_updated_at'],
+            where: 'attraction_id = ? AND sync_status = ?',
+            whereArgs: [attId, LocalDatabase.syncSynced],
+          );
+
+          final now = DateTime.now().toUtc();
+          for (final local in localSynced) {
+            final id = local['id'] as String;
+            if (!remoteIds.contains(id)) {
+              final localUpdatedAtStr = local['local_updated_at'] as String?;
+              if (localUpdatedAtStr != null) {
+                final updatedAt = DateTime.tryParse(localUpdatedAtStr);
+                if (updatedAt != null &&
+                    now.difference(updatedAt).inSeconds < 60) {
+                  debugPrint(
+                    '⏳ Skipping pruning for just-synced entry $id (grace period)',
+                  );
+                  continue;
+                }
+              }
+
+              debugPrint(
+                '🧹 _pullVisitEntriesFromBackend: pruning local entry $id (not found on cloud)',
+              );
+              await db.delete(
+                LocalDatabase.tableVisitEntries,
+                where: 'id = ?',
+                whereArgs: [id],
+              );
+            }
+          }
+        }
+
+        debugPrint(
+          '✅ _pullVisitEntriesFromBackend: processed ${allRemote.length} entry(ies) for $attId',
+        );
+      } on SocketException catch (e) {
+        debugPrint(
+          '🌐 _pullVisitEntriesFromBackend: network lost — aborting ($e)',
+        );
+        return;
+      } catch (e) {
+        debugPrint('❌ _pullVisitEntriesFromBackend: failed for $attId — $e');
+      }
+    }
+
+    final syncTimestamp = DateTime.now().toUtc().toIso8601String();
+    await _setAttractionLastSyncTimestamp(syncTimestamp);
+    if (needsFull) {
+      await _setAttractionLastFullSyncTimestamp(syncTimestamp);
+      debugPrint('✅ _pullVisitEntriesFromBackend: full sync timestamp saved');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
 
@@ -1501,9 +2003,15 @@ class SyncService {
         SELECT id FROM ${LocalDatabase.tableGuestRecords} WHERE sync_status != ?
         UNION ALL
         SELECT id FROM ${LocalDatabase.tableLocalRooms} WHERE sync_status != ?
+        UNION ALL
+        SELECT id FROM ${LocalDatabase.tableVisitEntries} WHERE sync_status != ?
       )
       ''',
-      [LocalDatabase.syncSynced, LocalDatabase.syncSynced],
+      [
+        LocalDatabase.syncSynced,
+        LocalDatabase.syncSynced,
+        LocalDatabase.syncSynced,
+      ],
     );
     return (result.first['count'] as int?) ?? 0;
   }
@@ -1557,6 +2065,45 @@ class SyncService {
   /// Returns `true` on first ever sync or if the last full sync was >24h ago.
   Future<bool> _needsFullSync() async {
     final lastFullSync = await _getLastFullSyncTimestamp();
+    if (lastFullSync == null) return true;
+    final parsed = DateTime.tryParse(lastFullSync);
+    if (parsed == null) return true;
+    return DateTime.now().toUtc().difference(parsed) >= _fullSyncInterval;
+  }
+
+  // Attraction-side counterparts — deliberately separate prefs keys so
+  // business and attraction delta bookkeeping never interfere.
+
+  /// Persists the attraction [lastSync] ISO timestamp after a successful pull.
+  Future<void> _setAttractionLastSyncTimestamp(String isoTimestamp) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefKeyAttractionLastSync, isoTimestamp);
+    } catch (_) {}
+  }
+
+  /// Returns the stored attraction [lastFullSync] ISO timestamp, or `null`.
+  Future<String?> _getAttractionLastFullSyncTimestamp() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_prefKeyAttractionLastFullSync);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Persists the attraction [lastFullSync] ISO timestamp after a full pull.
+  Future<void> _setAttractionLastFullSyncTimestamp(String isoTimestamp) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefKeyAttractionLastFullSync, isoTimestamp);
+    } catch (_) {}
+  }
+
+  /// Determines whether an attraction full pull is needed
+  /// (first ever sync or last full sync >24h ago).
+  Future<bool> _needsAttractionFullSync() async {
+    final lastFullSync = await _getAttractionLastFullSyncTimestamp();
     if (lastFullSync == null) return true;
     final parsed = DateTime.tryParse(lastFullSync);
     if (parsed == null) return true;

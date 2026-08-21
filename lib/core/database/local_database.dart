@@ -26,7 +26,7 @@ class LocalDatabase {
   static const String _kDbName = 'tourism_local.db';
 
   // ── schema version ─────────────────────────────────────────────────────────
-  static const int _kDbVersion = 15;
+  static const int _kDbVersion = 16;
 
   // ── table names ────────────────────────────────────────────────────────────
   static const String tableLocalProfiles   = 'local_profiles';
@@ -35,6 +35,8 @@ class LocalDatabase {
   static const String tableGuestRecordRooms = 'local_guest_record_rooms';
   static const String tableLocalRooms      = 'local_rooms';
   static const String tableGuestOriginBreakdowns = 'local_guest_origin_breakdowns';
+  static const String tableLocalAttractions = 'local_attractions';
+  static const String tableVisitEntries     = 'local_visit_entries';
 
   // ── sync status constants ──────────────────────────────────────────────────
   /// Record exists on Backend and matches local copy.
@@ -91,6 +93,8 @@ class LocalDatabase {
       await txn.execute(_sqlCreateLocalRooms);
       await txn.execute(_sqlCreateGuestRecordRooms);
       await txn.execute(_sqlCreateGuestOriginBreakdowns);
+      await txn.execute(_sqlCreateLocalAttractions);
+      await txn.execute(_sqlCreateVisitEntries);
 
       await txn.execute(_sqlIndexGuestRecordsBusiness);
       await txn.execute(_sqlIndexGuestRecordsSyncStatus);
@@ -98,6 +102,9 @@ class LocalDatabase {
       await txn.execute(_sqlIndexGuestRecordRoomsRecord);
       await txn.execute(_sqlIndexLocalRoomsSyncStatus);
       await txn.execute(_sqlIndexGuestOriginBreakdownsRecord);
+      await txn.execute(_sqlIndexVisitEntriesAttraction);
+      await txn.execute(_sqlIndexVisitEntriesSync);
+      await txn.execute(_sqlIndexVisitEntriesDate);
     });
   }
 
@@ -387,6 +394,26 @@ class LocalDatabase {
         );
       }
     }
+
+    // v15 → v16: Add attraction-side offline tables (local_attractions +
+    //            local_visit_entries) for tourist-attraction offline mode.
+    if (oldVersion < 16) {
+      final tables = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name IN ('$tableLocalAttractions', '$tableVisitEntries')",
+      );
+      final existing = tables.map((r) => r['name'] as String).toSet();
+
+      if (!existing.contains(tableLocalAttractions)) {
+        await db.execute(_sqlCreateLocalAttractions);
+      }
+      if (!existing.contains(tableVisitEntries)) {
+        await db.execute(_sqlCreateVisitEntries);
+        await db.execute(_sqlIndexVisitEntriesAttraction);
+        await db.execute(_sqlIndexVisitEntriesSync);
+        await db.execute(_sqlIndexVisitEntriesDate);
+      }
+    }
   }
 
   // ── helper: close (mainly for tests) ──────────────────────────────────────
@@ -546,6 +573,50 @@ class LocalDatabase {
     )
   ''';
 
+  /// Cached attraction data for the logged-in profile.
+  /// Refreshed from Backend on every successful online login.
+  /// attraction_type is stored as a JSON string list.
+  static const String _sqlCreateLocalAttractions = '''
+    CREATE TABLE $tableLocalAttractions (
+      id              TEXT PRIMARY KEY,
+      profile_id      TEXT NOT NULL,
+      attraction_name TEXT,
+      attraction_type TEXT,
+      street          TEXT,
+      barangay        TEXT,
+      status          TEXT,
+      created_at      TEXT,
+      updated_at      TEXT,
+      FOREIGN KEY (profile_id) REFERENCES $tableLocalProfiles (id)
+        ON DELETE CASCADE
+    )
+  ''';
+
+  /// Attraction visit entries with sync tracking.
+  /// sync_status drives the push phase of SyncService.
+  /// All datetimes are stored as ISO 8601 strings (UTC).
+  /// Column order mirrors the backend `visit_entries` table, with sync columns appended.
+  static const String _sqlCreateVisitEntries = '''
+    CREATE TABLE $tableVisitEntries (
+      id                TEXT PRIMARY KEY,
+      attraction_id     TEXT NOT NULL,
+      visit_date        TEXT NOT NULL,
+      guest_count       INTEGER NOT NULL,
+      male_count        INTEGER NOT NULL DEFAULT 0,
+      female_count      INTEGER NOT NULL DEFAULT 0,
+      country           TEXT,
+      province          TEXT,
+      city_municipality TEXT,
+      nationality       TEXT,
+      created_at        TEXT,
+      updated_at        TEXT,
+      sync_status       TEXT NOT NULL DEFAULT '$syncSynced',
+      local_updated_at  TEXT,
+      FOREIGN KEY (attraction_id) REFERENCES $tableLocalAttractions (id)
+        ON DELETE CASCADE
+    )
+  ''';
+
   // ---------------------------------------------------------------------------
   // SQL — indexes
   // ---------------------------------------------------------------------------
@@ -584,5 +655,23 @@ class LocalDatabase {
   static const String _sqlIndexGuestOriginBreakdownsRecord = '''
     CREATE INDEX idx_lgob_guest_record_id
       ON $tableGuestOriginBreakdowns (guest_record_id)
+  ''';
+
+  /// Fast look-up of all visit entries belonging to an attraction.
+  static const String _sqlIndexVisitEntriesAttraction = '''
+    CREATE INDEX idx_visit_entries_attraction
+      ON $tableVisitEntries (attraction_id)
+  ''';
+
+  /// Fast look-up of all unsynced visit entries during the push phase.
+  static const String _sqlIndexVisitEntriesSync = '''
+    CREATE INDEX idx_visit_entries_sync
+      ON $tableVisitEntries (sync_status)
+  ''';
+
+  /// Fast range filtering of visit entries by date.
+  static const String _sqlIndexVisitEntriesDate = '''
+    CREATE INDEX idx_visit_entries_date
+      ON $tableVisitEntries (visit_date)
   ''';
 }

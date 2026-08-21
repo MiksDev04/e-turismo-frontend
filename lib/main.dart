@@ -47,7 +47,7 @@ void main() async {
   // SyncService reads/writes SQLite the moment it detects connectivity, so the
   // database must exist before we attach any listeners.
   if (!kIsWeb) {
-    if (session?.role == 'business') {
+    if (session?.role == 'business' || session?.role == 'attraction') {
       await LocalDatabase.instance.database;
       final dbPath = await LocalDatabase.instance.getDatabaseFilePath();
       debugPrint('SQLite DB path: $dbPath');

@@ -1,4 +1,9 @@
+import 'dart:convert';
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:app/core/database/local_database.dart';
 import 'package:app/core/services/offline_service.dart';
 import 'package:app/core/services/session_service.dart';
 import 'base_api.dart';
@@ -6,13 +11,16 @@ import 'base_api.dart';
 class VisitEntryResult {
   final bool success;
   final String? error;
+  final bool syncedToCloud;
 
   const VisitEntryResult._({
     required this.success,
     this.error,
+    this.syncedToCloud = false,
   });
 
-  factory VisitEntryResult.ok() => const VisitEntryResult._(success: true);
+  factory VisitEntryResult.ok({bool syncedToCloud = false}) =>
+      VisitEntryResult._(success: true, syncedToCloud: syncedToCloud);
 
   factory VisitEntryResult.err(String error) =>
       VisitEntryResult._(success: false, error: error);
@@ -79,41 +87,188 @@ class AttractionVisitEntryApi extends BaseApi {
     return session?.attractionId;
   }
 
+  // ---------------------------------------------------------------------------
+  // Write-through save: SQLite first (pending_create), then push to the cloud
+  // when online. Any cloud failure leaves the row pending for SyncService.
+  // ---------------------------------------------------------------------------
   Future<VisitEntryResult> saveVisitEntry(VisitEntryData data) async {
-    if (!ConnectivityService.instance.isOnline || !hasToken) {
+    final online = ConnectivityService.instance.isOnline && hasToken;
+
+    final attractionId = await resolveAttractionId();
+    if (attractionId == null || attractionId.isEmpty) {
       return VisitEntryResult.err(
-        'Attraction accounts are online-only. Please connect to the internet.',
+        'No attraction account associated with this user.',
       );
     }
 
-    try {
-      final attractionId = await resolveAttractionId();
-      if (attractionId == null || attractionId.isEmpty) {
+    final entryId = _generateId();
+    final payload = data.toJson()..['attractionId'] = attractionId;
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    // ── Step 1: SQLite first — survives a mid-save disconnect ───────────────
+    if (!kIsWeb) {
+      try {
+        await _insertLocalEntry(
+          entryId: entryId,
+          attractionId: attractionId,
+          payload: payload,
+          now: now,
+        );
+      } catch (e) {
+        debugPrint('❌ saveVisitEntry: local write failed — $e');
         return VisitEntryResult.err(
-          'No attraction account associated with this user.',
+          'Failed to save visit entry. Please try again.',
         );
       }
+    }
 
-      final payload = data.toJson()..['attractionId'] = attractionId;
+    if (!online) {
+      debugPrint('💾 saveVisitEntry: offline — entry $entryId queued for sync');
+      return VisitEntryResult.ok();
+    }
 
+    // ── Step 2: Push to Node API ─────────────────────────────────────────────
+    try {
       final response = await post(
         '/api/attraction/visit-entry/visit-entries',
-        payload,
+        payload..['id'] = entryId,
       );
 
-      handleResponse(response);
-      return VisitEntryResult.ok();
-    } on ApiException catch (e) {
-      debugPrint('saveVisitEntry: API error ${e.statusCode} - ${e.message}');
-      if (e.statusCode == 401) {
-        return VisitEntryResult.err('Session expired. Please log in again.');
+      if (response.statusCode == 409) {
+        debugPrint('⚠️ saveVisitEntry: 409 — create already landed, marking synced');
+        await _markSynced(entryId);
+        return VisitEntryResult.ok(syncedToCloud: true);
       }
-      return VisitEntryResult.err(e.message);
+
+      handleResponse(response);
+
+      await _markSynced(entryId, responseBody: response.body);
+      return VisitEntryResult.ok(syncedToCloud: true);
     } catch (e) {
-      debugPrint('saveVisitEntry: unexpected error - $e');
-      return VisitEntryResult.err(
-        'Failed to save visit entry. Please try again.',
+      debugPrint('⚠️ saveVisitEntry: cloud push failed — queued for sync ($e)');
+      return VisitEntryResult.ok();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // SQLite helpers
+  // ---------------------------------------------------------------------------
+
+  Future<void> _insertLocalEntry({
+    required String entryId,
+    required String attractionId,
+    required Map<String, dynamic> payload,
+    required String now,
+  }) async {
+    final db = await LocalDatabase.instance.database;
+    final session = SessionService.instance.current;
+
+    // Ensure the parent rows exist so the foreign keys are satisfied.
+    if (session != null) {
+      await db.insert(
+        LocalDatabase.tableLocalProfiles,
+        {
+          'id': session.userId,
+          'username': session.username ?? session.email,
+          'full_name': session.fullName,
+          'email': session.email,
+          'phone': session.phone,
+          'role': session.role,
+          'password_hash': 'temp_hash',
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+
+      await db.insert(
+        LocalDatabase.tableLocalAttractions,
+        {
+          'id': attractionId,
+          'profile_id': session.userId,
+          'attraction_name': session.attractionName,
+          'attraction_type': session.attractionType != null
+              ? jsonEncode(session.attractionType)
+              : null,
+          'street': session.street,
+          'barangay': session.barangay,
+          'status': session.status,
+          'created_at': now,
+          'updated_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
       );
     }
+
+    await db.insert(
+      LocalDatabase.tableVisitEntries,
+      {
+        'id':                entryId,
+        'attraction_id':     attractionId,
+        'visit_date':        payload['visitDate'],
+        'guest_count':       payload['guestCount'],
+        'male_count':        payload['maleCount'],
+        'female_count':      payload['femaleCount'],
+        'country':           payload['country'],
+        'province':          payload['province'],
+        'city_municipality': payload['cityMunicipality'],
+        'nationality':       null,
+        'created_at':        now,
+        'updated_at':        now,
+        'sync_status':       LocalDatabase.syncPendingCreate,
+        'local_updated_at':  now,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+
+    debugPrint(
+      '💾 SQLite: saved visit entry $entryId (${LocalDatabase.syncPendingCreate})',
+    );
+  }
+
+  Future<void> _markSynced(String localId, {String? responseBody}) async {
+    final db = await LocalDatabase.instance.database;
+    var id = localId;
+
+    // The backend generates its own UUID — remap the local primary key
+    // when the server kept a different one.
+    if (responseBody != null && responseBody.isNotEmpty) {
+      try {
+        final body = jsonDecode(responseBody);
+        final serverId =
+            body is Map ? body['visitEntryId'] as String? : null;
+        if (serverId != null && serverId.isNotEmpty && serverId != localId) {
+          await db.update(
+            LocalDatabase.tableVisitEntries,
+            {'id': serverId},
+            where: 'id = ?',
+            whereArgs: [localId],
+          );
+          id = serverId;
+        }
+      } catch (_) {}
+    }
+
+    await db.update(
+      LocalDatabase.tableVisitEntries,
+      {
+        'sync_status':      LocalDatabase.syncSynced,
+        'local_updated_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      where:     'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // UUID generator
+  // ---------------------------------------------------------------------------
+  String _generateId() {
+    final rand = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rand.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20)}';
   }
 }

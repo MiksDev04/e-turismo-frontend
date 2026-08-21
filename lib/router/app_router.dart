@@ -34,7 +34,7 @@ import 'package:app/ui/shared/layouts/attraction_layout.dart';
 
 // ─── Offline-allowed routes ───────────────────────────────────────────────────
 //
-// Business users in offline mode may only visit these routes.
+// Business and attraction users in offline mode may only visit these routes.
 // Everything else shows OfflineRestrictedPage.
 
 const _offlineAllowedRoutes = {
@@ -42,6 +42,9 @@ const _offlineAllowedRoutes = {
   AppRoutes.businessGuestEntry,
   AppRoutes.businessGuestRecord,
   AppRoutes.businessRooms,
+  AppRoutes.attractionDashboard,
+  AppRoutes.attractionVisitEntry,
+  AppRoutes.attractionVisitRecord,
 };
 
 // ─── Route Metadata ───────────────────────────────────────────────────────────

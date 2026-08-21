@@ -1,5 +1,8 @@
 import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:app/core/database/local_database.dart';
 import 'package:app/core/services/offline_service.dart';
+import 'package:app/core/services/session_service.dart';
 import 'base_api.dart';
 
 // ─── Result Wrapper ───────────────────────────────────────────────────────────
@@ -89,10 +92,21 @@ class VisitRecord {
 class AttractionVisitRecordApi extends BaseApi {
   AttractionVisitRecordApi();
 
+  Future<String?> resolveAttractionId() async {
+    final session =
+        SessionService.instance.current ??
+        await SessionService.instance.loadAndCache();
+    return session?.attractionId;
+  }
+
   /// Fetch paginated visit records for the current attraction.
   ///
   /// Parameters mirror the backend query-string contract:
   ///   page, pageSize, dateFrom, dateTo, origin
+  ///
+  /// Online: fetches from the API, back-fills the SQLite cache and merges
+  /// locally-pending rows into the returned page. Any failure falls through
+  /// to the local store so the page stays usable offline.
   Future<ApiResult<({
     List<VisitRecord> data,
     int totalCount,
@@ -104,12 +118,62 @@ class AttractionVisitRecordApi extends BaseApi {
     String? dateTo,
     String? origin,
   }) async {
-    if (!ConnectivityService.instance.isOnline || !hasToken) {
+    if (ConnectivityService.instance.isOnline && hasToken) {
+      try {
+        return await _fetchOnline(
+          page: page,
+          pageSize: pageSize,
+          dateFrom: dateFrom,
+          dateTo: dateTo,
+          origin: origin,
+        );
+      } on ApiException catch (e) {
+        debugPrint('fetchVisitRecords: API error ${e.statusCode} - ${e.message}');
+        if (kIsWeb) {
+          if (e.statusCode == 401) {
+            return const ApiResult.failure('Session expired. Please log in again.');
+          }
+          return ApiResult.failure(e.message);
+        }
+        // Fall through to the local store below.
+      } catch (e) {
+        debugPrint('fetchVisitRecords: unexpected error - $e');
+        if (kIsWeb) {
+          return const ApiResult.failure('Failed to load visit records.');
+        }
+      }
+    }
+
+    if (kIsWeb) {
       return const ApiResult.failure(
         'Attraction accounts are online-only. Please connect to the internet.',
       );
     }
 
+    return _fetchLocal(
+      page: page,
+      pageSize: pageSize,
+      dateFrom: dateFrom,
+      dateTo: dateTo,
+      origin: origin,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONLINE
+  // ---------------------------------------------------------------------------
+
+  Future<ApiResult<({
+    List<VisitRecord> data,
+    int totalCount,
+    int pageCount,
+  })>> _fetchOnline({
+    required int page,
+    required int pageSize,
+    String? dateFrom,
+    String? dateTo,
+    String? origin,
+  }) async {
     final queryParams = <String, String>{
       'page': page.toString(),
       'pageSize': pageSize.toString(),
@@ -122,41 +186,266 @@ class AttractionVisitRecordApi extends BaseApi {
       queryParameters: queryParams,
     );
 
+    final response = await get(uri.toString());
+    final body = handleResponse(response) as Map<String, dynamic>;
+
+    final rows = body['data'] as List? ?? [];
+    final totalCount = (body['totalCount'] as num?)?.toInt() ?? 0;
+    final pageCount = (body['pageCount'] as num?)?.toInt() ?? 0;
+
+    final data = rows
+        .map((r) => VisitRecord.fromJson(r as Map<String, dynamic>))
+        .toList();
+
+    // Cache back-fill + merge locally-pending rows into the returned page.
     try {
-      final response = await get(uri.toString());
-      final body = handleResponse(response) as Map<String, dynamic>;
+      await _backfillCache(rows);
 
-      final rows = body['data'] as List? ?? [];
-      final totalCount = (body['totalCount'] as num?)?.toInt() ?? 0;
-      final pageCount = (body['pageCount'] as num?)?.toInt() ?? 0;
+      final attractionId = await resolveAttractionId();
+      if (attractionId != null && attractionId.isNotEmpty) {
+        final pending = await _fetchPendingLocalRecords(
+          attractionId,
+          excludeIds: data.map((r) => r.id).toSet(),
+          dateFrom: dateFrom,
+          dateTo: dateTo,
+          origin: origin,
+        );
+        data.addAll(pending);
+        data.sort((a, b) => b.visitDate.compareTo(a.visitDate));
+      }
+    } catch (e) {
+      debugPrint('⚠️ fetchVisitRecords: local merge failed — $e');
+    }
 
-      final data = rows
-          .map((r) => VisitRecord.fromJson(r as Map<String, dynamic>))
-          .toList();
+    return ApiResult.success((
+      data: data,
+      totalCount: totalCount,
+      pageCount: pageCount,
+    ));
+  }
+
+  Future<void> _backfillCache(List rows) async {
+    final db = await LocalDatabase.instance.database;
+
+    for (final raw in rows) {
+      final r = Map<String, dynamic>.from(raw as Map);
+      final entryId = r['id'] as String?;
+      if (entryId == null || entryId.isEmpty) continue;
+
+      // Never clobber locally-pending rows with cloud copies.
+      final existing = await db.query(
+        LocalDatabase.tableVisitEntries,
+        columns: ['sync_status'],
+        where: 'id = ?',
+        whereArgs: [entryId],
+        limit: 1,
+      );
+      if (existing.isNotEmpty &&
+          existing.first['sync_status'] != LocalDatabase.syncSynced) {
+        continue;
+      }
+
+      await db.insert(
+        LocalDatabase.tableVisitEntries,
+        {
+          'id':                entryId,
+          'attraction_id':     r['attraction_id'] ?? r['attractionId'],
+          'visit_date':        r['visit_date'] ?? r['visitDate'],
+          'guest_count':
+              (r['guest_count'] as num?)?.toInt() ??
+              (r['guestCount'] as num?)?.toInt() ??
+              0,
+          'male_count':
+              (r['male_count'] as num?)?.toInt() ??
+              (r['maleCount'] as num?)?.toInt() ??
+              0,
+          'female_count':
+              (r['female_count'] as num?)?.toInt() ??
+              (r['femaleCount'] as num?)?.toInt() ??
+              0,
+          'country':           r['country'],
+          'province':          r['province'],
+          'city_municipality': r['city_municipality'] ?? r['cityMunicipality'],
+          'nationality':       r['nationality'],
+          'created_at':        r['created_at'] ?? r['createdAt'],
+          'updated_at':        r['updated_at'] ?? r['updatedAt'],
+          'sync_status':       LocalDatabase.syncSynced,
+          'local_updated_at':  null,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+  }
+
+  Future<List<VisitRecord>> _fetchPendingLocalRecords(
+    String attractionId, {
+    Set<String> excludeIds = const {},
+    String? dateFrom,
+    String? dateTo,
+    String? origin,
+  }) async {
+    final db = await LocalDatabase.instance.database;
+
+    final conditions = <String>[
+      'attraction_id = ?',
+      'sync_status != ?',
+    ];
+    final args = <dynamic>[attractionId, LocalDatabase.syncSynced];
+
+    _applyDateFilters(conditions, args, dateFrom: dateFrom, dateTo: dateTo);
+    _applyOriginFilter(conditions, args, origin);
+
+    final rows = await db.query(
+      LocalDatabase.tableVisitEntries,
+      where: conditions.join(' AND '),
+      whereArgs: args,
+      orderBy: 'visit_date DESC',
+    );
+
+    return rows
+        .where((row) => !excludeIds.contains(row['id'] as String))
+        .map(_recordFromLocalRow)
+        .toList();
+  }
+
+  // ---------------------------------------------------------------------------
+  // OFFLINE — read entirely from SQLite.
+  // ---------------------------------------------------------------------------
+
+  Future<ApiResult<({
+    List<VisitRecord> data,
+    int totalCount,
+    int pageCount,
+  })>> _fetchLocal({
+    required int page,
+    required int pageSize,
+    String? dateFrom,
+    String? dateTo,
+    String? origin,
+  }) async {
+    try {
+      final attractionId = await resolveAttractionId();
+      if (attractionId == null || attractionId.isEmpty) {
+        return const ApiResult.failure(
+          'No attraction account associated with this user.',
+        );
+      }
+
+      final db = await LocalDatabase.instance.database;
+
+      final conditions = <String>['attraction_id = ?'];
+      final args = <dynamic>[attractionId];
+
+      _applyDateFilters(conditions, args, dateFrom: dateFrom, dateTo: dateTo);
+      _applyOriginFilter(conditions, args, origin);
+
+      final where = conditions.join(' AND ');
+
+      final totalCount = Sqflite.firstIntValue(
+            await db.rawQuery(
+              'SELECT COUNT(*) FROM ${LocalDatabase.tableVisitEntries} WHERE $where',
+              args,
+            ),
+          ) ??
+          0;
+
+      final rows = await db.query(
+        LocalDatabase.tableVisitEntries,
+        where: where,
+        whereArgs: args,
+        orderBy: 'visit_date DESC',
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      );
+
+      final data = rows.map(_recordFromLocalRow).toList();
+      final pageCount = pageSize > 0 ? (totalCount / pageSize).ceil() : 0;
 
       return ApiResult.success((
         data: data,
         totalCount: totalCount,
         pageCount: pageCount,
       ));
-    } on ApiException catch (e) {
-      debugPrint('fetchVisitRecords: API error ${e.statusCode} - ${e.message}');
-      if (e.statusCode == 401) {
-        return const ApiResult.failure('Session expired. Please log in again.');
-      }
-      return ApiResult.failure(e.message);
     } catch (e) {
-      debugPrint('fetchVisitRecords: unexpected error - $e');
+      debugPrint('❌ fetchVisitRecords (offline): $e');
       return const ApiResult.failure('Failed to load visit records.');
     }
   }
 
+  // ── Shared filter helpers ───────────────────────────────────────────────────
+
+  void _applyDateFilters(
+    List<String> conditions,
+    List<dynamic> args, {
+    String? dateFrom,
+    String? dateTo,
+  }) {
+    if (dateFrom != null && dateFrom.isNotEmpty) {
+      conditions.add('visit_date >= ?');
+      args.add(dateFrom);
+    }
+    if (dateTo != null && dateTo.isNotEmpty) {
+      conditions.add('visit_date <= ?');
+      args.add(dateTo);
+    }
+  }
+
+  void _applyOriginFilter(
+    List<String> conditions,
+    List<dynamic> args,
+    String? origin,
+  ) {
+    if (origin == 'local') {
+      conditions.add("(country IS NULL OR country = 'Philippines')");
+    } else if (origin == 'foreign') {
+      conditions.add("(country IS NOT NULL AND country != 'Philippines')");
+    }
+  }
+
+  VisitRecord _recordFromLocalRow(Map<String, dynamic> row) {
+    DateTime? parseDate(dynamic v) {
+      if (v == null) return null;
+      if (v is DateTime) return v;
+      if (v is String && v.isNotEmpty) {
+        try {
+          final trimmed = v.trim();
+          if (trimmed.length >= 10) {
+            return DateTime.parse(trimmed);
+          }
+        } catch (_) {}
+      }
+      return null;
+    }
+
+    return VisitRecord(
+      id: row['id'] as String? ?? '',
+      attractionId: row['attraction_id'] as String? ?? '',
+      visitDate: parseDate(row['visit_date']) ?? DateTime.now(),
+      guestCount: (row['guest_count'] as num?)?.toInt() ?? 0,
+      maleCount: (row['male_count'] as num?)?.toInt(),
+      femaleCount: (row['female_count'] as num?)?.toInt(),
+      country: row['country'] as String?,
+      province: row['province'] as String?,
+      cityMunicipality: row['city_municipality'] as String?,
+      nationality: row['nationality'] as String?,
+      createdAt: parseDate(row['created_at']),
+      updatedAt: parseDate(row['updated_at']),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Single-record fetch — falls back to SQLite when offline.
+  // ---------------------------------------------------------------------------
+
   /// Fetch a single visit record by its UUID.
   Future<ApiResult<VisitRecord>> fetchVisitRecordById(String id) async {
     if (!ConnectivityService.instance.isOnline || !hasToken) {
-      return const ApiResult.failure(
-        'Attraction accounts are online-only. Please connect to the internet.',
-      );
+      if (kIsWeb) {
+        return const ApiResult.failure(
+          'Attraction accounts are online-only. Please connect to the internet.',
+        );
+      }
+      return _fetchRecordByIdLocal(id);
     }
 
     try {
@@ -171,9 +460,34 @@ class AttractionVisitRecordApi extends BaseApi {
       if (e.statusCode == 404) {
         return const ApiResult.failure('Visit record not found.');
       }
-      return ApiResult.failure(e.message);
+      if (kIsWeb) {
+        return ApiResult.failure(e.message);
+      }
+      return _fetchRecordByIdLocal(id);
     } catch (e) {
       debugPrint('fetchVisitRecordById: unexpected error - $e');
+      if (kIsWeb) {
+        return const ApiResult.failure('Failed to load visit record.');
+      }
+      return _fetchRecordByIdLocal(id);
+    }
+  }
+
+  Future<ApiResult<VisitRecord>> _fetchRecordByIdLocal(String id) async {
+    try {
+      final db = await LocalDatabase.instance.database;
+      final rows = await db.query(
+        LocalDatabase.tableVisitEntries,
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
+      if (rows.isEmpty) {
+        return const ApiResult.failure('Visit record not found.');
+      }
+      return ApiResult.success(_recordFromLocalRow(rows.first));
+    } catch (e) {
+      debugPrint('❌ fetchVisitRecordById (offline): $e');
       return const ApiResult.failure('Failed to load visit record.');
     }
   }

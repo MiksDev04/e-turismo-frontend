@@ -1,12 +1,16 @@
 // ignore_for_file: use_build_context_synchronously
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/country_constants.dart';
 import '../../../core/services/psgc_repository.dart';
 import '../../../core/models/psgc_models.dart';
+import '../../../core/services/offline_service.dart';
 import '../../../api/attraction_visit_entry_api.dart';
+import '../widgets/offline_banner.dart';
 import '../../shared/layouts/attraction_layout.dart';
 
 const _kInputFill = Color(0xFFF8FAFC);
@@ -42,19 +46,40 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
 
   Map<String, String?> _errors = {};
 
+  // ── Connectivity state ────────────────────────────────────────────────────
+  bool _isOffline = false;
+  StreamSubscription<bool>? _connectivitySub;
+
   @override
   void initState() {
     super.initState();
     _visitDate = DateTime.now();
+    _isOffline = !ConnectivityService.instance.isOnline;
+    _subscribeToConnectivity();
     _loadPsgcIfAvailable();
   }
 
   @override
   void dispose() {
+    _connectivitySub?.cancel();
     _guestCountCtrl.dispose();
     _maleCountCtrl.dispose();
     _femaleCountCtrl.dispose();
     super.dispose();
+  }
+
+  void _subscribeToConnectivity() {
+    _connectivitySub =
+        ConnectivityService.instance.onConnectivityChanged.listen((isOnline) {
+      if (!mounted) return;
+
+      if (isOnline && _isOffline) {
+        setState(() => _isOffline = false);
+        SyncService.instance.sync();
+      } else if (!isOnline && !_isOffline) {
+        setState(() => _isOffline = true);
+      }
+    });
   }
 
   ({String? provinceCode, String? cityCode}) _defaultOrigin() {
@@ -264,7 +289,14 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
 
     if (result.success) {
       _clearForm();
-      _showSnackBar("Visit entry saved successfully!");
+      if (result.syncedToCloud) {
+        _showSnackBar("Visit entry saved successfully!");
+      } else {
+        _showSnackBar(
+          "Entry saved offline — will sync when you're back online.",
+          color: const Color(0xFFF59E0B),
+        );
+      }
     } else if (result.error != null) {
       _showSnackBar(
         result.error!,
@@ -325,6 +357,11 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (_isOffline)
+            const OfflineBanner(
+              message:
+                  "You're offline — entries will be saved locally and synced later.",
+            ),
           Expanded(
             child: SingleChildScrollView(
               padding: isMobile

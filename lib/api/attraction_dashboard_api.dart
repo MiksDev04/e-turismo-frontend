@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:app/core/database/local_database.dart';
 import 'package:app/core/services/offline_service.dart';
 import 'package:app/core/services/session_service.dart';
 import 'base_api.dart';
@@ -202,6 +203,7 @@ class AttractionDashboardApi extends BaseApi {
     required String attractionId,
     required int month,
     required int year,
+    bool preferOnline = false,
   }) async {
     final (yearStart, yearEnd) = _dateRange(0, year);
 
@@ -210,6 +212,7 @@ class AttractionDashboardApi extends BaseApi {
       attractionId: attractionId,
       startDate: yearStart,
       endDate: yearEnd,
+      preferOnline: preferOnline,
     );
 
     final periodRecords = (month == 0)
@@ -238,12 +241,56 @@ class AttractionDashboardApi extends BaseApi {
     required String attractionId,
     required String startDate,
     required String endDate,
+    bool preferOnline = false,
   }) async {
-    final response = await get(
-      '/api/dashboard/attraction/visit-logs'
-      '?attractionId=$attractionId&startDate=$startDate&endDate=$endDate',
-    );
-    return List<Map<String, dynamic>>.from(handleResponse(response) as List? ?? []);
+    if ((preferOnline || ConnectivityService.instance.isOnline) && hasToken) {
+      try {
+        final response = await get(
+          '/api/dashboard/attraction/visit-logs'
+          '?attractionId=$attractionId&startDate=$startDate&endDate=$endDate',
+        );
+        return List<Map<String, dynamic>>.from(
+          handleResponse(response) as List? ?? [],
+        );
+      } catch (e) {
+        debugPrint(
+          '⚠️ _fetchVisitLogs: online fetch failed — falling back to local ($e)',
+        );
+      }
+    }
+    return _fetchVisitLogsLocal(attractionId, startDate, endDate);
+  }
+
+  /// Offline fallback — same row shape as the visit-logs endpoint, fed from
+  /// the local SQLite cache so dashboard stats keep working without network.
+  Future<List<Map<String, dynamic>>> _fetchVisitLogsLocal(
+    String attractionId,
+    String startDate,
+    String endDate,
+  ) async {
+    if (kIsWeb) return const [];
+    try {
+      final db = await LocalDatabase.instance.database;
+      final rows = await db.query(
+        LocalDatabase.tableVisitEntries,
+        columns: [
+          'visit_date',
+          'guest_count',
+          'male_count',
+          'female_count',
+          'country',
+          'province',
+          'city_municipality',
+        ],
+        where: 'attraction_id = ? AND visit_date >= ? AND visit_date <= ?',
+        whereArgs: [attractionId, startDate, endDate],
+        orderBy: 'visit_date ASC',
+      );
+      return rows;
+    } catch (e) {
+      debugPrint('❌ _fetchVisitLogsLocal: $e');
+      return const [];
+    }
   }
 
   Future<int> _fetchVisitorsToday(String attractionId) async {
@@ -397,6 +444,7 @@ class AttractionDashboardApi extends BaseApi {
   Future<Map<int, List<MonthlyCount>>> fetchYearlyComparison({
     required String attractionId,
     required List<int> years,
+    bool preferOnline = false,
   }) async {
     final result = <int, List<MonthlyCount>>{};
 
@@ -406,6 +454,7 @@ class AttractionDashboardApi extends BaseApi {
         attractionId: attractionId,
         startDate: start,
         endDate: end,
+        preferOnline: preferOnline,
       );
       result[year] = _recordsToMonthly(records);
     }
