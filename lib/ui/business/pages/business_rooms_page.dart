@@ -966,7 +966,7 @@ class _NarrowLayout extends StatelessWidget {
             ),
             const Spacer(),
             Text(
-              displayDate,
+              'Updated $displayDate',
               style: const TextStyle(
                 color: AppColors.textSubtle,
                 fontSize: 11.5,
