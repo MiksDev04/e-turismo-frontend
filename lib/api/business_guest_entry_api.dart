@@ -487,6 +487,7 @@ class BusinessGuestEntryApi extends BaseApi {
           LocalDatabase.tableLocalRooms,
           {
             'room_status':      'occupied',
+            'updated_at':       createdAt,
             'sync_status':      LocalDatabase.syncPendingUpdate,
             'local_updated_at': createdAt,
           },

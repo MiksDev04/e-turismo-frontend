@@ -464,6 +464,7 @@ class SyncService {
       await _pullRoomsFromBackend();
 
       // Phase 2: Push pending room changes (creates then updates)
+      final hadPendingRooms = await _hasPendingRooms();
       final roomCreateResult = await _pushPendingRoomCreates();
       if (roomCreateResult.networkLost) {
         final remaining = await _countPending();
@@ -484,6 +485,13 @@ class SyncService {
           pendingCount: remaining,
         ));
         return;
+      }
+
+      // The delta watermark still predates the pushes above, so this pull
+      // brings down the server's authoritative updatedAt for rooms that were
+      // just synced (locally-written timestamps are only approximations).
+      if (hadPendingRooms) {
+        await _pullRoomsFromBackend();
       }
 
       // Phase 3: Push pending guest record changes
@@ -2014,6 +2022,18 @@ class SyncService {
       ],
     );
     return (result.first['count'] as int?) ?? 0;
+  }
+
+  Future<bool> _hasPendingRooms() async {
+    if (kIsWeb) return false;
+
+    final db = await LocalDatabase.instance.database;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM ${LocalDatabase.tableLocalRooms} '
+      'WHERE sync_status != ?',
+      [LocalDatabase.syncSynced],
+    );
+    return ((result.first['count'] as int?) ?? 0) > 0;
   }
 
   void _emit(SyncState state) {

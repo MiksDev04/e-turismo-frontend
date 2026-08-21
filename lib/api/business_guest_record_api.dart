@@ -1070,6 +1070,7 @@ class BusinessGuestRecordApi extends BaseApi {
         LocalDatabase.tableLocalRooms,
         {
           'room_status':      'occupied',
+          'updated_at':       now,
           'sync_status':      roomSyncStatus,
           'local_updated_at': now,
         },
@@ -1093,6 +1094,7 @@ class BusinessGuestRecordApi extends BaseApi {
           LocalDatabase.tableLocalRooms,
           {
             'room_status':      'vacant',
+            'updated_at':       now,
             'sync_status':      roomSyncStatus,
             'local_updated_at': now,
           },
