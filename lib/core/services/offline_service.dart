@@ -1687,6 +1687,9 @@ class SyncService {
           'country':          country,
           'province':         record['province'],
           'cityMunicipality': record['city_municipality'],
+          // Preserve the original offline save time so created_at ordering
+          // survives the sync (backend stores it instead of sync-time NOW()).
+          if (record['created_at'] != null) 'createdAt': record['created_at'],
         };
 
         final response = await http

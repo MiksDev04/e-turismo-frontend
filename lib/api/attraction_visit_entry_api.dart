@@ -104,6 +104,9 @@ class AttractionVisitEntryApi extends BaseApi {
     final entryId = _generateId();
     final payload = data.toJson()..['attractionId'] = attractionId;
     final now = DateTime.now().toUtc().toIso8601String();
+    // Same timestamp that is written to SQLite below, so the cloud row keeps
+    // the true creation time and created_at ordering stays consistent.
+    payload['createdAt'] = now;
 
     // ── Step 1: SQLite first — survives a mid-save disconnect ───────────────
     if (!kIsWeb) {

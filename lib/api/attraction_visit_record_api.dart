@@ -87,6 +87,16 @@ class VisitRecord {
   bool get isForeign => country != null && country != 'Philippines';
 }
 
+// Newest-first by creation time; rows missing createdAt fall back to their
+// visit date, and id breaks exact ties so pagination stays deterministic.
+int _compareVisitRecordsByCreatedDesc(VisitRecord a, VisitRecord b) {
+  final aCreated = a.createdAt ?? a.visitDate;
+  final bCreated = b.createdAt ?? b.visitDate;
+  final byCreated = bCreated.compareTo(aCreated);
+  if (byCreated != 0) return byCreated;
+  return b.id.compareTo(a.id);
+}
+
 // ─── Visit Record API ─────────────────────────────────────────────────────────
 
 class AttractionVisitRecordApi extends BaseApi {
@@ -211,7 +221,7 @@ class AttractionVisitRecordApi extends BaseApi {
           origin: origin,
         );
         data.addAll(pending);
-        data.sort((a, b) => b.visitDate.compareTo(a.visitDate));
+        data.sort(_compareVisitRecordsByCreatedDesc);
       }
     } catch (e) {
       debugPrint('⚠️ fetchVisitRecords: local merge failed — $e');
@@ -299,7 +309,7 @@ class AttractionVisitRecordApi extends BaseApi {
       LocalDatabase.tableVisitEntries,
       where: conditions.join(' AND '),
       whereArgs: args,
-      orderBy: 'visit_date DESC',
+      orderBy: "COALESCE(NULLIF(created_at, ''), visit_date) DESC",
     );
 
     return rows
@@ -353,7 +363,7 @@ class AttractionVisitRecordApi extends BaseApi {
         LocalDatabase.tableVisitEntries,
         where: where,
         whereArgs: args,
-        orderBy: 'visit_date DESC',
+        orderBy: "COALESCE(NULLIF(created_at, ''), visit_date) DESC",
         limit: pageSize,
         offset: (page - 1) * pageSize,
       );
