@@ -1058,21 +1058,17 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                       const SizedBox(height: 16),
 
                       // ── Origin Groups ───────────────────────────────
-                      _SectionCard(
-                        title: 'Origin Groups',
-                        subtitle: 'Optional — add per-country/per-origin guest breakdowns',
-                        child: OriginGroupsEditor(
-                          groups: _originGroups,
-                          onGroupsChanged: _onOriginGroupsChanged,
-                          totalGuests: _hasOriginGroups
-                              ? _groupMaleSum + _groupFemaleSum
-                              : _totalGuests,
-                          leadProvinceCode: _selectedProvinceCode,
-                          leadCityCode: _selectedCityCode,
-                          leadCountry: _leadCountry,
-                          maleGuestsCtrl: _maleGuestsCtrl,
-                          femaleGuestsCtrl: _femaleGuestsCtrl,
-                        ),
+                      OriginGroupsEditor(
+                        groups: _originGroups,
+                        onGroupsChanged: _onOriginGroupsChanged,
+                        totalGuests: _hasOriginGroups
+                            ? _groupMaleSum + _groupFemaleSum
+                            : _totalGuests,
+                        leadProvinceCode: _selectedProvinceCode,
+                        leadCityCode: _selectedCityCode,
+                        leadCountry: _leadCountry,
+                        maleGuestsCtrl: _maleGuestsCtrl,
+                        femaleGuestsCtrl: _femaleGuestsCtrl,
                       ),
                     ],
                   ),

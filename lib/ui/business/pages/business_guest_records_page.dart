@@ -38,6 +38,32 @@ String _actualCheckOutDate(GuestRecord r) {
   return v.substring(0, 10);
 }
 
+DateTime? _parseCreatedAt(String? v) {
+  if (v == null || v.trim().isEmpty) return null;
+  final s = v.trim();
+  if (s.contains(' ')) {
+    final d = s.split(' ').first;
+    final parts = d.split('-');
+    if (parts.length == 3) {
+      return DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+    }
+  }
+  if (s.contains('T')) return DateTime.tryParse(s);
+  final parts = s.split('-');
+  if (parts.length == 3) {
+    return DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+  }
+  return DateTime.tryParse(s);
+}
+
+String buildGuestRecordCode(DateTime createdAt, String id) {
+  final yy = createdAt.year % 100;
+  final mm = createdAt.month.toString().padLeft(2, '0');
+  final dd = createdAt.day.toString().padLeft(2, '0');
+  final hex = id.replaceAll('-', '').substring(0, 4).toUpperCase();
+  return 'TR-${yy.toString().padLeft(2, '0')}$mm$dd-$hex';
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 enum GuestRecordStatus { active, archived }
@@ -174,12 +200,6 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
 
   DateTime? _checkInFrom;
   DateTime? _checkOutTo;
-  String? _selectedPurpose;
-
-  final List<String> _purposeOptions = [
-    'All', 'Leisure', 'Business', 'Education', 'Medical', 'Religious', 'Others',
-  ];
-
   static const List<int> _pageSizeOptions = [10, 20, 30];
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -268,7 +288,6 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       status: _activeFilter == _Filter.active ? 'active' : 'archived',
       checkInFrom: _checkInFrom?.toIso8601String().split('T').first,
       checkOutTo: _checkOutTo?.toIso8601String().split('T').first,
-      purpose: _selectedPurpose,
     );
     if (!mounted) return;
     if (result.isSuccess) {
@@ -615,7 +634,6 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
     setState(() {
       _checkInFrom      = null;
       _checkOutTo       = null;
-      _selectedPurpose  = null;
       _currentPage      = 0;
     });
     _loadRecords();
@@ -667,14 +685,8 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
                         _FiltersSection(
                           checkInFrom:       _checkInFrom,
                           checkOutTo:        _checkOutTo,
-                          selectedPurpose:   _selectedPurpose,
-                          purposeOptions:    _purposeOptions,
                           onCheckInFromTap:  () => _pickDate(context, true),
                           onCheckOutToTap:   () => _pickDate(context, false),
-                          onPurposeChanged:  (v) {
-                            setState(() => _selectedPurpose = v);
-                            _reload();
-                          },
                           onClearAll: _clearAllFilters,
                           isNarrow:   isNarrow,
                         ),
@@ -820,29 +832,22 @@ class _FiltersSection extends StatelessWidget {
   const _FiltersSection({
     required this.checkInFrom,
     required this.checkOutTo,
-    required this.selectedPurpose,
-    required this.purposeOptions,
     required this.onCheckInFromTap,
     required this.onCheckOutToTap,
-    required this.onPurposeChanged,
     required this.onClearAll,
     required this.isNarrow,
   });
 
   final DateTime? checkInFrom;
   final DateTime? checkOutTo;
-  final String? selectedPurpose;
-  final List<String> purposeOptions;
   final VoidCallback onCheckInFromTap;
   final VoidCallback onCheckOutToTap;
-  final ValueChanged<String?> onPurposeChanged;
   final VoidCallback onClearAll;
   final bool isNarrow;
 
   bool get _hasActiveFilters =>
       checkInFrom != null ||
-      checkOutTo != null ||
-      (selectedPurpose != null && selectedPurpose != 'All');
+      checkOutTo != null;
 
   @override
   Widget build(BuildContext context) {
@@ -869,14 +874,6 @@ class _FiltersSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          _DropFilter(
-            label: 'Purpose',
-            value: selectedPurpose,
-            items: purposeOptions,
-            onChanged: onPurposeChanged,
-            icon: Icons.work_outline,
-          ),
           if (_hasActiveFilters) ...[
             const SizedBox(height: 10),
             _ClearAllBtn(onTap: onClearAll),
@@ -901,16 +898,6 @@ class _FiltersSection extends StatelessWidget {
             label: 'Check-out To',
             date: checkOutTo,
             onTap: onCheckOutToTap,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _DropFilter(
-            label: 'Purpose',
-            value: selectedPurpose,
-            items: purposeOptions,
-            onChanged: onPurposeChanged,
-            icon: Icons.work_outline,
           ),
         ),
         if (_hasActiveFilters) ...[
@@ -984,89 +971,6 @@ class _DateFilter extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DropFilter extends StatelessWidget {
-  const _DropFilter({
-    required this.label,
-    required this.value,
-    required this.items,
-    required this.onChanged,
-    required this.icon,
-  });
-
-  final String label;
-  final String? value;
-  final List<String> items;
-  final ValueChanged<String?> onChanged;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.textGray,
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 7),
-          decoration: BoxDecoration(
-            color: AppColors.cardBackground,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.cardBorder),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: value,
-              isDense: true,
-              isExpanded: true,
-              hint: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Row(
-                  children: [
-                    Icon(icon, color: AppColors.textSubtle, size: 14),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'All',
-                      style: TextStyle(
-                        color: AppColors.textSubtle,
-                        fontSize: 12.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              dropdownColor: AppColors.cardBackground,
-              iconEnabledColor: AppColors.textGray,
-              style: const TextStyle(
-                color: AppColors.textWhite,
-                fontSize: 12.5,
-              ),
-              items: items
-                  .map(
-                    (e) => DropdownMenuItem(
-                      value: e,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        child: Text(e),
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged: onChanged,
             ),
           ),
         ),
@@ -1378,6 +1282,7 @@ class _TableHeader extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         children: [
+          const Expanded(flex: 2, child: _HeaderCell('Ref. ID')),
           const Expanded(flex: 3, child: _HeaderCell('Check-in')),
           Expanded(
             flex: 3,
@@ -1386,7 +1291,6 @@ class _TableHeader extends StatelessWidget {
           const Expanded(flex: 2, child: _HeaderCell('Nights')),
           const Expanded(flex: 1, child: _HeaderCell('Guests')),
           const Expanded(flex: 3, child: _HeaderCell('Room(s)')),
-          const Expanded(flex: 2, child: _HeaderCell('Purpose')),
           const Expanded(flex: 3, child: _HeaderCell('Actions')),
         ],
       ),
@@ -1428,6 +1332,21 @@ class _RecordRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       child: Row(
         children: [
+          Expanded(
+            flex: 2,
+            child: _parseCreatedAt(r.createdAt) != null
+                ? Text(
+                    buildGuestRecordCode(_parseCreatedAt(r.createdAt)!, r.id),
+                    style: const TextStyle(
+                      color: AppColors.primaryCyan,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'monospace',
+                      letterSpacing: 0.3,
+                    ),
+                  )
+                : const Text('-', style: TextStyle(color: AppColors.textGray, fontSize: 13)),
+          ),
           Expanded(
             flex: 3,
             child: Text(
@@ -1472,13 +1391,6 @@ class _RecordRow extends StatelessWidget {
             ),
           ),
           Expanded(
-            flex: 2,
-            child: Text(
-              r.purpose,
-              style: const TextStyle(color: AppColors.textGray, fontSize: 13),
-            ),
-          ),
-          Expanded(
             flex: 3,
             child: _ActionButtons(
               status: r.status,
@@ -1512,6 +1424,18 @@ class _RecordCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (_parseCreatedAt(r.createdAt) != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                buildGuestRecordCode(_parseCreatedAt(r.createdAt)!, r.id),
+                style: const TextStyle(
+                  color: AppColors.primaryCyan,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
           Row(
             children: [
               Expanded(
@@ -1547,7 +1471,6 @@ class _RecordCard extends StatelessWidget {
             runSpacing: 4,
             children: [
               _InfoChip(label: 'Room(s)', value: _roomsDisplay(r)),
-              _InfoChip(label: 'Purpose', value: r.purpose),
             ],
           ),
           const SizedBox(height: 10),
@@ -1882,7 +1805,13 @@ class _StayInfoGrid extends StatelessWidget {
         ? '${record.rooms} (${record.roomDetails.map((r) => '${'Room '}${r.roomNumber}${r.status == 'completed' ? ' (used)' : ''}').join(', ')})'
         : '${record.rooms}';
 
+    final code = _parseCreatedAt(record.createdAt) != null
+        ? buildGuestRecordCode(_parseCreatedAt(record.createdAt)!, record.id)
+        : null;
+
     final items = [
+      if (code != null)
+        (Icons.tag, 'Reference Code', code),
       (Icons.login,                 'Check-in',          _dateOnly(record.checkIn)),
       (Icons.logout,                'Check-out (Planned)', _dateOnly(record.checkOut)),
       if (record.actualCheckOut != null)
@@ -1936,7 +1865,7 @@ class _LeadGuestDemoGrid extends StatelessWidget {
       (Icons.account_balance_outlined,  'Nationality',       record.leadNationality ?? '-'),
       (Icons.map_outlined,              'Province',          record.leadProvince ?? '-'),
       (Icons.location_city_outlined,    'City/Municipality', record.leadMunicipality ?? '-'),
-      (Icons.flight_outlined,           'Is Overseas',       record.leadIsOverseas ? 'Yes' : 'No'),
+      (Icons.flight_outlined,           'Overseas Filipino',       record.leadIsOverseas ? 'Yes' : 'No'),
     ];
 
     const spacing = 12.0;
