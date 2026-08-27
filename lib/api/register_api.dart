@@ -61,6 +61,18 @@ class RegisterApi {
     return '$baseUrl/api/auth/register/confirmation-status';
   }
 
+  String get _checkEmailUrl {
+    final baseUrl = kIsWeb
+        ? const String.fromEnvironment(
+            'BACKEND_URL',
+            defaultValue: 'http://localhost:3000',
+          )
+        : Platform.isAndroid
+            ? dotenv.get('ANDROID_BACKEND_URL', fallback: 'http://10.0.2.2:3000')
+            : dotenv.get('BACKEND_URL', fallback: 'http://localhost:3000');
+    return '$baseUrl/api/auth/register/check-email';
+  }
+
   String get _apiKey => kIsWeb
       ? const String.fromEnvironment('API_KEY', defaultValue: '')
       : dotenv.get('API_KEY', fallback: '');
@@ -127,6 +139,27 @@ class RegisterApi {
       return false;
     } catch (e) {
       debugPrint('❌ Check confirmation status error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> isEmailTaken(String email) async {
+    try {
+      final uri = Uri.parse(
+        '$_checkEmailUrl?email=${Uri.encodeComponent(email.trim().toLowerCase())}',
+      );
+      final response = await http.get(
+        uri,
+        headers: _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['available'] == false;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('❌ Check email availability error: $e');
       return false;
     }
   }

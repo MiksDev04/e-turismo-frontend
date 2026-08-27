@@ -342,6 +342,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _confirmedEmail;
   Timer? _confirmationPollTimer;
 
+  // Email availability validation (checked against the users table)
+  bool _checkingEmail = false;
+  String? _emailFieldError;
+  String? _lastCheckedEmail;
+
   // Step 2
   final _businessNameCtrl = TextEditingController();
   final _tradeNameCtrl = TextEditingController();
@@ -465,6 +470,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _isLoading = true);
 
+    // Re-check against the users table before sending, in case the email was
+    // taken between the blur check and now.
+    final taken = await _api.isEmailTaken(_emailCtrl.text.trim());
+    if (!mounted) return;
+    if (taken) {
+      setState(() {
+        _isLoading = false;
+        _emailFieldError = 'An account with this email already exists.';
+        _lastCheckedEmail = _emailCtrl.text.trim().toLowerCase();
+      });
+      return;
+    }
+    setState(() {
+      _lastCheckedEmail = _emailCtrl.text.trim().toLowerCase();
+    });
+
     final result = await _api.sendConfirmation(
       fullName: _fullNameCtrl.text.trim(),
       username: _usernameCtrl.text.trim().toLowerCase(),
@@ -493,6 +514,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } else {
       setState(() => _errorMessage = result.error);
     }
+  }
+
+  Future<void> _checkEmailAvailability() async {
+    final email = _emailCtrl.text.trim();
+    if (_V.email(email) != null) return;
+    if (_checkingEmail) return;
+    if (_isLoading) return;
+    if (_lastCheckedEmail == email.toLowerCase()) return;
+
+    setState(() => _checkingEmail = true);
+    final taken = await _api.isEmailTaken(email);
+    if (!mounted) return;
+    setState(() {
+      _checkingEmail = false;
+      _lastCheckedEmail = email.toLowerCase();
+      _emailFieldError = taken
+          ? 'An account with this email already exists.'
+          : null;
+    });
   }
 
   void _startConfirmationPolling() {
@@ -540,11 +580,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _emailConfirmed = false;
       _confirmedEmail = null;
       _errorMessage = null;
+      _emailFieldError = null;
+      _lastCheckedEmail = null;
     });
   }
 
   void _onEmailChanged(String value) {
     final email = value.trim();
+    final emailChanged =
+        (_lastCheckedEmail != null && _lastCheckedEmail != email.toLowerCase());
+    if (_emailFieldError != null || emailChanged) {
+      setState(() {
+        _lastCheckedEmail = null;
+        _emailFieldError = null;
+      });
+    }
     if (_emailConfirmed && _confirmedEmail != null && email != _confirmedEmail) {
       _confirmationPollTimer?.cancel();
       setState(() {
@@ -566,6 +616,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _confirmationSent = false;
       _emailConfirmed = false;
       _confirmedEmail = null;
+      _emailFieldError = null;
+      _lastCheckedEmail = null;
     });
   }
 
@@ -579,6 +631,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _confirmationSent = false;
       _emailConfirmed = false;
       _confirmedEmail = null;
+      _emailFieldError = null;
+      _lastCheckedEmail = null;
     });
   }
 
@@ -847,6 +901,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 confirmPassCtrl: _confirmPassCtrl,
                                 confirmationSent: _confirmationSent,
                                 emailConfirmed: _emailConfirmed,
+                                emailError: _emailFieldError,
+                                checkingEmail: _checkingEmail,
+                                onEmailBlur: _checkEmailAvailability,
                                 onSendConfirmation: _sendConfirmation,
                                  onCancelConfirmation: _cancelConfirmation,
                                  onNextStep1: () => setState(() => _step = 2),
@@ -1267,6 +1324,9 @@ class _FormCard extends StatelessWidget {
     required this.confirmPassCtrl,
     required this.confirmationSent,
     required this.emailConfirmed,
+    required this.emailError,
+    required this.checkingEmail,
+    required this.onEmailBlur,
     required this.onSendConfirmation,
     required this.onCancelConfirmation,
     required this.onNextStep1,
@@ -1321,6 +1381,9 @@ class _FormCard extends StatelessWidget {
   final TextEditingController confirmPassCtrl;
   final bool confirmationSent;
   final bool emailConfirmed;
+  final String? emailError;
+  final bool checkingEmail;
+  final VoidCallback onEmailBlur;
   final VoidCallback onSendConfirmation;
   final VoidCallback onCancelConfirmation;
   final VoidCallback onNextStep1;
@@ -1392,7 +1455,11 @@ class _FormCard extends StatelessWidget {
               confirmPassCtrl: confirmPassCtrl,
               confirmationSent: confirmationSent,
               emailConfirmed: emailConfirmed,
+              emailError: emailError,
+              checkingEmail: checkingEmail,
+              onEmailBlur: onEmailBlur,
               showErrors: showErrors,
+              errorMessage: errorMessage,
               onSendConfirmation: onSendConfirmation,
               onCancelConfirmation: onCancelConfirmation,
               onBack: onBackToRole,
@@ -1634,7 +1701,11 @@ class _Step1Form extends StatefulWidget {
     required this.confirmPassCtrl,
     required this.confirmationSent,
     required this.emailConfirmed,
+    required this.emailError,
+    required this.checkingEmail,
+    required this.onEmailBlur,
     required this.showErrors,
+    this.errorMessage,
     required this.onSendConfirmation,
     required this.onCancelConfirmation,
     required this.onBack,
@@ -1651,7 +1722,11 @@ class _Step1Form extends StatefulWidget {
   final TextEditingController confirmPassCtrl;
   final bool confirmationSent;
   final bool emailConfirmed;
+  final String? emailError;
+  final bool checkingEmail;
+  final VoidCallback onEmailBlur;
   final bool showErrors;
+  final String? errorMessage;
   final VoidCallback onSendConfirmation;
   final VoidCallback onCancelConfirmation;
   final VoidCallback onBack;
@@ -1663,8 +1738,33 @@ class _Step1Form extends StatefulWidget {
 
 class _Step1FormState extends State<_Step1Form> {
   final _touched = <String>{};
+  final _emailFocusNode = FocusNode();
   bool _hidePassword = true;
   bool _hideConfirmPassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailFocusNode.addListener(_onEmailFocusChanged);
+  }
+
+  @override
+  void dispose() {
+    _emailFocusNode.removeListener(_onEmailFocusChanged);
+    _emailFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _onEmailFocusChanged() {
+    if (!_emailFocusNode.hasFocus) {
+      widget.onEmailBlur();
+    }
+  }
+
+  String? _emailError() {
+    if (widget.emailError != null) return widget.emailError;
+    return _show('email') ? _V.email(widget.emailCtrl.text) : null;
+  }
 
   void _touch(String field) => setState(() => _touched.add(field));
   bool _show(String f) => _touched.contains(f) || widget.showErrors;
@@ -1711,16 +1811,30 @@ class _Step1FormState extends State<_Step1Form> {
         const SizedBox(height: 16),
         _LabeledField(
           label: 'Email Address',
-          error: _show('email') ? _V.email(widget.emailCtrl.text) : null,
+          error: _emailError(),
           child: _Input(
             controller: widget.emailCtrl,
             hint: 'email@example.com',
             keyboardType: TextInputType.emailAddress,
-            hasError: _show('email') && _V.email(widget.emailCtrl.text) != null,
+            focusNode: _emailFocusNode,
+            hasError: _emailError() != null,
             onChanged: (v) {
               _touch('email');
               widget.onEmailChanged(v);
             },
+            suffixIcon: widget.checkingEmail
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.primaryCyan,
+                      ),
+                    ),
+                  )
+                : null,
           ),
         ),
         const SizedBox(height: 16),
@@ -1803,6 +1917,38 @@ class _Step1FormState extends State<_Step1Form> {
           ),
         ),
         const SizedBox(height: 22),
+        if (widget.errorMessage != null) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: RegisterColors.textRed.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: RegisterColors.textRed.withOpacity(0.4),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  color: RegisterColors.textRed,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.errorMessage!,
+                    style: const TextStyle(
+                      color: RegisterColors.textRed,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
         if (!widget.confirmationSent) ...[
           _GradientButton(
             label: 'Send Confirmation Email',
@@ -2946,6 +3092,7 @@ class _Input extends StatelessWidget {
     this.obscure = false,
     this.hasError = false,
     this.enabled = true,
+    this.focusNode,
     this.onChanged,
     this.suffixIcon,
     this.inputFormatters,
@@ -2957,6 +3104,7 @@ class _Input extends StatelessWidget {
   final bool obscure;
   final bool hasError;
   final bool enabled;
+  final FocusNode? focusNode;
   final ValueChanged<String>? onChanged;
   final Widget? suffixIcon;
   final List<TextInputFormatter>? inputFormatters;
@@ -2975,6 +3123,7 @@ class _Input extends StatelessWidget {
       obscureText: obscure,
       keyboardType: keyboardType,
       enabled: enabled,
+      focusNode: focusNode,
       onChanged: onChanged,
       inputFormatters: inputFormatters,
       style: TextStyle(color: textColor, fontSize: 13.5),
