@@ -252,7 +252,8 @@ class _AdminAttractionsPageState extends State<AdminAttractionsPage> {
     AttractionStatus newStatus, {
     String? remarks,
   }) async {
-    if (newStatus != AttractionStatus.approved) return;
+    if (newStatus != AttractionStatus.approved &&
+        newStatus != AttractionStatus.rejected) return;
 
     final senderId = _senderId;
     final senderName = _senderName;
@@ -275,12 +276,15 @@ class _AdminAttractionsPageState extends State<AdminAttractionsPage> {
       return;
     }
 
-    const subject = 'Attraction Application Approved';
+    final isApproved = newStatus == AttractionStatus.approved;
+    final subject =
+        isApproved ? 'Attraction Application Approved' : 'Attraction Application Rejected';
     final remarksText = remarks?.trim();
     final remarksSection =
         remarksText?.isNotEmpty == true ? '\n\nRemarks: $remarksText' : '';
-    final body =
-        'We\'re pleased to let you know your tourist attraction application has been approved.$remarksSection';
+    final body = isApproved
+        ? 'We\'re pleased to let you know your tourist attraction application has been approved.$remarksSection'
+        : 'We regret to inform you that your tourist attraction application has been rejected.$remarksSection';
     const messageType = MessageType.announcement;
 
     try {

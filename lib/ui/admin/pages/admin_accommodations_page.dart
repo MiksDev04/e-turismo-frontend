@@ -253,7 +253,8 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
     AccommodationStatus newStatus, {
     String? remarks,
   }) async {
-    if (newStatus != AccommodationStatus.approved) return;
+    if (newStatus != AccommodationStatus.approved &&
+        newStatus != AccommodationStatus.rejected) return;
 
     final senderId = _senderId;
     final senderName = _senderName;
@@ -276,12 +277,15 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
       return;
     }
 
-    const subject = 'Accommodation Application Approved';
+    final isApproved = newStatus == AccommodationStatus.approved;
+    final subject =
+        isApproved ? 'Accommodation Application Approved' : 'Accommodation Application Rejected';
     final remarksText = remarks?.trim();
     final remarksSection =
         remarksText?.isNotEmpty == true ? '\n\nRemarks: $remarksText' : '';
-    final body =
-        'We\'re pleased to let you know your accommodation application has been approved.$remarksSection';
+    final body = isApproved
+        ? 'We\'re pleased to let you know your accommodation application has been approved.$remarksSection'
+        : 'We regret to inform you that your accommodation application has been rejected.$remarksSection';
     const messageType = MessageType.announcement;
 
     try {
