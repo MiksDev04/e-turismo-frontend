@@ -16,7 +16,7 @@ import '../../shared/widgets/paginator.dart';
 
 // ─── Filter Options ───────────────────────────────────────────────────────────
 
-enum _Filter { all, compliance, announcement, general }
+enum _Filter { all, compliance, announcement }
 
 // ─── Letter Preview Helper ────────────────────────────────────────────────────
 
@@ -185,7 +185,6 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
         _Filter.all          => null,
         _Filter.compliance   => 'compliance',
         _Filter.announcement => 'announcement',
-        _Filter.general      => 'general',
       };
        final result = await _api.fetchInbox(
          _businessId!,
@@ -403,12 +402,6 @@ class _FilterTabBar extends StatelessWidget {
             emoji:    '📣',
             isActive: activeFilter == _Filter.announcement,
             onTap:    () => onChanged(_Filter.announcement),
-          ),
-          _FilterChip(
-            label:    'General',
-            emoji:    '💬',
-            isActive: activeFilter == _Filter.general,
-            onTap:    () => onChanged(_Filter.general),
           ),
         ],
       ),
@@ -694,7 +687,6 @@ class _TypeBadge extends StatelessWidget {
 
   static ({String label, Color color, String emoji}) _styleFor(MessageType t) =>
       switch (t) {
-        MessageType.general      => (label: 'General',      color: AppColors.primaryBlue,   emoji: '💬'),
         MessageType.compliance   => (label: 'Compliance',   color: AppColors.accentRed,     emoji: '⚠️'),
         MessageType.announcement => (label: 'Announcement', color: AppColors.accentPurple,  emoji: '📣'),
       };

@@ -140,7 +140,7 @@ String _buildLetter(ComposeMessageDraft d, AdminProfile admin) {
     senderFullName: admin.fullName,
     senderEmail: admin.email,
     senderPhone: admin.phone,
-    messageType: d.messageType ?? MessageType.general,
+    messageType: d.messageType!,
     recipientKind: d.recipientKind,
   );
 }
@@ -208,7 +208,7 @@ class _ComposeMessageDialogState extends State<ComposeMessageDialog>
     ).animate(CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut));
     _animCtrl.forward();
 
-    _draft       = ComposeMessageDraft(messageType: MessageType.general);
+    _draft       = ComposeMessageDraft();
     _subjectCtrl = TextEditingController();
     _contentCtrl = TextEditingController();
 
@@ -398,7 +398,9 @@ class _ComposeMessageDialogState extends State<ComposeMessageDialog>
                           previewMode: _previewMode,
                           // Disable preview toggle while admin profile loads
                           // so the letter never shows placeholder values.
-                          onToggle: _loadingAdmin ? null : _togglePreview,
+                          onToggle: (_loadingAdmin || _draft.messageType == null)
+                              ? null
+                              : _togglePreview,
                           onClose:  () => Navigator.of(context).pop(),
                         ),
                         const Divider(color: AppColors.cardBorder, height: 1),
@@ -1247,7 +1249,6 @@ class _TypeSelector extends StatelessWidget {
   static const _opts = [
     (type: MessageType.compliance,   color: Color(0xFFFF4D6A)),
     (type: MessageType.announcement, color: Color(0xFF9B8AFB)),
-    (type: MessageType.general,      color: Color(0xFF1A6FFF)),
   ];
 
   @override

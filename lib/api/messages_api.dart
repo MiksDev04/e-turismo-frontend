@@ -8,8 +8,7 @@ import '../core/utils/datetime_utils.dart';
 
 enum MessageType {
   compliance,
-  announcement,
-  general;
+  announcement;
 
   /// Matches the enum value in the `messages` table.
   String get dbValue => name;
@@ -17,13 +16,11 @@ enum MessageType {
   String get label => switch (this) {
     MessageType.compliance => 'Compliance',
     MessageType.announcement => 'Announcement',
-    MessageType.general => 'General',
   };
 
   String get icon => switch (this) {
     MessageType.compliance => '⚠️',
     MessageType.announcement => '📣',
-    MessageType.general => '💬',
   };
 }
 
@@ -73,7 +70,6 @@ String buildOfficialMessageLetter({
   final typeLabel = switch (messageType) {
     MessageType.compliance => 'COMPLIANCE NOTICE',
     MessageType.announcement => 'ANNOUNCEMENT',
-    MessageType.general => 'GENERAL NOTICE',
   };
   final salutation = recipientKind == MessageRecipientKind.attraction
       ? 'Dear Attraction Representative,'
@@ -213,7 +209,7 @@ class Message {
     senderId: json['sender_id'] as String,
     messageType: MessageType.values.firstWhere(
       (e) => e.dbValue == json['message_type'],
-      orElse: () => MessageType.general,
+      orElse: () => MessageType.compliance,
     ),
     subject: json['subject'] as String,
     content: json['content'] as String,
@@ -282,7 +278,7 @@ class InboxMessage {
           : null,
       messageType: MessageType.values.firstWhere(
         (e) => e.dbValue == msg['message_type'],
-        orElse: () => MessageType.general,
+        orElse: () => MessageType.compliance,
       ),
       subject: msg['subject'] as String,
       content: msg['content'] as String,

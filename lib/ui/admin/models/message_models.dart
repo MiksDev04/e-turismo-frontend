@@ -1,6 +1,6 @@
 // ─── Models ───────────────────────────────────────────────────────────────────
 
-enum MessageType { compliance, announcement, general }
+enum MessageType { compliance, announcement }
 
 class Message {
   const Message({

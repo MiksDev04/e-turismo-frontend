@@ -160,7 +160,6 @@ class _TypeBadge extends StatelessWidget {
     final (label, color, emoji) = switch (type) {
       MessageType.compliance   => ('Compliance',   AppColors.accentRed,    '⚠️'),
       MessageType.announcement => ('Announcement', AppColors.accentPurple, '📣'),
-      MessageType.general      => ('General',      AppColors.primaryBlue,  '💬'),
     };
 
     return Container(

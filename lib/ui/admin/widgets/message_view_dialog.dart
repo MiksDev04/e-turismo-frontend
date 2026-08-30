@@ -22,7 +22,7 @@ class MessageViewData {
   final String recipient;
   final String date;
 
-  /// e.g. 'COMPLIANCE NOTICE' | 'ANNOUNCEMENT' | 'GENERAL NOTICE'
+  /// e.g. 'COMPLIANCE NOTICE' | 'ANNOUNCEMENT'
   final String messageType;
   final String messageContent;
 

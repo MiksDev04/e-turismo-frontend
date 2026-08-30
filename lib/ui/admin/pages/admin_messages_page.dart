@@ -50,7 +50,6 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
     'All Types',
     'Compliance',
     'Announcement',
-    'General',
   ];
 
   static const _scopeOptions = ['All', 'Broadcast', 'Targeted'];
@@ -680,7 +679,6 @@ class _MessageRow extends StatelessWidget {
     final typeLabel = switch (message.messageType) {
       MessageType.compliance => 'COMPLIANCE NOTICE',
       MessageType.announcement => 'ANNOUNCEMENT',
-      MessageType.general => 'GENERAL NOTICE',
     };
 
     final isAttraction =
@@ -862,7 +860,6 @@ class _TypeBadge extends StatelessWidget {
   static ({Color color}) _style(MessageType t) => switch (t) {
     MessageType.compliance => (color: const Color(0xFFFF4D6A)),
     MessageType.announcement => (color: const Color(0xFF9B8AFB)),
-    MessageType.general => (color: const Color(0xFF1A6FFF)),
   };
 
   @override
