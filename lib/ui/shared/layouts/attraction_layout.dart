@@ -119,7 +119,7 @@ class AttractionBottomNavBar extends StatelessWidget {
       ),
       AttrNavItem(
         icon: Icons.chat_bubble_outline_rounded,
-        label: 'Messages',
+        label: 'Notices',
         index: 3,
         route: AppRoutes.attractionMessages,
       ),

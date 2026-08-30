@@ -246,7 +246,7 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
   @override
   Widget build(BuildContext context) {
     return BusinessLayout(
-      title:         'Messages',
+      title:         'Notices',
       selectedIndex: 5,
       onNavSelected: (_) {},
       child: LayoutBuilder(
@@ -345,7 +345,7 @@ class _PageHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Messages',
+          'Notices',
           style: TextStyle(
             color:      AppColors.textWhite,
             fontSize:   22,
@@ -355,8 +355,8 @@ class _PageHeader extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           unreadCount > 0
-              ? '$unreadCount unread message${unreadCount > 1 ? 's' : ''}'
-              : 'No unread messages',
+              ? '$unreadCount unread notice${unreadCount > 1 ? 's' : ''}'
+              : 'No unread notices',
           style: TextStyle(
             color: unreadCount > 0
                 ? AppColors.primaryCyan

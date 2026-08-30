@@ -141,7 +141,7 @@ class _BusinessBottomNavBarState extends State<BusinessBottomNavBar> {
     ),
     BizNavItem(
       icon: Icons.chat_bubble_outline_rounded,
-      label: 'Messages',
+      label: 'Notices',
       index: 5,
       badge: unreadCount > 0 ? unreadCount : null,
       route: AppRoutes.businessMessages,

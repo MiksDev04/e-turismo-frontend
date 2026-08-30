@@ -67,7 +67,7 @@ class _AttractionSidebarState extends State<AttractionSidebar> {
         ),
         AttrNavItem(
           icon: Icons.chat_bubble_outline_rounded,
-          label: 'Messages',
+          label: 'Notices',
           index: 3,
           badge: unreadCount > 0 ? unreadCount : null,
           route: AppRoutes.attractionMessages,
