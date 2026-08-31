@@ -557,7 +557,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       femaleCount: femaleCount,
       status: widget.record.status,
       demographics: widget.record.demographics,
-      leadCountry: _leadIsOverseas ? null : _leadCountry,
+      leadCountry: _leadCountry,
       leadMunicipality: cityName,
       leadProvince: provinceName,
       leadNationality:
@@ -1256,15 +1256,16 @@ class _LeadGuestCard extends StatelessWidget {
           // ── Country & Nationality ─────────────────────────────────────
           if (isMobile) ...[
             _FieldCol(
-              label: 'Country *',
+              label: leadIsOverseas ? 'Country' : 'Country *',
               errorText: errors['leadCountry'],
               child: _DropdownField(
-                value: leadIsOverseas ? null : leadCountry,
-                items: _countryOptions,
-                hint:
-                    leadIsOverseas ? 'N/A (Overseas)' : 'Select country',
+                value: leadCountry,
+                items: leadIsOverseas
+                    ? _countryOptions.where((c) => c != 'Philippines').toList()
+                    : _countryOptions,
+                hint: 'Select country',
                 hasError: errors['leadCountry'] != null,
-                onChanged: leadIsOverseas ? null : onCountryChanged,
+                onChanged: onCountryChanged,
               ),
             ),
             if (isPhilippines) ...[
@@ -1288,17 +1289,16 @@ class _LeadGuestCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _FieldCol(
-                    label: 'Country *',
+                    label: leadIsOverseas ? 'Country' : 'Country *',
                     errorText: errors['leadCountry'],
                     child: _DropdownField(
-                      value: leadIsOverseas ? null : leadCountry,
-                      items: _countryOptions,
-                      hint: leadIsOverseas
-                          ? 'N/A (Overseas)'
-                          : 'Select country',
+                      value: leadCountry,
+                      items: leadIsOverseas
+                          ? _countryOptions.where((c) => c != 'Philippines').toList()
+                          : _countryOptions,
+                      hint: 'Select country',
                       hasError: errors['leadCountry'] != null,
-                      onChanged:
-                          leadIsOverseas ? null : onCountryChanged,
+                      onChanged: onCountryChanged,
                     ),
                   ),
                 ),

@@ -483,9 +483,18 @@ class AdminDashboardApi extends BaseApi {
 
     final nationalityMap = <String, int>{};
     for (final breakdown in breakdowns) {
-      final country = (breakdown['country'] as String? ?? '').trim();
-      if (country.isEmpty) continue;
-      final label = _toTitleCase(country);
+      final isOverseas =
+          breakdown['is_overseas'] == true || breakdown['is_overseas'] == 1;
+      final String label;
+      if (isOverseas) {
+        // Overseas Filipino leads are always bucketed under their own
+        // classification, regardless of any selected country.
+        label = 'Overseas Filipino';
+      } else {
+        final country = (breakdown['country'] as String? ?? '').trim();
+        if (country.isEmpty) continue;
+        label = _toTitleCase(country);
+      }
       final recordId = breakdown['guest_record_id']?.toString() ?? '';
       final guestDays = recordGuestDays[recordId] ?? 1;
       nationalityMap[label] = (nationalityMap[label] ?? 0) + guestDays;

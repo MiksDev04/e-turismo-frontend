@@ -707,7 +707,7 @@ class BusinessDashboardApi extends BaseApi {
     // Top 5 countries
     final countryMap = <String, int>{};
     for (final b in breakdowns) {
-      final country = _stringValue(b, 'country') ?? 'Unknown';
+      final country = _countryLabel(b);
       final recordId = _stringValue(b, 'guest_record_id') ?? '';
       final guestDays = recordGuestDays[recordId] ?? 1;
       countryMap[country] = (countryMap[country] ?? 0) + guestDays;
@@ -1019,7 +1019,7 @@ class BusinessDashboardApi extends BaseApi {
 
       final checkIn = _stringValue(rec, 'check_in') ?? '';
       final checkOut = _stringValue(rec, 'check_out') ?? '';
-      final country = _csvCell(_stringValue(b, 'country') ?? 'Unknown');
+      final country = _csvCell(_countryLabel(b));
       final ageGroup = _stringValue(b, 'age_group') ?? '';
 
       if (maleCount > 0) {
@@ -1047,6 +1047,16 @@ class BusinessDashboardApi extends BaseApi {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
+
+  /// Bucket label for a guest breakdown row: 'Overseas Filipino' for overseas
+  /// Filipino leads (regardless of any selected country), the country name
+  /// when present, and 'Unknown' only for genuine data gaps.
+  String _countryLabel(Map<String, dynamic> b) {
+    final isOverseas = b['is_overseas'] == true || b['is_overseas'] == 1;
+    if (isOverseas) return 'Overseas Filipino';
+    final country = _stringValue(b, 'country')?.trim() ?? '';
+    return country.isEmpty ? 'Unknown' : country;
+  }
 
   String? _stringValue(Map<String, dynamic> data, String key) {
     final value = data[key];
