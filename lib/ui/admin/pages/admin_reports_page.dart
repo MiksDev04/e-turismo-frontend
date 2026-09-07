@@ -977,55 +977,68 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
               const SizedBox(height: 24),
               const _DialogLabel('Report Type'),
               const SizedBox(height: 6),
-              Row(
-                children: [
-                  Expanded(
-                    child: _TypeCard(
-                      icon: Icons.description_rounded,
-                      label: 'DAE',
-                      subtitle: 'DAE-1B Form',
-                      selected: _isDae,
-                      onTap: () => setState(() {
-                        _reportType = 'dae';
-                        _rangeStart = null;
-                        _rangeEnd = null;
-                        _selectedMonth = null;
-                        _variant = 'daily';
-                      }),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _TypeCard(
-                      icon: Icons.attractions_rounded,
-                      label: 'VAR 1',
-                      subtitle: 'Attraction',
-                      selected: _isVar1,
-                      onTap: () => setState(() {
-                        _reportType = 'var1';
-                        _rangeStart = null;
-                        _rangeEnd = null;
-                        _selectedMonth = null;
-                        _variant = 'daily';
-                      }),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _TypeCard(
-                      icon: Icons.summarize_rounded,
-                      label: 'VAR 2',
-                      subtitle: 'Combined Report',
-                      selected: _isVar2,
-                      onTap: () => setState(() {
-                        _reportType = 'var2';
-                        _rangeStart = null;
-                        _rangeEnd = null;
-                        _selectedMonth = null;
-                      }),
-                    ),
-                  ),
-                ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isNarrow = constraints.maxWidth < 400;
+                  Widget card(IconData icon, String label, String subtitle,
+                      bool selected, VoidCallback onTap) {
+                    return SizedBox(
+                      width: isNarrow ? double.infinity : null,
+                      child: _TypeCard(
+                        icon: icon,
+                        label: label,
+                        subtitle: subtitle,
+                        selected: selected,
+                        onTap: onTap,
+                      ),
+                    );
+                  }
+
+                  return Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      card(
+                        Icons.description_rounded,
+                        'DAE',
+                        'DAE-1B Form',
+                        _isDae,
+                        () => setState(() {
+                          _reportType = 'dae';
+                          _rangeStart = null;
+                          _rangeEnd = null;
+                          _selectedMonth = null;
+                          _variant = 'daily';
+                        }),
+                      ),
+                      card(
+                        Icons.attractions_rounded,
+                        'VAR 1',
+                        'Attraction',
+                        _isVar1,
+                        () => setState(() {
+                          _reportType = 'var1';
+                          _rangeStart = null;
+                          _rangeEnd = null;
+                          _selectedMonth = null;
+                          _variant = 'daily';
+                        }),
+                      ),
+                      card(
+                        Icons.summarize_rounded,
+                        'VAR 2',
+                        'Combined Report',
+                        _isVar2,
+                        () => setState(() {
+                          _reportType = 'var2';
+                          _rangeStart = null;
+                          _rangeEnd = null;
+                          _selectedMonth = null;
+                        }),
+                      ),
+                    ],
+                  );
+                },
               ),
               if (_isDae) ...[
                 const SizedBox(height: 14),
