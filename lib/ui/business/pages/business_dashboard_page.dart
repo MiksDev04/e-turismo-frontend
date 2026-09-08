@@ -86,13 +86,14 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
   String? _dashError;
 
   // ── Connectivity state ────────────────────────────────────────────────────
-  // _isOffline drives the offline strip shown at the top.
-  // When connectivity returns we silently reload data — no manual banner needed.
+  // _isOffline drives the offline strip shown at the top. Connectivity only
+  // toggles the strip — actual data refresh happens after sync completes so
+  // the shown stats always include the records just pushed/refreshed.
 
   bool _isOffline = false;
   StreamSubscription<bool>? _connectivitySub;
-  Timer? _connectivityDebounce;
   bool _isReconnectReloading = false;
+  StreamSubscription<SyncState>? _syncSub;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -101,14 +102,15 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
     super.initState();
     _isOffline = !ConnectivityService.instance.isOnline;
     _subscribeToConnectivity();
+    _subscribeToSync();
 
     _initBusinessFromSession();
   }
 
   @override
   void dispose() {
+    _syncSub?.cancel();
     _connectivitySub?.cancel();
-    _connectivityDebounce?.cancel();
     super.dispose();
   }
 
@@ -120,20 +122,10 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
       if (!mounted) return;
 
       if (isOnline && _isOffline) {
-        // Just came back online — debounce to avoid cascading reloads
-        // from rapid connectivity flapping.
         setState(() {
           _isOffline = false;
         });
-        _connectivityDebounce?.cancel();
-        _connectivityDebounce = Timer(const Duration(seconds: 2), () {
-          if (mounted) {
-            _reloadAll(preferOnline: true, refreshBusinessContext: true);
-          }
-        });
       } else if (!isOnline && !_isOffline) {
-        // Just went offline — show the strip.
-        _connectivityDebounce?.cancel();
         setState(() {
           _isOffline = true;
         });
@@ -141,13 +133,34 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
     });
   }
 
+  // ── Sync completion subscription ─────────────────────────────────────────
+  // After a background sync finishes, silently reload so the shown stats
+  // include the records that were just pushed/refreshed. This is the single
+  // refresh point — no separate reload on connectivity return.
+
+  void _subscribeToSync() {
+    _syncSub = SyncService.instance.syncStateStream.listen((state) {
+      if (!mounted) return;
+      if (state.status == SyncStatus.synced) {
+        _reloadAll(
+          preferOnline: true,
+          refreshBusinessContext: true,
+          silent: true,
+        );
+      }
+    });
+  }
+
   // ── Silent reload after reconnect ─────────────────────────────────────────
   // Re-fetches dashboard + trend concurrently. Business details are only
   // re-fetched if _businessId was never resolved (page opened while offline).
+  // When `silent` is true, refreshing skips the loading spinner so a
+  // background sync-completion refresh doesn't flash the screen.
 
   Future<void> _reloadAll({
     bool preferOnline = false,
     bool refreshBusinessContext = false,
+    bool silent = false,
   }) async {
     if (!mounted) return;
 
@@ -168,8 +181,8 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
 
       // Otherwise just refresh the two data sections in parallel.
       await Future.wait([
-        _loadDashboard(preferOnline: preferOnline),
-        _loadTrend(preferOnline: preferOnline),
+        _loadDashboard(preferOnline: preferOnline, silent: silent),
+        _loadTrend(preferOnline: preferOnline, silent: silent),
       ]);
     } finally {
       if (mounted) {
@@ -230,12 +243,17 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
     }
   }
 
-  Future<void> _loadDashboard({bool preferOnline = false}) async {
+  Future<void> _loadDashboard({
+    bool preferOnline = false,
+    bool silent = false,
+  }) async {
     if (!mounted) return;
-    setState(() {
-      _loadingDash = true;
-      _dashError   = null;
-    });
+    if (!silent) {
+      setState(() {
+        _loadingDash = true;
+        _dashError   = null;
+      });
+    }
     try {
       if (_businessId == null) throw Exception('Business account not found.');
       final data = await _api.fetchDashboardData(
@@ -255,9 +273,12 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
     }
   }
 
-  Future<void> _loadTrend({bool preferOnline = false}) async {
+  Future<void> _loadTrend({
+    bool preferOnline = false,
+    bool silent = false,
+  }) async {
     if (!mounted) return;
-    setState(() => _loadingTrend = true);
+    if (!silent) setState(() => _loadingTrend = true);
     try {
       if (_businessId == null) throw Exception('Business account not found.');
       final data = await _api.fetchYearlyComparison(

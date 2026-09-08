@@ -86,12 +86,13 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
 
   // ── Connectivity state ────────────────────────────────────────────────────
   // Attraction accounts are online-only, so the strip just warns the user.
-  // When connectivity returns we silently reload the data.
+  // Connectivity only toggles the strip — actual data refresh happens after
+  // sync completes so the shown stats always include the latest records.
 
   bool _isOffline = false;
   StreamSubscription<bool>? _connectivitySub;
-  Timer? _connectivityDebounce;
   bool _isReconnectReloading = false;
+  StreamSubscription<SyncState>? _syncSub;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -100,14 +101,15 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
     super.initState();
     _isOffline = !ConnectivityService.instance.isOnline;
     _subscribeToConnectivity();
+    _subscribeToSync();
 
     _initFromSession();
   }
 
   @override
   void dispose() {
+    _syncSub?.cancel();
     _connectivitySub?.cancel();
-    _connectivityDebounce?.cancel();
     super.dispose();
   }
 
@@ -120,13 +122,22 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
 
       if (isOnline && _isOffline) {
         setState(() => _isOffline = false);
-        _connectivityDebounce?.cancel();
-        _connectivityDebounce = Timer(const Duration(seconds: 2), () {
-          if (mounted) _reloadAll();
-        });
       } else if (!isOnline && !_isOffline) {
-        _connectivityDebounce?.cancel();
         setState(() => _isOffline = true);
+      }
+    });
+  }
+
+  // ── Sync completion subscription ─────────────────────────────────────────
+  // After a background sync finishes, silently reload so the shown stats
+  // include the records that were just pushed/refreshed. This is the single
+  // refresh point — no separate reload on connectivity return.
+
+  void _subscribeToSync() {
+    _syncSub = SyncService.instance.syncStateStream.listen((state) {
+      if (!mounted) return;
+      if (state.status == SyncStatus.synced) {
+        _reloadAll(silent: true);
       }
     });
   }
@@ -146,14 +157,17 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
     if (futures.isNotEmpty) await Future.wait(futures);
   }
 
-  Future<void> _reloadAll() async {
+  Future<void> _reloadAll({bool silent = false}) async {
     if (!mounted || _isReconnectReloading) return;
     _isReconnectReloading = true;
     try {
       if (_attractionId == null) {
         await _initFromSession();
       } else {
-        await Future.wait([_loadDashboard(), _loadTrend()]);
+        await Future.wait([
+          _loadDashboard(silent: silent),
+          _loadTrend(silent: silent),
+        ]);
       }
     } finally {
       if (mounted) setState(() => _isReconnectReloading = false);
@@ -194,12 +208,14 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
     }
   }
 
-  Future<void> _loadDashboard() async {
+  Future<void> _loadDashboard({bool silent = false}) async {
     if (!mounted) return;
-    setState(() {
-      _loadingDash = true;
-      _dashError = null;
-    });
+    if (!silent) {
+      setState(() {
+        _loadingDash = true;
+        _dashError = null;
+      });
+    }
     try {
       if (_attractionId == null) throw Exception('Attraction account not found.');
       final data = await _api.fetchDashboardData(
@@ -215,9 +231,9 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
     }
   }
 
-  Future<void> _loadTrend() async {
+  Future<void> _loadTrend({bool silent = false}) async {
     if (!mounted) return;
-    setState(() => _loadingTrend = true);
+    if (!silent) setState(() => _loadingTrend = true);
     try {
       if (_attractionId == null) throw Exception('Attraction account not found.');
       final data = await _api.fetchYearlyComparison(
