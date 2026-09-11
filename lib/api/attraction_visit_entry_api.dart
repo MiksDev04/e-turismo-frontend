@@ -88,8 +88,8 @@ class AttractionVisitEntryApi extends BaseApi {
   }
 
   // ---------------------------------------------------------------------------
-  // Write-through save: SQLite first (pending_create), then push to the cloud
-  // when online. Any cloud failure leaves the row pending for SyncService.
+  // Online → POST to cloud first, then cache locally as synced.
+  // Offline (or cloud failure) → save locally as pending_create for SyncService.
   // ---------------------------------------------------------------------------
   Future<VisitEntryResult> saveVisitEntry(VisitEntryData data) async {
     final online = ConnectivityService.instance.isOnline && hasToken;
@@ -104,11 +104,54 @@ class AttractionVisitEntryApi extends BaseApi {
     final entryId = _generateId();
     final payload = data.toJson()..['attractionId'] = attractionId;
     final now = DateTime.now().toUtc().toIso8601String();
-    // Same timestamp that is written to SQLite below, so the cloud row keeps
-    // the true creation time and created_at ordering stays consistent.
     payload['createdAt'] = now;
 
-    // ── Step 1: SQLite first — survives a mid-save disconnect ───────────────
+    // ── ONLINE: push to cloud first, then cache locally as synced ──────────
+    if (online) {
+      try {
+        final response = await post(
+          '/api/attraction/visit-entry/visit-entries',
+          payload..['id'] = entryId,
+        );
+
+        if (response.statusCode == 409) {
+          debugPrint('⚠️ saveVisitEntry: 409 — already landed on server');
+          if (!kIsWeb) {
+            await _insertLocalEntry(
+              entryId: entryId,
+              attractionId: attractionId,
+              payload: payload,
+              now: now,
+              syncStatus: LocalDatabase.syncSynced,
+            );
+          }
+          return VisitEntryResult.ok(syncedToCloud: true);
+        }
+
+        handleResponse(response);
+
+        if (!kIsWeb) {
+          await _insertLocalEntry(
+            entryId: entryId,
+            attractionId: attractionId,
+            payload: payload,
+            now: now,
+            syncStatus: LocalDatabase.syncSynced,
+          );
+          // Remap local ID if the backend generated a different one.
+          await _markSynced(entryId, responseBody: response.body);
+        }
+
+        debugPrint('✅ saveVisitEntry: online — entry $entryId saved to cloud');
+        return VisitEntryResult.ok(syncedToCloud: true);
+      } catch (e) {
+        debugPrint(
+          '⚠️ saveVisitEntry: cloud push failed — saving locally as pending ($e)',
+        );
+      }
+    }
+
+    // ── OFFLINE (or cloud failure): save locally as pending_create ──────────
     if (!kIsWeb) {
       try {
         await _insertLocalEntry(
@@ -116,6 +159,7 @@ class AttractionVisitEntryApi extends BaseApi {
           attractionId: attractionId,
           payload: payload,
           now: now,
+          syncStatus: LocalDatabase.syncPendingCreate,
         );
       } catch (e) {
         debugPrint('❌ saveVisitEntry: local write failed — $e');
@@ -125,32 +169,8 @@ class AttractionVisitEntryApi extends BaseApi {
       }
     }
 
-    if (!online) {
-      debugPrint('💾 saveVisitEntry: offline — entry $entryId queued for sync');
-      return VisitEntryResult.ok();
-    }
-
-    // ── Step 2: Push to Node API ─────────────────────────────────────────────
-    try {
-      final response = await post(
-        '/api/attraction/visit-entry/visit-entries',
-        payload..['id'] = entryId,
-      );
-
-      if (response.statusCode == 409) {
-        debugPrint('⚠️ saveVisitEntry: 409 — create already landed, marking synced');
-        await _markSynced(entryId);
-        return VisitEntryResult.ok(syncedToCloud: true);
-      }
-
-      handleResponse(response);
-
-      await _markSynced(entryId, responseBody: response.body);
-      return VisitEntryResult.ok(syncedToCloud: true);
-    } catch (e) {
-      debugPrint('⚠️ saveVisitEntry: cloud push failed — queued for sync ($e)');
-      return VisitEntryResult.ok();
-    }
+    debugPrint('💾 saveVisitEntry: offline — entry $entryId queued for sync');
+    return VisitEntryResult.ok();
   }
 
   // ---------------------------------------------------------------------------
@@ -162,6 +182,7 @@ class AttractionVisitEntryApi extends BaseApi {
     required String attractionId,
     required Map<String, dynamic> payload,
     required String now,
+    String syncStatus = LocalDatabase.syncPendingCreate,
   }) async {
     final db = await LocalDatabase.instance.database;
     final session = SessionService.instance.current;
@@ -216,14 +237,14 @@ class AttractionVisitEntryApi extends BaseApi {
         'nationality':       null,
         'created_at':        now,
         'updated_at':        now,
-        'sync_status':       LocalDatabase.syncPendingCreate,
+        'sync_status':       syncStatus,
         'local_updated_at':  now,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
 
     debugPrint(
-      '💾 SQLite: saved visit entry $entryId (${LocalDatabase.syncPendingCreate})',
+      '💾 SQLite: saved visit entry $entryId ($syncStatus)',
     );
   }
 

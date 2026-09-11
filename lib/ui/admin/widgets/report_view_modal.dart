@@ -1924,6 +1924,16 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
     await Printing.layoutPdf(onLayout: (_) async => bytes);
   }
 
+  Future<void> _handleReload() async {
+    _pdfCache.remove(_cacheKey);
+    setState(() {
+      _loading = true;
+      _error = null;
+      _pdfBytes = null;
+    });
+    await _loadReport();
+  }
+
   void _zoomPdfBy(double delta) {
     _pdfController.zoomLevel =
         (_pdfController.zoomLevel + delta).clamp(1.0, 4.0);
@@ -2006,6 +2016,7 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
               batch: widget.batch,
               onClose: () => Navigator.pop(context),
               onPrint: _pdfBytes == null ? null : _handlePrint,
+              onReload: _handleReload,
               onZoomIn: () => _zoomPdfBy(0.25),
               onZoomOut: () => _zoomPdfBy(-0.25),
               zoomPercent: _pdfZoomPercent,
@@ -3063,6 +3074,7 @@ class _ModalHeader extends StatelessWidget {
     required this.batch,
     required this.onClose,
     required this.onPrint,
+    required this.onReload,
     required this.onZoomIn,
     required this.onZoomOut,
     required this.zoomPercent,
@@ -3071,6 +3083,7 @@ class _ModalHeader extends StatelessWidget {
   final ReportBatch batch;
   final VoidCallback onClose;
   final VoidCallback? onPrint;
+  final VoidCallback onReload;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
   final int zoomPercent;
@@ -3079,11 +3092,8 @@ class _ModalHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 900;
 
-    final iconSize = isMobile ? 28.0 : 36.0;
-    final iconInnerSize = isMobile ? 14.0 : 18.0;
     final titleFontSize = isMobile ? 13.0 : 15.0;
     final badgeFontSize = isMobile ? 10.0 : 11.0;
-    final subtitleFontSize = isMobile ? 10.0 : 11.5;
     final btnSize = isMobile ? 28.0 : 32.0;
     final btnIconSize = isMobile ? 14.0 : 16.0;
     final horizontalPad = isMobile ? 10.0 : 20.0;
@@ -3129,15 +3139,6 @@ class _ModalHeader extends StatelessWidget {
             ),
           ],
         ),
-        SizedBox(height: isMobile ? 1 : 2),
-        Text(
-          'Live data \u2014 Batch: ${batch.shortId}',
-          style: TextStyle(
-            color: AppColors.textGray,
-            fontSize: subtitleFontSize,
-            fontFamily: 'monospace',
-          ),
-        ),
       ],
     );
 
@@ -3176,6 +3177,26 @@ class _ModalHeader extends StatelessWidget {
         child: Icon(
           Icons.close_rounded,
           color: AppColors.textGray,
+          size: btnIconSize,
+        ),
+      ),
+    );
+
+    final reloadButton = GestureDetector(
+      onTap: onReload,
+      child: Container(
+        width: btnSize,
+        height: btnSize,
+        decoration: BoxDecoration(
+          color: AppColors.primaryCyan.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: AppColors.primaryCyan.withOpacity(0.35),
+          ),
+        ),
+        child: Icon(
+          Icons.refresh_rounded,
+          color: AppColors.primaryCyan,
           size: btnIconSize,
         ),
       ),
@@ -3248,22 +3269,10 @@ class _ModalHeader extends StatelessWidget {
           children: [
             Row(
               children: [
-                Container(
-                  width: iconSize,
-                  height: iconSize,
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryCyan.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.table_chart_rounded,
-                    color: AppColors.primaryCyan,
-                    size: iconInnerSize,
-                  ),
-                ),
-                const SizedBox(width: 8),
                 Expanded(child: titleSection),
                 const SizedBox(width: 8),
+                reloadButton,
+                const SizedBox(width: 6),
                 zoomControls,
                 const SizedBox(width: 6),
                 printButton,
@@ -3285,22 +3294,10 @@ class _ModalHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: iconSize,
-            height: iconSize,
-            decoration: BoxDecoration(
-              color: AppColors.primaryCyan.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              Icons.table_chart_rounded,
-              color: AppColors.primaryCyan,
-              size: iconInnerSize,
-            ),
-          ),
-          const SizedBox(width: 12),
           Expanded(child: titleSection),
           const SizedBox(width: 12),
+          reloadButton,
+          const SizedBox(width: 8),
           zoomControls,
           const SizedBox(width: 8),
           printButton,
