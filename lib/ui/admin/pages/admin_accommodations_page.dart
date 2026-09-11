@@ -1903,7 +1903,9 @@ class _TableRow extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
-                formatRelativeDate(item.lastActivity),
+                item.status == AccommodationStatus.pending
+                    ? '—'
+                    : formatRelativeDate(item.lastActivity),
                 style: const TextStyle(color: AppColors.textGray, fontSize: 13),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -2046,7 +2048,9 @@ class _AccommodationCard extends StatelessWidget {
           const SizedBox(height: 6),
           _CardDetail(
             label: 'Last Activity',
-            value: formatRelativeDate(item.lastActivity),
+            value: item.status == AccommodationStatus.pending
+                ? '—'
+                : formatRelativeDate(item.lastActivity),
           ),
           const SizedBox(height: 12),
           _ActionButtons(
