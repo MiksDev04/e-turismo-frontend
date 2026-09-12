@@ -221,11 +221,12 @@ class AttractionVisitRecordApi extends BaseApi {
           origin: origin,
         );
         data.addAll(pending);
-        data.sort(_compareVisitRecordsByCreatedDesc);
       }
     } catch (e) {
       debugPrint('⚠️ fetchVisitRecords: local merge failed — $e');
     }
+
+    data.sort(_compareVisitRecordsByCreatedDesc);
 
     return ApiResult.success((
       data: data,
@@ -368,7 +369,10 @@ class AttractionVisitRecordApi extends BaseApi {
         offset: (page - 1) * pageSize,
       );
 
-      final data = rows.map(_recordFromLocalRow).toList();
+      final data = rows
+              .map(_recordFromLocalRow)
+              .toList()
+            ..sort(_compareVisitRecordsByCreatedDesc);
       final pageCount = pageSize > 0 ? (totalCount / pageSize).ceil() : 0;
 
       return ApiResult.success((
