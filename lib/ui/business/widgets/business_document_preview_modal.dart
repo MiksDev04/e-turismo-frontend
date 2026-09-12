@@ -359,7 +359,8 @@ class _DocumentPreviewModalState extends State<DocumentPreviewModal> {
                                       bottomRight: Radius.circular(16),
                                     ),
                                      child: PdfPreview(
-                                       build: (format) => _bytes!,
+                                       build: (format) =>
+                                           Uint8List.fromList(_bytes!),
                                        useActions: false,
                                     ),
                                   )

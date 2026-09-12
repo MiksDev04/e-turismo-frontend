@@ -43,6 +43,10 @@
   -->
   <script type="module" async>
     import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs';
+    // Expose on window so the printing package (PdfPreview) can find it via
+    // its `typeof pdfjsLib !== "undefined"` check instead of loading a second
+    // copy of pdf.js from unpkg.
+    window.pdfjsLib = pdfjsLib;
     pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs";
   </script>
   <script src="flutter_bootstrap.js" async></script>
