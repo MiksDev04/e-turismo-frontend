@@ -1852,12 +1852,6 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
 
   final _reportService = ReportService();
 
-  static final Map<String, Uint8List> _pdfCache = {};
-
-  String get _cacheKey =>
-      '${widget.batch.reportType}_${widget.batch.reportVariant}_'
-      '${widget.batch.periodYear}_${widget.batch.periodMonths}';
-
   @override
   void initState() {
     super.initState();
@@ -1871,16 +1865,6 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
   }
 
   Future<void> _loadReport() async {
-    final cached = _pdfCache[_cacheKey];
-    if (cached != null) {
-      if (!mounted) return;
-      setState(() {
-        _pdfBytes = cached;
-        _loading = false;
-      });
-      return;
-    }
-
     try {
       final bytes = await _reportService.downloadReport(
         DownloadReportParams(
@@ -1893,8 +1877,6 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
         timeout: const Duration(seconds: 120),
       );
       if (!mounted) return;
-
-      _pdfCache[_cacheKey] = bytes;
 
       setState(() {
         _pdfBytes = bytes;
@@ -1925,7 +1907,6 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
   }
 
   Future<void> _handleReload() async {
-    _pdfCache.remove(_cacheKey);
     setState(() {
       _loading = true;
       _error = null;
