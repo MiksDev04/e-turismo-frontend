@@ -317,9 +317,6 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
       buf.writeln(
         'Female,${g.female},${(g.femaleRatio * 100).toStringAsFixed(1)}%',
       );
-      buf.writeln(
-        'Other,${g.other},${(g.otherRatio * 100).toStringAsFixed(1)}%',
-      );
       buf.writeln();
 
       buf.writeln('TOP COUNTRIES');
@@ -486,11 +483,6 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
                   'Female',
                   '${d.genderDistribution.female}',
                   '${(d.genderDistribution.femaleRatio * 100).toStringAsFixed(1)}%',
-                ],
-                [
-                  'Other',
-                  '${d.genderDistribution.other}',
-                  '${(d.genderDistribution.otherRatio * 100).toStringAsFixed(1)}%',
                 ],
               ],
               cellStyle: const pw.TextStyle(fontSize: 10),
