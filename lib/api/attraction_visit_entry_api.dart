@@ -53,15 +53,24 @@ class VisitEntryData {
         "${visitDate.month.toString().padLeft(2, '0')}-"
         "${visitDate.day.toString().padLeft(2, '0')}";
 
-    var male = maleCount ?? 0;
-    var female = femaleCount ?? 0;
-    if (male == 0 && female == 0) {
-      male = (guestCount * 0.471).round();
-      female = guestCount - male;
-    } else if (male == 0) {
-      male = guestCount - female;
-    } else if (female == 0) {
-      female = guestCount - male;
+    // Gender counts are optional. If exactly one side is missing it is simply
+    // completed from the other (male + female = guestCount). When BOTH are
+    // blank they stay null so a headcount-only log stores no guess — origin
+    // and gender are estimated at report-generation time instead.
+    final int? male;
+    final int? female;
+    if (maleCount == null && femaleCount == null) {
+      male = null;
+      female = null;
+    } else if (maleCount == null) {
+      female = femaleCount;
+      male = guestCount - female!;
+    } else if (femaleCount == null) {
+      male = maleCount;
+      female = guestCount - male!;
+    } else {
+      male = maleCount;
+      female = femaleCount;
     }
 
     return {
@@ -231,6 +240,7 @@ class AttractionVisitEntryApi extends BaseApi {
         'guest_count':       payload['guestCount'],
         'male_count':        payload['maleCount'],
         'female_count':      payload['femaleCount'],
+        'is_foreign':        payload['isForeign'] == true ? 1 : 0,
         'country':           payload['country'],
         'province':          payload['province'],
         'city_municipality': payload['cityMunicipality'],

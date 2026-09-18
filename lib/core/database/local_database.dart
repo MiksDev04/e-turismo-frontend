@@ -26,7 +26,7 @@ class LocalDatabase {
   static const String _kDbName = 'tourism_local.db';
 
   // ── schema version ─────────────────────────────────────────────────────────
-  static const int _kDbVersion = 16;
+  static const int _kDbVersion = 18;
 
   // ── table names ────────────────────────────────────────────────────────────
   static const String tableLocalProfiles   = 'local_profiles';
@@ -414,6 +414,53 @@ class LocalDatabase {
         await db.execute(_sqlIndexVisitEntriesDate);
       }
     }
+
+    // v16 → v17: Make male_count/female_count NULLABLE on local_visit_entries
+    // so blank gender entries store NULL locally (no save-time PSA guess).
+    // SQLite can't ALTER a column's nullability, so the table is rebuilt.
+    // Legacy rows with guest_count > 0 but 0/0 gender are gender-unknown → NULL.
+    if (oldVersion < 17) {
+      await db.execute('ALTER TABLE $tableVisitEntries RENAME TO ${tableVisitEntries}_old');
+      await db.execute(_sqlCreateVisitEntries);
+      await db.execute('''
+        INSERT INTO $tableVisitEntries (
+          id, attraction_id, visit_date, guest_count, male_count, female_count,
+          country, province, city_municipality, nationality,
+          created_at, updated_at, sync_status, local_updated_at
+        )
+        SELECT id, attraction_id, visit_date, guest_count,
+               CASE WHEN guest_count > 0 AND male_count = 0 AND female_count = 0
+                    THEN NULL ELSE male_count END,
+               CASE WHEN guest_count > 0 AND male_count = 0 AND female_count = 0
+                    THEN NULL ELSE female_count END,
+               country, province, city_municipality, nationality,
+               created_at, updated_at, sync_status, local_updated_at
+        FROM ${tableVisitEntries}_old
+      ''');
+      await db.execute('DROP TABLE ${tableVisitEntries}_old');
+      await db.execute(_sqlIndexVisitEntriesAttraction);
+      await db.execute(_sqlIndexVisitEntriesSync);
+      await db.execute(_sqlIndexVisitEntriesDate);
+    }
+
+    // v17 → v18: Add `is_foreign` to local_visit_entries. It records that the
+    // entry was logged as a Foreign tourist even when no country was named
+    // (country stays NULL), so a foreign-without-country row is not lost as
+    // "origin not captured". Legacy rows are backfilled with the same heuristic
+    // as the online migration (a non-Philippines country means foreign).
+    if (oldVersion < 18) {
+      final cols = await db.rawQuery("PRAGMA table_info($tableVisitEntries)");
+      final colNames = cols.map((c) => c['name'] as String).toSet();
+      if (!colNames.contains('is_foreign')) {
+        await db.execute(
+          'ALTER TABLE $tableVisitEntries ADD COLUMN is_foreign INTEGER NOT NULL DEFAULT 0',
+        );
+      }
+      await db.rawUpdate(
+        "UPDATE $tableVisitEntries SET is_foreign = 1 "
+        "WHERE country IS NOT NULL AND country != 'Philippines'",
+      );
+    }
   }
 
   // ── helper: close (mainly for tests) ──────────────────────────────────────
@@ -596,14 +643,19 @@ class LocalDatabase {
   /// sync_status drives the push phase of SyncService.
   /// All datetimes are stored as ISO 8601 strings (UTC).
   /// Column order mirrors the backend `visit_entries` table, with sync columns appended.
+  /// male_count/female_count are NULLABLE: a headcount-only log stores no
+  /// gender guess locally — the report estimates it at generation time.
+  /// is_foreign records the "Foreign tourist" flag separately from country,
+  /// so a foreign visitor who names no country keeps their foreign status.
   static const String _sqlCreateVisitEntries = '''
     CREATE TABLE $tableVisitEntries (
       id                TEXT PRIMARY KEY,
       attraction_id     TEXT NOT NULL,
       visit_date        TEXT NOT NULL,
       guest_count       INTEGER NOT NULL,
-      male_count        INTEGER NOT NULL DEFAULT 0,
-      female_count      INTEGER NOT NULL DEFAULT 0,
+      male_count        INTEGER,
+      female_count      INTEGER,
+      is_foreign        INTEGER NOT NULL DEFAULT 0,
       country           TEXT,
       province          TEXT,
       city_municipality TEXT,

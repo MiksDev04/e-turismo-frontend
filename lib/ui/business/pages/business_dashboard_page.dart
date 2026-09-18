@@ -364,6 +364,10 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
         'Female,${d.sexDistribution.female},'
         '${(d.sexDistribution.femaleRatio * 100).toStringAsFixed(1)}%',
       );
+      buf.writeln(
+        'Unspecified,${d.sexDistribution.other},'
+        '${(d.sexDistribution.otherRatio * 100).toStringAsFixed(1)}%',
+      );
       buf.writeln();
 
       // ── Age Group Distribution ─────────────────────────────────────────────
@@ -547,6 +551,11 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
                   'Female',
                   '${d.sexDistribution.female}',
                   '${(d.sexDistribution.femaleRatio * 100).toStringAsFixed(1)}%',
+                ],
+                [
+                  'Unspecified',
+                  '${d.sexDistribution.other}',
+                  '${(d.sexDistribution.otherRatio * 100).toStringAsFixed(1)}%',
                 ],
               ],
               cellStyle: const pw.TextStyle(fontSize: 10),
@@ -871,6 +880,7 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
                               name:          _businessName,
                               businessLines: _businessLine,
                               address:       _address,
+                              onReload: () => _reloadAll(preferOnline: true),
                             ),
                             const SizedBox(height: 16),
                             _FilterRow(
@@ -889,13 +899,15 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
                             ),
                           ] else ...[
                             Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(
                                   child: _HotelHeader(
                                     name:          _businessName,
                                     businessLines: _businessLine,
                                     address:       _address,
+                                    onReload: () =>
+                                        _reloadAll(preferOnline: true),
                                   ),
                                 ),
                                 const SizedBox(width: 16),
@@ -1109,64 +1121,93 @@ class _HotelHeader extends StatelessWidget {
     required this.name,
     required this.businessLines,
     required this.address,
+    this.onReload,
   });
 
   final String name;
   final List<String> businessLines;
   final String address;
+  final VoidCallback? onReload;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          name,
-          style: const TextStyle(
-            color: AppColors.textWhite,
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                style: const TextStyle(
+                  color: AppColors.textWhite,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: businessLines.isNotEmpty
+                        ? Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: businessLines.map((line) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primaryCyan.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: AppColors.primaryCyan.withOpacity(0.25),
+                                  ),
+                                ),
+                                child: Text(
+                                  _displayBusinessLineLabel(line),
+                                  style: const TextStyle(
+                                    color: AppColors.primaryCyan,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          )
+                        : const Text(
+                            'Business line unavailable',
+                            style: TextStyle(
+                              color: AppColors.textGray,
+                              fontSize: 13,
+                            ),
+                          ),
+                  ),
+                  if (address.trim().isNotEmpty) ...[
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Text(
+                        address,
+                        style: const TextStyle(
+                          color: AppColors.textGray,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 8),
-        if (businessLines.isNotEmpty)
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: businessLines.map((line) {
-              return Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryCyan.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: AppColors.primaryCyan.withOpacity(0.25),
-                  ),
-                ),
-                child: Text(
-                  _displayBusinessLineLabel(line),
-                  style: const TextStyle(
-                    color: AppColors.primaryCyan,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              );
-            }).toList(),
-          )
-        else
-          const Text(
-            'Business line unavailable',
-            style: TextStyle(color: AppColors.textGray, fontSize: 13),
-          ),
-        const SizedBox(height: 6),
-        Text(
-          '$address',
-          style: const TextStyle(color: AppColors.textGray, fontSize: 13),
-        ),
+        if (onReload != null) ...[
+          const SizedBox(width: 12),
+          _ReloadButton(onReload: onReload!),
+        ],
       ],
     );
   }
@@ -1215,31 +1256,54 @@ class _FilterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isNarrow = MediaQuery.of(context).size.width < 600;
-    return Wrap(
-      spacing: isNarrow ? 6 : 10,
-      runSpacing: isNarrow ? 6 : 10,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        SizedBox(
-          width: isNarrow ? 140 : 170,
-          child: _FilterDropdown<int>(
-            value: selectedMonth,
-            items: _months.map((m) => (m.$1, m.$2)).toList(),
-            onChanged: onMonthChanged,
-            icon: Icons.calendar_month_rounded,
-          ),
+    final dropdowns = [
+      SizedBox(
+        width: isNarrow ? 140 : 170,
+        child: _FilterDropdown<int>(
+          value: selectedMonth,
+          items: _months.map((m) => (m.$1, m.$2)).toList(),
+          onChanged: onMonthChanged,
+          icon: Icons.calendar_month_rounded,
         ),
-        SizedBox(
-          width: isNarrow ? 90 : 110,
-          child: _FilterDropdown<int>(
-            value: selectedYear,
-            items: _years.map((y) => (y, '$y')).toList(),
-            onChanged: onYearChanged,
-            icon: Icons.event_rounded,
-          ),
+      ),
+      SizedBox(
+        width: isNarrow ? 90 : 110,
+        child: _FilterDropdown<int>(
+          value: selectedYear,
+          items: _years.map((y) => (y, '$y')).toList(),
+          onChanged: onYearChanged,
+          icon: Icons.event_rounded,
         ),
-        _ExportButton(onTap: onExport, isLoading: isExporting),
-      ],
+      ),
+    ];
+    final export = _ExportButton(onTap: onExport, isLoading: isExporting);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedWidth) {
+          return Wrap(
+            spacing: isNarrow ? 6 : 10,
+            runSpacing: isNarrow ? 6 : 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [...dropdowns, export],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Wrap(
+                spacing: isNarrow ? 6 : 10,
+                runSpacing: isNarrow ? 6 : 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: dropdowns,
+              ),
+            ),
+            const SizedBox(width: 10),
+            export,
+          ],
+        );
+      },
     );
   }
 }
@@ -1349,6 +1413,36 @@ class _ExportButton extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReloadButton extends StatelessWidget {
+  const _ReloadButton({required this.onReload});
+
+  final VoidCallback? onReload;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Reload',
+      child: GestureDetector(
+        onTap: onReload,
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: AppColors.cardBackground,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.cardBorder),
+          ),
+          child: const Icon(
+            Icons.refresh_rounded,
+            size: 16,
+            color: AppColors.textWhite,
+          ),
         ),
       ),
     );
@@ -1735,17 +1829,24 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
       final isEmpty = d.total == 0;
       return [
         _Segment(
-          value: isEmpty ? 0.5 : d.maleRatio,
+          value: isEmpty ? 1 / 3 : d.maleRatio,
           color: AppColors.chartCyan,
           label: 'Male',
           count: d.male,
           isEmpty: isEmpty,
         ),
         _Segment(
-          value: isEmpty ? 0.5 : d.femaleRatio,
+          value: isEmpty ? 1 / 3 : d.femaleRatio,
           color: AppColors.chartPurple,
           label: 'Female',
           count: d.female,
+          isEmpty: isEmpty,
+        ),
+        _Segment(
+          value: isEmpty ? 1 / 3 : d.otherRatio,
+          color: AppColors.chartGray,
+          label: 'Unspecified',
+          count: d.other,
           isEmpty: isEmpty,
         ),
       ];
@@ -1780,6 +1881,7 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
       return const [
         _LegendItem(label: 'Male', color: AppColors.chartCyan),
         _LegendItem(label: 'Female', color: AppColors.chartPurple),
+        _LegendItem(label: 'Unspecified', color: AppColors.chartGray),
       ];
     }
     return widget.ageGroups

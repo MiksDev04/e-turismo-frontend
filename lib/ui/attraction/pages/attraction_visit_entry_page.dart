@@ -82,30 +82,14 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
     });
   }
 
-  ({String? provinceCode, String? cityCode}) _defaultOrigin() {
-    final repo = PsgcRepository.instance;
-    final laguna = repo.allProvinces
-        .where((p) => p.name.toLowerCase() == 'laguna')
-        .firstOrNull;
-    final sanPablo = laguna != null
-        ? repo.citiesFor(laguna.code)
-            .where((c) => c.name.toLowerCase() == 'city of san pablo')
-            .firstOrNull
-        : null;
-    return (provinceCode: laguna?.code, cityCode: sanPablo?.code);
-  }
-
   Future<void> _loadPsgcIfAvailable() async {
     if (!PsgcRepository.instance.isLoaded) {
       await PsgcRepository.instance.load();
     }
     if (mounted) {
       final repo = PsgcRepository.instance;
-      final defaults = _defaultOrigin();
       setState(() {
         _psgcLoaded = repo.isLoaded;
-        _selectedProvinceCode ??= defaults.provinceCode;
-        _selectedCityCode ??= defaults.cityCode;
       });
     }
   }
@@ -149,9 +133,8 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
         _selectedCountry = null;
       } else {
         _selectedCountry = null;
-        final defaults = _defaultOrigin();
-        _selectedProvinceCode = defaults.provinceCode;
-        _selectedCityCode = defaults.cityCode;
+        _selectedProvinceCode = null;
+        _selectedCityCode = null;
       }
       _errors.remove("country");
       _errors.remove("province");
@@ -189,7 +172,6 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
   }
 
   void _clearForm() {
-    final defaults = _defaultOrigin();
     setState(() {
       _visitDate = DateTime.now();
       _guestCountCtrl.clear();
@@ -197,8 +179,8 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
       _femaleCountCtrl.clear();
       _isForeign = false;
       _selectedCountry = null;
-      _selectedProvinceCode = defaults.provinceCode;
-      _selectedCityCode = defaults.cityCode;
+      _selectedProvinceCode = null;
+      _selectedCityCode = null;
       _errors = {};
     });
   }
@@ -224,18 +206,17 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
       hasError = true;
     }
 
+    // Origin is optional: attractions that only do a headcount may leave
+    // province/city (domestic) or country (foreign) blank. A blank origin is
+    // submitted as null and the report distributes it at generation time.
     if (_isForeign) {
-      if (_selectedCountry == null || _selectedCountry!.trim().isEmpty) {
-        errors["country"] = "Please select a country.";
-        hasError = true;
+      if (_selectedCountry != null && _selectedCountry!.trim().isEmpty) {
+        _selectedCountry = null;
       }
     } else {
-      if (_selectedProvinceCode == null) {
-        errors["province"] = "Please select a province.";
-        hasError = true;
-      } else if (_selectedCityCode == null) {
-        errors["city"] = "Please select a city / municipality.";
-        hasError = true;
+      if (_selectedProvinceCode != null && _selectedCityCode == null) {
+        // A province without a city is treated as an unknown origin too.
+        _selectedProvinceCode = null;
       }
     }
 
@@ -487,19 +468,27 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
                                   ),
                                 ),
                                 const SizedBox(width: 6),
-                                const Text(
-                                  "Foreign tourist",
-                                  style: TextStyle(
-                                      color: AppColors.textGray,
-                                      fontSize: 12),
-                                ),
-                              ],
+const Text(
+                              "Foreign tourist",
+                              style: TextStyle(
+                                  color: AppColors.textGray,
+                                  fontSize: 12),
                             ),
-                          ),
-                          const SizedBox(height: 14),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        "Optional.",
+                        style: TextStyle(
+                            color: AppColors.textGray,
+                            fontSize: 11,
+                            fontStyle: FontStyle.italic),
+                      ),
+                      const SizedBox(height: 14),
                           if (_isForeign)
                             _FieldCol(
-                              label: "Country *",
+                              label: "Country",
                               errorText: _errors["country"],
                               child: _EntryDropdownField(
                                 value: _selectedCountry,
@@ -509,15 +498,14 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
                                 onChanged: _onCountryChanged,
                               ),
                             )
-                          else if (!isMobile &&
-                              _selectedProvinceCode != null)
+                          else if (!isMobile)
                             Row(
                               crossAxisAlignment:
                                   CrossAxisAlignment.start,
                               children: [
                                 Expanded(
                                   child: _FieldCol(
-                                    label: "Province *",
+                                    label: "Province",
                                     errorText: _errors["province"],
                                     child: _EntryDropdownField(
                                       value: _selectedProvinceCode,
@@ -538,7 +526,7 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
                                 const SizedBox(width: 14),
                                 Expanded(
                                   child: _FieldCol(
-                                    label: "City / Municipality *",
+                                    label: "City / Municipality",
                                     errorText: _errors["city"],
                                     child: _EntryDropdownField(
                                       value: _selectedCityCode,
@@ -561,7 +549,7 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
                             )
                           else ...[
                             _FieldCol(
-                              label: "Province *",
+                              label: "Province",
                               errorText: _errors["province"],
                               child: _EntryDropdownField(
                                 value: _selectedProvinceCode,
@@ -578,29 +566,26 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
                                 onChanged: _onProvinceChanged,
                               ),
                             ),
-                            if (_selectedProvinceCode !=
-                                null) ...[
-                              const SizedBox(height: 12),
-                              _FieldCol(
-                                label: "City / Municipality *",
-                                errorText: _errors["city"],
-                                child: _EntryDropdownField(
-                                  value: _selectedCityCode,
-                                  items: cities
-                                      .map((c) => c.code)
-                                      .toList(),
-                                  displayLabels: {
-                                    for (final c in cities)
-                                      c.code: c.name
-                                  },
-                                  hint:
-                                      "Select city / municipality",
-                                  hasError:
-                                      _errors["city"] != null,
-                                  onChanged: _onCityChanged,
-                                ),
+                            const SizedBox(height: 12),
+                            _FieldCol(
+                              label: "City / Municipality",
+                              errorText: _errors["city"],
+                              child: _EntryDropdownField(
+                                value: _selectedCityCode,
+                                items: cities
+                                    .map((c) => c.code)
+                                    .toList(),
+                                displayLabels: {
+                                  for (final c in cities)
+                                    c.code: c.name
+                                },
+                                hint:
+                                    "Select city / municipality",
+                                hasError:
+                                    _errors["city"] != null,
+                                onChanged: _onCityChanged,
                               ),
-                            ],
+                            ),
                           ],
                         ],
 
@@ -620,10 +605,11 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
                             ),
                             SizedBox(height: 2),
                             Text(
-                              "Optional - leave blank to auto-calculate (PSA 52.9% female / 47.1% male split)",
+                              "Optional.",
                               style: TextStyle(
-                                  color: AppColors.primaryCyan,
-                                  fontSize: 11.5),
+                                  color: AppColors.textGray,
+                                  fontSize: 11,
+                                  fontStyle: FontStyle.italic),
                             ),
                           ],
                         ),

@@ -194,6 +194,19 @@ class _PushResult {
 // SYNC SERVICE
 // =============================================================================
 
+/// Normalizes the `is_foreign` flag coming from the cloud into 1/0 for SQLite.
+/// The backend returns `is_foreign` as a MySQL tinyint (1/0); older payloads
+/// used the camelCase JSON key. Falling back to a non-Philippines country
+/// keeps rows synced before the column existed classified the same way.
+int _isForeignFromJson(dynamic r) {
+  final v = r is Map ? (r['is_foreign'] ?? r['isForeign']) : r;
+  if (v is num) return v.toInt() == 1 ? 1 : 0;
+  if (v is bool) return v ? 1 : 0;
+  return (r is Map && r['country'] is String && r['country'] != 'Philippines')
+      ? 1
+      : 0;
+}
+
 class SyncService {
   SyncService._internal();
   static final SyncService instance = SyncService._internal();
@@ -861,6 +874,98 @@ class SyncService {
     );
   }
 
+  // ── Friendly entity labels for log lines ───────────────────────────────────
+
+  /// Builds a compact human-friendly label: the entity's display name plus a
+  /// short (8-char) id for disambiguation, e.g. `'Palm Grove Inn' (863661e2…)`.
+  /// Degrades to the short id when the name is missing or blank.
+  String _entityLabel(String? name, String id) {
+    final short = id.length > 8 ? '${id.substring(0, 8)}…' : id;
+    if (name == null || name.trim().isEmpty) return short;
+    return "'$name' ($short)";
+  }
+
+  /// Resolves the label for a single business id, looking up its cached name.
+  Future<String> _businessLabel(String businessId) async {
+    try {
+      final db = await LocalDatabase.instance.database;
+      final rows = await db.query(
+        LocalDatabase.tableLocalBusinesses,
+        columns: ['business_name'],
+        where: 'id = ?',
+        whereArgs: [businessId],
+        limit: 1,
+      );
+      return _entityLabel(
+        rows.isNotEmpty ? rows.first['business_name'] as String? : null,
+        businessId,
+      );
+    } catch (_) {
+      return _entityLabel(null, businessId);
+    }
+  }
+
+  /// Resolves the label for a single attraction id, looking up its cached name.
+  Future<String> _attractionLabel(String attractionId) async {
+    try {
+      final db = await LocalDatabase.instance.database;
+      final rows = await db.query(
+        LocalDatabase.tableLocalAttractions,
+        columns: ['attraction_name'],
+        where: 'id = ?',
+        whereArgs: [attractionId],
+        limit: 1,
+      );
+      return _entityLabel(
+        rows.isNotEmpty ? rows.first['attraction_name'] as String? : null,
+        attractionId,
+      );
+    } catch (_) {
+      return _entityLabel(null, attractionId);
+    }
+  }
+
+  /// Pulls the server's JSON `message` out of a non-2xx response, falling back
+  /// to the bare status code when the body isn't the expected shape.
+  String _serverErrorMessage(http.Response response) {
+    try {
+      final body = jsonDecode(response.body);
+      final m = body is Map ? body['message'] : null;
+      if (m is String && m.isNotEmpty) return '$m (HTTP ${response.statusCode})';
+    } catch (_) {}
+    return 'HTTP ${response.statusCode}';
+  }
+
+  /// Builds the list of entities this pull walks when no explicit id was
+  /// passed: only the entities belonging to the CURRENT session's profile, so
+  /// stale rows from other accounts logged into this device are never synced.
+  Future<List<({String id, String label})>> _entitiesForSession({
+    required Database db,
+    required String table,
+    required String nameColumn,
+    String? explicitId,
+    Future<String> Function(String id)? resolveLabel,
+  }) async {
+    if (explicitId != null) {
+      return [(id: explicitId, label: await resolveLabel!(explicitId))];
+    }
+
+    final session = SessionService.instance.current;
+    final rows = await db.query(
+      table,
+      columns: ['id', nameColumn],
+      where: session?.userId != null ? 'profile_id = ?' : null,
+      whereArgs: session?.userId != null ? [session!.userId] : null,
+    );
+
+    return rows
+        .map((r) => (
+          id: r['id'] as String,
+          label: _entityLabel(r[nameColumn] as String?, r['id'] as String),
+        ))
+        .toList();
+  }
+
   // ---------------------------------------------------------------------------
   // PULL ROOMS FROM BACKEND (Delta Sync)
   // Fetches rooms for the business and upserts them into local_rooms.
@@ -874,19 +979,21 @@ class SyncService {
 
     final db = await LocalDatabase.instance.database;
 
-    final businesses = businessId != null
-        ? [{'id': businessId}]
-        : await db.query(
-            LocalDatabase.tableLocalBusinesses,
-            columns: ['id'],
-          );
+    final businesses = await _entitiesForSession(
+      db: db,
+      table: LocalDatabase.tableLocalBusinesses,
+      nameColumn: 'business_name',
+      explicitId: businessId,
+      resolveLabel: _businessLabel,
+    );
 
     // Determine if this should be a full sync or delta sync
     final needsFull = forceFullSync || await _needsFullSync();
     final lastSync = needsFull ? null : await _getLastSyncTimestamp();
 
     for (final business in businesses) {
-      final bizId = business['id'] as String;
+      final bizId = business.id;
+      final label = business.label;
 
       try {
         final url = lastSync != null
@@ -896,7 +1003,7 @@ class SyncService {
         final response = await http.get(Uri.parse(url), headers: _headers);
 
         if (response.statusCode < 200 || response.statusCode >= 300) {
-          debugPrint('⚠️ _pullRoomsFromBackend: HTTP ${response.statusCode} for $bizId');
+          debugPrint('⚠️ _pullRoomsFromBackend: ${_serverErrorMessage(response)} — pull aborted for $label');
           continue;
         }
 
@@ -919,7 +1026,7 @@ class SyncService {
           if (existing.isNotEmpty) {
             final localSync = existing.first['sync_status'] as String?;
             if (localSync != null && localSync != LocalDatabase.syncSynced) {
-              debugPrint('⏳ _pullRoomsFromBackend: skipping room $roomId (local pending: $localSync)');
+              debugPrint('⏳ _pullRoomsFromBackend: skipping room $roomId (local pending: $localSync) for $label');
               continue;
             }
           }
@@ -960,7 +1067,7 @@ class SyncService {
               );
               if (refs.isNotEmpty) continue;
 
-              debugPrint('🧹 _pullRoomsFromBackend: pruning local room $id (not on cloud)');
+              debugPrint('🧹 _pullRoomsFromBackend: pruning local room $id (not on cloud) for $label');
               await db.delete(
                 LocalDatabase.tableLocalRooms,
                 where: 'id = ?',
@@ -970,12 +1077,12 @@ class SyncService {
           }
         }
 
-        debugPrint('✅ _pullRoomsFromBackend: synced ${data.length} rooms for $bizId');
+        debugPrint('✅ _pullRoomsFromBackend: synced ${data.length} rooms for $label');
       } on SocketException catch (e) {
         debugPrint('🌐 _pullRoomsFromBackend: network lost — aborting ($e)');
         return;
       } catch (e) {
-        debugPrint('❌ _pullRoomsFromBackend: failed for $bizId — $e');
+        debugPrint('❌ _pullRoomsFromBackend: failed for $label — $e');
       }
     }
   }
@@ -1210,12 +1317,13 @@ class SyncService {
 
     final db = await LocalDatabase.instance.database;
 
-    final businesses = businessId != null
-        ? [{'id': businessId}]
-        : await db.query(
-            LocalDatabase.tableLocalBusinesses,
-            columns: ['id'],
-          );
+    final businesses = await _entitiesForSession(
+      db: db,
+      table: LocalDatabase.tableLocalBusinesses,
+      nameColumn: 'business_name',
+      explicitId: businessId,
+      resolveLabel: _businessLabel,
+    );
 
     // Determine if this should be a full sync or delta sync
     final needsFull = forceFullSync || await _needsFullSync();
@@ -1232,7 +1340,8 @@ class SyncService {
     final syncTimestamp = DateTime.now().toUtc().toIso8601String();
 
     for (final business in businesses) {
-      final businessId = business['id'] as String;
+      final businessId = business.id;
+      final label = business.label;
 
       try {
         // ── Build URL ───────────────────────────────────────────────────
@@ -1261,6 +1370,11 @@ class SyncService {
                 allRemoteRecords.add(Map<String, dynamic>.from(r));
               }
             }
+          } else {
+            debugPrint(
+              '⚠️ _pullFromBackend: ${_serverErrorMessage(response)} — '
+              'delta batch failed to download for $label',
+            );
           }
         } else {
           // Full sync: fetch both active and archived (existing behavior)
@@ -1288,13 +1402,18 @@ class SyncService {
                   allRemoteRecords.add(Map<String, dynamic>.from(r));
                 }
               }
+            } else {
+              debugPrint(
+                '⚠️ _pullFromBackend: ${_serverErrorMessage(response)} — '
+                'full-sync batch failed to download for $label',
+              );
             }
           }
         }
 
         if (allRemoteRecords.isEmpty && lastSync != null) {
           // Delta sync with no changes — nothing to do
-          debugPrint('📥 _pullFromBackend: no changes for $businessId');
+          debugPrint('📥 _pullFromBackend: no changes for $label');
           continue;
         }
 
@@ -1310,170 +1429,177 @@ class SyncService {
           }
         }
 
-        // 1. Prune local synced records that no longer exist on the cloud
-        //    (only during full sync — delta sync only returns changed records
-        //     so we can't infer absence means deletion).
-        if (lastSync == null) {
-          final localSynced = await db.query(
-            LocalDatabase.tableGuestRecords,
-            columns: ['id', 'local_updated_at'],
-            where: 'business_id = ? AND sync_status = ?',
-            whereArgs: [businessId, LocalDatabase.syncSynced],
-          );
+        // Prune + write happen inside ONE transaction per business so SQLite
+        // commits the whole pull batch once instead of per-row (per-row
+        // autocommits each pay their own fsync). A mid-batch failure rolls
+        // back this business's pull atomically — no half-written state — and
+        // the outer catch below lets the loop continue to the next business.
+        await db.transaction((txn) async {
+          // 1. Prune local synced records that no longer exist on the cloud
+          //    (only during full sync — delta sync only returns changed records
+          //     so we can't infer absence means deletion).
+          if (lastSync == null) {
+            final localSynced = await txn.query(
+              LocalDatabase.tableGuestRecords,
+              columns: ['id', 'local_updated_at'],
+              where: 'business_id = ? AND sync_status = ?',
+              whereArgs: [businessId, LocalDatabase.syncSynced],
+            );
 
-          final now = DateTime.now().toUtc();
-          for (final local in localSynced) {
-            final id = local['id'] as String;
-            if (!remoteIds.contains(id)) {
-              final localUpdatedAtStr = local['local_updated_at'] as String?;
-              if (localUpdatedAtStr != null) {
-                final updatedAt = DateTime.tryParse(localUpdatedAtStr);
-                if (updatedAt != null &&
-                    now.difference(updatedAt).inSeconds < 60) {
-                  debugPrint('⏳ Skipping pruning for just-synced record $id (grace period)');
-                  continue;
+            final now = DateTime.now().toUtc();
+            for (final local in localSynced) {
+              final id = local['id'] as String;
+              if (!remoteIds.contains(id)) {
+                final localUpdatedAtStr = local['local_updated_at'] as String?;
+                if (localUpdatedAtStr != null) {
+                  final updatedAt = DateTime.tryParse(localUpdatedAtStr);
+                  if (updatedAt != null &&
+                      now.difference(updatedAt).inSeconds < 60) {
+                    debugPrint('⏳ Skipping pruning for just-synced record $id (grace period)');
+                    continue;
+                  }
                 }
-              }
 
-              debugPrint('🧹 _pullFromBackend: pruning local synced record $id (not found on cloud)');
-              await db.delete(
+                debugPrint('🧹 _pullFromBackend: pruning local synced record $id (not found on cloud) for $label');
+                await txn.delete(
+                  LocalDatabase.tableGuestRecords,
+                  where: 'id = ?',
+                  whereArgs: [id],
+                );
+                await txn.delete(
+                  LocalDatabase.tableGuestRecordRooms,
+                  where: 'guest_record_id = ?',
+                  whereArgs: [id],
+                );
+                await txn.delete(
+                  LocalDatabase.tableGuestOriginBreakdowns,
+                  where: 'guest_record_id = ?',
+                  whereArgs: [id],
+                );
+              }
+            }
+          }
+
+          // 2. Insert / Update records from cloud (skip any with pending changes).
+          for (final remote in remoteRecords) {
+            final recordId = remote['id'] as String;
+
+            // If the server says this record is deleted, remove it locally.
+            if (remoteDeletedIds.contains(recordId)) {
+              debugPrint('🗑️ _pullFromBackend: deleting soft-deleted record $recordId for $label');
+              await txn.delete(
                 LocalDatabase.tableGuestRecords,
                 where: 'id = ?',
-                whereArgs: [id],
+                whereArgs: [recordId],
               );
-              await db.delete(
+              await txn.delete(
                 LocalDatabase.tableGuestRecordRooms,
                 where: 'guest_record_id = ?',
-                whereArgs: [id],
+                whereArgs: [recordId],
               );
-              await db.delete(
+              await txn.delete(
                 LocalDatabase.tableGuestOriginBreakdowns,
                 where: 'guest_record_id = ?',
-                whereArgs: [id],
+                whereArgs: [recordId],
+              );
+              continue;
+            }
+
+            final pending = await txn.query(
+              LocalDatabase.tableGuestRecords,
+              where: 'id = ? AND sync_status != ?',
+              whereArgs: [recordId, LocalDatabase.syncSynced],
+              limit: 1,
+            );
+            if (pending.isNotEmpty) {
+              debugPrint('⏳ _pullFromBackend: skipping cloud record $recordId (has local pending changes) for $label');
+              continue;
+            }
+
+            // Upsert the guest record
+            await txn.insert(
+              LocalDatabase.tableGuestRecords,
+              _fromApiRecord(remote),
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+
+            // Replace room junction rows
+            await txn.delete(
+              LocalDatabase.tableGuestRecordRooms,
+              where: 'guest_record_id = ?',
+              whereArgs: [recordId],
+            );
+
+            final rooms = remote['rooms'] as List<dynamic>? ?? [];
+            for (final r in rooms) {
+              final roomId = r['id'] as String;
+              await txn.rawInsert(
+                'INSERT OR IGNORE INTO ${LocalDatabase.tableLocalRooms} '
+                '(id, business_id, room_number, capacity, room_status, sync_status) '
+                'VALUES (?, ?, ?, ?, ?, ?)',
+                [
+                  roomId,
+                  businessId,
+                  r['roomNumber'] ?? r['room_number'] ?? roomId.substring(0, 8),
+                  r['capacity'] ?? 1,
+                  'vacant',
+                  LocalDatabase.syncSynced,
+                ],
+              );
+              await txn.insert(
+                LocalDatabase.tableGuestRecordRooms,
+                {
+                  'id':               _generateUuid(),
+                  'guest_record_id':  recordId,
+                  'room_id':          roomId,
+                  'status':           r['status'] ?? 'active',
+                  'deleted_at':       r['deletedAt'] ?? r['deleted_at'],
+                  'created_at':       r['created_at'] ?? r['createdAt'] ?? remote['created_at'],
+                  'updated_at':       r['updated_at'] ?? r['updatedAt'] ?? remote['updated_at'],
+                  'sync_status':      LocalDatabase.syncSynced,
+                  'local_updated_at': null,
+                },
+                conflictAlgorithm: ConflictAlgorithm.replace,
+              );
+            }
+
+            // Replace origin breakdown rows
+            await txn.delete(
+              LocalDatabase.tableGuestOriginBreakdowns,
+              where: 'guest_record_id = ?',
+              whereArgs: [recordId],
+            );
+
+            final breakdowns = remote['guest_breakdowns'] as List<dynamic>? ?? [];
+            for (final b in breakdowns) {
+              await txn.insert(
+                LocalDatabase.tableGuestOriginBreakdowns,
+                {
+                  'id':                  _generateUuid(),
+                  'guest_record_id':     recordId,
+                  'country':             b['country'],
+                  'nationality':         b['nationality'],
+                  'is_overseas':         b['isOverseas'] == true ? 1 : 0,
+                  'province':            b['province'],
+                  'city_municipality':   b['cityMunicipality'],
+                  'male_count':          b['maleCount'] ?? 0,
+                  'female_count':        b['femaleCount'] ?? 0,
+                  'created_at':          b['created_at'] ?? remote['created_at'],
+                  'updated_at':          b['updated_at'] ?? remote['updated_at'],
+                  'deleted_at':          null,
+                },
+                conflictAlgorithm: ConflictAlgorithm.replace,
               );
             }
           }
-        }
+        });
 
-        // 2. Insert / Update records from cloud (skip any with pending changes).
-        for (final remote in remoteRecords) {
-          final recordId = remote['id'] as String;
-
-          // If the server says this record is deleted, remove it locally.
-          if (remoteDeletedIds.contains(recordId)) {
-            debugPrint('🗑️ _pullFromBackend: deleting soft-deleted record $recordId');
-            await db.delete(
-              LocalDatabase.tableGuestRecords,
-              where: 'id = ?',
-              whereArgs: [recordId],
-            );
-            await db.delete(
-              LocalDatabase.tableGuestRecordRooms,
-              where: 'guest_record_id = ?',
-              whereArgs: [recordId],
-            );
-            await db.delete(
-              LocalDatabase.tableGuestOriginBreakdowns,
-              where: 'guest_record_id = ?',
-              whereArgs: [recordId],
-            );
-            continue;
-          }
-
-          final pending = await db.query(
-            LocalDatabase.tableGuestRecords,
-            where: 'id = ? AND sync_status != ?',
-            whereArgs: [recordId, LocalDatabase.syncSynced],
-            limit: 1,
-          );
-          if (pending.isNotEmpty) {
-            debugPrint('⏳ _pullFromBackend: skipping cloud record $recordId (has local pending changes)');
-            continue;
-          }
-
-          // Upsert the guest record
-          await db.insert(
-            LocalDatabase.tableGuestRecords,
-            _fromApiRecord(remote),
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
-
-          // Replace room junction rows
-          await db.delete(
-            LocalDatabase.tableGuestRecordRooms,
-            where: 'guest_record_id = ?',
-            whereArgs: [recordId],
-          );
-
-          final rooms = remote['rooms'] as List<dynamic>? ?? [];
-          for (final r in rooms) {
-            final roomId = r['id'] as String;
-            await db.rawInsert(
-              'INSERT OR IGNORE INTO ${LocalDatabase.tableLocalRooms} '
-              '(id, business_id, room_number, capacity, room_status, sync_status) '
-              'VALUES (?, ?, ?, ?, ?, ?)',
-              [
-                roomId,
-                businessId,
-                r['roomNumber'] ?? r['room_number'] ?? roomId.substring(0, 8),
-                r['capacity'] ?? 1,
-                'vacant',
-                LocalDatabase.syncSynced,
-              ],
-            );
-            await db.insert(
-              LocalDatabase.tableGuestRecordRooms,
-              {
-                'id':               _generateUuid(),
-                'guest_record_id':  recordId,
-                'room_id':          roomId,
-                'status':           r['status'] ?? 'active',
-                'deleted_at':       r['deletedAt'] ?? r['deleted_at'],
-                'created_at':       r['created_at'] ?? r['createdAt'] ?? remote['created_at'],
-                'updated_at':       r['updated_at'] ?? r['updatedAt'] ?? remote['updated_at'],
-                'sync_status':      LocalDatabase.syncSynced,
-                'local_updated_at': null,
-              },
-              conflictAlgorithm: ConflictAlgorithm.replace,
-            );
-          }
-
-          // Replace origin breakdown rows
-          await db.delete(
-            LocalDatabase.tableGuestOriginBreakdowns,
-            where: 'guest_record_id = ?',
-            whereArgs: [recordId],
-          );
-
-          final breakdowns = remote['guest_breakdowns'] as List<dynamic>? ?? [];
-          for (final b in breakdowns) {
-            await db.insert(
-              LocalDatabase.tableGuestOriginBreakdowns,
-              {
-                'id':                  _generateUuid(),
-                'guest_record_id':     recordId,
-                'country':             b['country'],
-                'nationality':         b['nationality'],
-                'is_overseas':         b['isOverseas'] == true ? 1 : 0,
-                'province':            b['province'],
-                'city_municipality':   b['cityMunicipality'],
-                'male_count':          b['maleCount'] ?? 0,
-                'female_count':        b['femaleCount'] ?? 0,
-                'created_at':          b['created_at'] ?? remote['created_at'],
-                'updated_at':          b['updated_at'] ?? remote['updated_at'],
-                'deleted_at':          null,
-              },
-              conflictAlgorithm: ConflictAlgorithm.replace,
-            );
-          }
-        }
-
-        debugPrint('✅ _pullFromBackend: processed ${remoteRecords.length} record(s) for $businessId');
+        debugPrint('✅ _pullFromBackend: processed ${remoteRecords.length} record(s) for $label');
       } on SocketException catch (e) {
         debugPrint('🌐 _pullFromBackend: network lost — aborting ($e)');
         return;
       } catch (e) {
-        debugPrint('❌ _pullFromBackend: failed for business $businessId — $e');
+        debugPrint('❌ _pullFromBackend: failed for $label — $e');
       }
     }
 
@@ -1676,6 +1802,12 @@ class SyncService {
 
       try {
         final country = record['country'] as String?;
+        final storedForeign = record['is_foreign'];
+        // Read the persisted "Foreign tourist" flag; fall back to the
+        // country-derived heuristic for rows synced before the column existed.
+        final isForeign = storedForeign == 1 ||
+            storedForeign is bool && storedForeign ||
+            (country != null && country != 'Philippines');
         final payload = <String, dynamic>{
           'id':               recordId,
           'attractionId':     record['attraction_id'],
@@ -1683,7 +1815,7 @@ class SyncService {
           'guestCount':       record['guest_count'],
           'maleCount':        record['male_count'],
           'femaleCount':      record['female_count'],
-          'isForeign':        country != null && country != 'Philippines',
+          'isForeign':        isForeign,
           'country':          country,
           'province':         record['province'],
           'cityMunicipality': record['city_municipality'],
@@ -1779,9 +1911,12 @@ class SyncService {
 
   // ---------------------------------------------------------------------------
   // PULL VISIT ENTRIES FROM BACKEND
-  // The endpoint has no delta support, so every pull walks all pages with a
-  // wide date range (cheap at pageSize 100). needsFull only gates pruning +
-  // timestamp bookkeeping. Rows with local pending changes are never clobbered.
+  // Delta sync: requests only rows changed since the per-attraction lastSync
+  // watermark (one fetchAll=true request, including soft-deleted rows so local
+  // copies are pruned). A full paged pull happens when forced (connectivity
+  // re-acquire) or when the per-attraction 24h clock is due — which also prunes
+  // local rows that no longer exist on the cloud. Rows with local pending
+  // changes are never clobbered.
   // ---------------------------------------------------------------------------
   Future<void> _pullVisitEntriesFromBackend({
     String? attractionId,
@@ -1794,164 +1929,330 @@ class SyncService {
 
     final db = await LocalDatabase.instance.database;
 
-    final attractions = attractionId != null
-        ? [{'id': attractionId}]
-        : await db.query(
-            LocalDatabase.tableLocalAttractions,
-            columns: ['id'],
-          );
-
-    final needsFull = forceFullSync || await _needsAttractionFullSync();
+    final attractions = await _entitiesForSession(
+      db: db,
+      table: LocalDatabase.tableLocalAttractions,
+      nameColumn: 'attraction_name',
+      explicitId: attractionId,
+      resolveLabel: _attractionLabel,
+    );
 
     for (final attraction in attractions) {
-      final attId = attraction['id'] as String;
+      final attId = attraction.id;
+      final label = attraction.label;
+
+      // Per-attraction bookkeeping: each attraction keeps its OWN 24h clock
+      // and delta watermark so syncing one never disturbs the other's.
+      final needsFull = forceFullSync || await _needsAttractionFullSync(attId);
+      final lastSync = needsFull
+          ? null
+          : await _getAttractionLastSyncTimestamp(attId);
+
+      // Captured BEFORE this attraction's requests so rows modified between
+      // request and response have updated_at > this watermark and are re-pulled
+      // next cycle — nothing can slip through the window.
+      final attSyncedAt = DateTime.now().toUtc().toIso8601String();
 
       try {
-        final allRemote = <Map<String, dynamic>>[];
-        var totalCount = 0;
-        var page = 1;
-        const pageSize = 100; // backend caps pageSize at 100
-
-        while (true) {
-          final url = '$_baseUrl/api/attraction/visit-records'
-              '?page=$page&pageSize=$pageSize'
-              '&dateFrom=2000-01-01&dateTo=2099-12-31';
-          final response = await http.get(Uri.parse(url), headers: _headers);
-
-          if (response.statusCode < 200 || response.statusCode >= 300) {
-            debugPrint(
-              '⚠️ _pullVisitEntriesFromBackend: HTTP ${response.statusCode} for $attId',
-            );
-            // Abort before pruning — an incomplete fetch must never look like
-            // "everything was deleted on the cloud".
-            return;
-          }
-
-          final decoded = jsonDecode(response.body);
-          if (decoded is! Map) break;
-          totalCount = (decoded['totalCount'] as num?)?.toInt() ?? 0;
-          final rows = decoded['data'] as List? ?? [];
-          for (final r in rows) {
-            allRemote.add(Map<String, dynamic>.from(r));
-          }
-
-          if (allRemote.length >= totalCount || rows.isEmpty) break;
-          page++;
+        if (lastSync != null) {
+          await _pullVisitEntriesDelta(db, attId, lastSync, attSyncedAt, label);
+        } else {
+          await _pullVisitEntriesFull(db, attId, needsFull, attSyncedAt, label);
         }
-
-        final remoteIds = <String>{};
-
-        for (final r in allRemote) {
-          final entryId = r['id'] as String?;
-          if (entryId == null || entryId.isEmpty) continue;
-          remoteIds.add(entryId);
-
-          // Skip entries that have local pending changes (saved offline).
-          final existing = await db.query(
-            LocalDatabase.tableVisitEntries,
-            columns: ['sync_status'],
-            where: 'id = ?',
-            whereArgs: [entryId],
-            limit: 1,
-          );
-          if (existing.isNotEmpty) {
-            final localSync = existing.first['sync_status'] as String?;
-            if (localSync != null && localSync != LocalDatabase.syncSynced) {
-              debugPrint(
-                '⏳ _pullVisitEntriesFromBackend: skipping entry $entryId (local pending: $localSync)',
-              );
-              continue;
-            }
-          }
-
-          await db.insert(
-            LocalDatabase.tableVisitEntries,
-            {
-              'id':                entryId,
-              'attraction_id':     r['attraction_id'] ?? r['attractionId'] ?? attId,
-              'visit_date':        r['visit_date'] ?? r['visitDate'],
-              'guest_count':
-                  (r['guest_count'] as num?)?.toInt() ??
-                  (r['guestCount'] as num?)?.toInt() ??
-                  0,
-              'male_count':
-                  (r['male_count'] as num?)?.toInt() ??
-                  (r['maleCount'] as num?)?.toInt() ??
-                  0,
-              'female_count':
-                  (r['female_count'] as num?)?.toInt() ??
-                  (r['femaleCount'] as num?)?.toInt() ??
-                  0,
-              'country':           r['country'],
-              'province':          r['province'],
-              'city_municipality': r['city_municipality'] ?? r['cityMunicipality'],
-              'nationality':       r['nationality'],
-              'created_at':        r['created_at'] ?? r['createdAt'],
-              'updated_at':        r['updated_at'] ?? r['updatedAt'],
-              'sync_status':       LocalDatabase.syncSynced,
-              'local_updated_at':  null,
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
-        }
-
-        // Prune local synced rows absent from the cloud — full sync only
-        // (delta-style partial fetches can't infer deletion from absence).
-        if (needsFull) {
-          final localSynced = await db.query(
-            LocalDatabase.tableVisitEntries,
-            columns: ['id', 'local_updated_at'],
-            where: 'attraction_id = ? AND sync_status = ?',
-            whereArgs: [attId, LocalDatabase.syncSynced],
-          );
-
-          final now = DateTime.now().toUtc();
-          for (final local in localSynced) {
-            final id = local['id'] as String;
-            if (!remoteIds.contains(id)) {
-              final localUpdatedAtStr = local['local_updated_at'] as String?;
-              if (localUpdatedAtStr != null) {
-                final updatedAt = DateTime.tryParse(localUpdatedAtStr);
-                if (updatedAt != null &&
-                    now.difference(updatedAt).inSeconds < 60) {
-                  debugPrint(
-                    '⏳ Skipping pruning for just-synced entry $id (grace period)',
-                  );
-                  continue;
-                }
-              }
-
-              debugPrint(
-                '🧹 _pullVisitEntriesFromBackend: pruning local entry $id (not found on cloud)',
-              );
-              await db.delete(
-                LocalDatabase.tableVisitEntries,
-                where: 'id = ?',
-                whereArgs: [id],
-              );
-            }
-          }
-        }
-
-        debugPrint(
-          '✅ _pullVisitEntriesFromBackend: processed ${allRemote.length} entry(ies) for $attId',
-        );
       } on SocketException catch (e) {
         debugPrint(
           '🌐 _pullVisitEntriesFromBackend: network lost — aborting ($e)',
         );
         return;
       } catch (e) {
-        debugPrint('❌ _pullVisitEntriesFromBackend: failed for $attId — $e');
+        debugPrint('❌ _pullVisitEntriesFromBackend: failed for $label — $e');
+      }
+    }
+  }
+
+  /// Writes one remote visit entry into the local table, never clobbering a
+  /// row with local pending changes. Shared by the full and delta pull paths.
+  Future<void> _upsertVisitEntry(
+    DatabaseExecutor txn,
+    Map<String, dynamic> remote,
+    String attId,
+    String label,
+  ) async {
+    final entryId = remote['id'] as String?;
+    if (entryId == null || entryId.isEmpty) return;
+
+    // Skip entries that have local pending changes (saved offline).
+    final existing = await txn.query(
+      LocalDatabase.tableVisitEntries,
+      columns: ['sync_status'],
+      where: 'id = ?',
+      whereArgs: [entryId],
+      limit: 1,
+    );
+    if (existing.isNotEmpty) {
+      final localSync = existing.first['sync_status'] as String?;
+      if (localSync != null && localSync != LocalDatabase.syncSynced) {
+        debugPrint(
+          '⏳ _pullVisitEntriesFromBackend: skipping entry $entryId (local pending: $localSync) for $label',
+        );
+        return;
       }
     }
 
-    final syncTimestamp = DateTime.now().toUtc().toIso8601String();
-    await _setAttractionLastSyncTimestamp(syncTimestamp);
-    if (needsFull) {
-      await _setAttractionLastFullSyncTimestamp(syncTimestamp);
-      debugPrint('✅ _pullVisitEntriesFromBackend: full sync timestamp saved');
+    await txn.insert(
+      LocalDatabase.tableVisitEntries,
+      {
+        'id':                entryId,
+        'attraction_id': remote['attraction_id'] ?? remote['attractionId'] ?? attId,
+        'visit_date':        remote['visit_date'] ?? remote['visitDate'],
+        'guest_count':
+            (remote['guest_count'] as num?)?.toInt() ??
+            (remote['guestCount'] as num?)?.toInt() ??
+            0,
+        'male_count':
+            (remote['male_count'] as num?)?.toInt() ??
+            (remote['maleCount'] as num?)?.toInt(),
+        'female_count':
+            (remote['female_count'] as num?)?.toInt() ??
+            (remote['femaleCount'] as num?)?.toInt(),
+        'is_foreign':       _isForeignFromJson(remote),
+        'country':           remote['country'],
+        'province':          remote['province'],
+        'city_municipality': remote['city_municipality'] ?? remote['cityMunicipality'],
+        'nationality':       remote['nationality'],
+        'created_at':        remote['created_at'] ?? remote['createdAt'],
+        'updated_at':        remote['updated_at'] ?? remote['updatedAt'],
+        'sync_status':       LocalDatabase.syncSynced,
+        'local_updated_at':  null,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Full paged pull of one attraction's whole visit history. Keeps the
+  /// per-page chunked-transaction model: each 100-row page commits once
+  ///(bounded SQLite write lock) and a failed chunk is logged and skipped so it
+  /// can't stall a large pull. Prunes local rows absent from the cloud. The
+  /// watermark only advances on a fully-successful pull — any skipped chunk
+  /// leaves it behind so the next delta re-fetches what was missed.
+  Future<void> _pullVisitEntriesFull(
+    Database db,
+    String attId,
+    bool needsFull,
+    String attSyncedAt,
+    String label,
+  ) async {
+    var totalCount = 0;
+    var page = 1;
+    const pageSize = 100; // backend caps pageSize at 100
+    var received = 0;
+    var chunkFailed = false;
+
+    final remoteIds = <String>{};
+
+    while (true) {
+      final url = '$_baseUrl/api/attraction/visit-records'
+          '?page=$page&pageSize=$pageSize'
+          '&dateFrom=2000-01-01&dateTo=2099-12-31'
+          '&attractionId=$attId';
+      final response = await http.get(Uri.parse(url), headers: _headers);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        debugPrint(
+          '⚠️ _pullVisitEntriesFromBackend: ${_serverErrorMessage(response)} — '
+          'full pull aborted for $label',
+        );
+        // Abort before pruning — an incomplete fetch must never look like
+        // "everything was deleted on the cloud".
+        return;
+      }
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) break;
+      totalCount = (decoded['totalCount'] as num?)?.toInt() ?? 0;
+      final rows = decoded['data'] as List? ?? [];
+      received += rows.length;
+
+      // Register every cloud id before writing so a failed chunk below
+      // can never cause pruning to delete a row that exists on the cloud.
+      for (final r in rows) {
+        final entryId = r['id'] as String?;
+        if (entryId != null && entryId.isNotEmpty) {
+          remoteIds.add(entryId);
+        }
+      }
+
+      // Chunked commit: one transaction per 100-row page bounds the
+      // SQLite write lock so in-app saves during sync are never blocked
+      // behind the whole visit history. A failed chunk is logged and
+      // skipped so it can't stall a large pull.
+      try {
+        await db.transaction((txn) async {
+          for (final r in rows) {
+            await _upsertVisitEntry(
+              txn,
+              Map<String, dynamic>.from(r as Map),
+              attId,
+              label,
+            );
+          }
+        });
+      } catch (e) {
+        chunkFailed = true;
+        debugPrint(
+          '⚠️ _pullVisitEntriesFromBackend: page $page chunk failed and '
+          'was skipped — continuing with the rest of the pull ($e)',
+        );
+      }
+
+      if (received >= totalCount || rows.isEmpty) break;
+      page++;
     }
+
+    // Prune local synced rows absent from the cloud — full sync only
+    // (delta-style partial fetches can't infer deletion from absence).
+    if (needsFull) {
+      await db.transaction((txn) async {
+        final localSynced = await txn.query(
+          LocalDatabase.tableVisitEntries,
+          columns: ['id', 'local_updated_at'],
+          where: 'attraction_id = ? AND sync_status = ?',
+          whereArgs: [attId, LocalDatabase.syncSynced],
+        );
+
+        final now = DateTime.now().toUtc();
+        for (final local in localSynced) {
+          final id = local['id'] as String;
+          if (!remoteIds.contains(id)) {
+            final localUpdatedAtStr = local['local_updated_at'] as String?;
+            if (localUpdatedAtStr != null) {
+              final updatedAt = DateTime.tryParse(localUpdatedAtStr);
+              if (updatedAt != null &&
+                  now.difference(updatedAt).inSeconds < 60) {
+                debugPrint(
+                  '⏳ Skipping pruning for just-synced entry $id (grace period)',
+                );
+                continue;
+              }
+            }
+
+            debugPrint(
+              '🧹 _pullVisitEntriesFromBackend: pruning local entry $id (not found on cloud) for $label',
+            );
+            await txn.delete(
+              LocalDatabase.tableVisitEntries,
+              where: 'id = ?',
+              whereArgs: [id],
+            );
+          }
+        }
+      });
+    }
+
+    debugPrint(
+      '✅ _pullVisitEntriesFromBackend: full pull — processed $received entry(ies) for $label',
+    );
+
+    // Watermark only advances on a fully-successful pull.
+    if (chunkFailed) return;
+    await _setAttractionLastSyncTimestamp(attId, attSyncedAt);
+    if (needsFull) {
+      await _setAttractionLastFullSyncTimestamp(attId, attSyncedAt);
+      debugPrint('✅ _pullVisitEntriesFromBackend: full sync timestamp saved for $label');
+    }
+  }
+
+  /// Delta pull: one fetchAll=true request returns ONLY rows changed since the
+  /// stored per-attraction watermark (including soft-deleted rows so local
+  /// copies are pruned). No paging, no prune-by-absence (absence ≠ deletion in
+  /// a delta response). Writes are chunked at 500 rows so even a long offline
+  /// gap keeps the SQLite write lock bounded. The watermark only advances on a
+  /// fully-successful pull so a skipped chunk is re-fetched next delta.
+  Future<void> _pullVisitEntriesDelta(
+    Database db,
+    String attId,
+    String lastSync,
+    String attSyncedAt,
+    String label,
+  ) async {
+    final url = '$_baseUrl/api/attraction/visit-records'
+        '?fetchAll=true'
+        '&lastSync=$lastSync'
+        '&attractionId=$attId';
+    final response = await http.get(Uri.parse(url), headers: _headers);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      debugPrint(
+        '⚠️ _pullVisitEntriesFromBackend: ${_serverErrorMessage(response)} — '
+        'delta pull aborted for $label',
+      );
+      return;
+    }
+
+    final decoded = jsonDecode(response.body);
+    final rows = decoded is List<dynamic>
+        ? decoded
+        : (decoded is Map ? (decoded['data'] as List? ?? []) : []);
+    final remoteRows = rows
+        .map<Map<String, dynamic>>((r) => Map<String, dynamic>.from(r as Map))
+        .toList();
+
+    if (remoteRows.isNotEmpty) {
+      debugPrint('📥 _pullVisitEntriesFromBackend: ${remoteRows.length} change(s) for $label');
+    }
+
+    // Soft-deleted rows in the delta tell the client to remove its copy.
+    final deletedIds = <String>{};
+    for (final r in remoteRows) {
+      if (r['isDeleted'] == true) {
+        final id = r['id'] as String?;
+        if (id != null && id.isNotEmpty) deletedIds.add(id);
+      }
+    }
+
+    // Chunked commit at 500 rows: bounds the SQLite write lock after a long
+    // offline stretch. A failed chunk is logged, skipped, and leaves the
+    // watermark un-advanced so it is re-fetched next cycle.
+    const chunkSize = 500;
+    var chunkFailed = false;
+    for (var start = 0; start < remoteRows.length; start += chunkSize) {
+      final end = start + chunkSize < remoteRows.length
+          ? start + chunkSize
+          : remoteRows.length;
+      try {
+        await db.transaction((txn) async {
+          for (var i = start; i < end; i++) {
+            final r = remoteRows[i];
+            final id = r['id'] as String?;
+            if (id == null || id.isEmpty) continue;
+            if (deletedIds.contains(id)) {
+              debugPrint('🗑️ _pullVisitEntriesFromBackend: deleting soft-deleted entry $id for $label');
+              await txn.delete(
+                LocalDatabase.tableVisitEntries,
+                where: 'id = ?',
+                whereArgs: [id],
+              );
+              continue;
+            }
+            await _upsertVisitEntry(txn, r, attId, label);
+          }
+        });
+      } catch (e) {
+        chunkFailed = true;
+        debugPrint(
+          '⚠️ _pullVisitEntriesFromBackend: delta chunk ${start ~/ chunkSize + 1} '
+          'failed and was skipped — continuing with the rest of the pull for $label ($e)',
+        );
+      }
+    }
+
+    debugPrint(
+      '✅ _pullVisitEntriesFromBackend: delta — applied ${remoteRows.length} change(s) for $label',
+    );
+
+    // Watermark only advances on a fully-successful delta pull.
+    if (chunkFailed) return;
+    await _setAttractionLastSyncTimestamp(attId, attSyncedAt);
   }
 
   // ---------------------------------------------------------------------------
@@ -2095,38 +2396,52 @@ class SyncService {
   }
 
   // Attraction-side counterparts — deliberately separate prefs keys so
-  // business and attraction delta bookkeeping never interfere.
+  // business and attraction delta bookkeeping never interfere. Each key is
+  // NAMESPACED per attraction so multi-attraction accounts keep independent
+  // watermarks: pulling attraction A must never advance the watermark that
+  // attraction B's next delta is computed against. New namespaced keys start
+  // null, so the first sync after this change self-seeds via a full pull.
 
-  /// Persists the attraction [lastSync] ISO timestamp after a successful pull.
-  Future<void> _setAttractionLastSyncTimestamp(String isoTimestamp) async {
+  /// Persists the attraction [lastSync] watermark for one attraction.
+  Future<void> _setAttractionLastSyncTimestamp(String attractionId, String isoTimestamp) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_prefKeyAttractionLastSync, isoTimestamp);
+      await prefs.setString('${_prefKeyAttractionLastSync}_$attractionId', isoTimestamp);
     } catch (_) {}
   }
 
-  /// Returns the stored attraction [lastFullSync] ISO timestamp, or `null`.
-  Future<String?> _getAttractionLastFullSyncTimestamp() async {
+  /// Returns the stored attraction [lastSync] watermark for one attraction.
+  Future<String?> _getAttractionLastSyncTimestamp(String attractionId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(_prefKeyAttractionLastFullSync);
+      return prefs.getString('${_prefKeyAttractionLastSync}_$attractionId');
     } catch (_) {
       return null;
     }
   }
 
-  /// Persists the attraction [lastFullSync] ISO timestamp after a full pull.
-  Future<void> _setAttractionLastFullSyncTimestamp(String isoTimestamp) async {
+  /// Returns the stored attraction [lastFullSync] watermark for one attraction.
+  Future<String?> _getAttractionLastFullSyncTimestamp(String attractionId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_prefKeyAttractionLastFullSync, isoTimestamp);
+      return prefs.getString('${_prefKeyAttractionLastFullSync}_$attractionId');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Persists the attraction [lastFullSync] watermark for one attraction.
+  Future<void> _setAttractionLastFullSyncTimestamp(String attractionId, String isoTimestamp) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('${_prefKeyAttractionLastFullSync}_$attractionId', isoTimestamp);
     } catch (_) {}
   }
 
   /// Determines whether an attraction full pull is needed
-  /// (first ever sync or last full sync >24h ago).
-  Future<bool> _needsAttractionFullSync() async {
-    final lastFullSync = await _getAttractionLastFullSyncTimestamp();
+  /// (first ever sync or last full sync >24h ago). Per-attraction.
+  Future<bool> _needsAttractionFullSync(String attractionId) async {
+    final lastFullSync = await _getAttractionLastFullSyncTimestamp(attractionId);
     if (lastFullSync == null) return true;
     final parsed = DateTime.tryParse(lastFullSync);
     if (parsed == null) return true;

@@ -8,6 +8,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import '../widgets/business_document_preview_modal.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/password_validator.dart';
 import '../../../core/services/session_service.dart';
 import '../../../core/services/connectivity_service.dart';
 import '../../../core/services/document_service.dart';
@@ -1475,6 +1476,18 @@ class _PasswordChangeDialogState extends State<_PasswordChangeDialog> {
   final _confPassCtrl = TextEditingController();
   bool _obscureNew  = true;
   bool _obscureConf = true;
+  bool _triedSubmit = false;
+
+  String? get _newPassError => _triedSubmit
+      ? PasswordValidator.validate(_newPassCtrl.text)
+      : null;
+
+  String? get _confPassError => _triedSubmit
+      ? PasswordValidator.validateConfirm(
+          _confPassCtrl.text,
+          _newPassCtrl.text,
+        )
+      : null;
 
   @override
   void dispose() {
@@ -1525,6 +1538,8 @@ class _PasswordChangeDialogState extends State<_PasswordChangeDialog> {
 
   Future<void> _submitPassword() async {
     if (_verifiedOtp == null) return;
+    setState(() { _triedSubmit = true; });
+    if (_newPassError != null || _confPassError != null) return;
     setState(() { _loading = true; _error = null; });
     try {
       await widget.api.updatePassword(
@@ -1578,6 +1593,10 @@ class _PasswordChangeDialogState extends State<_PasswordChangeDialog> {
           confPassCtrl: _confPassCtrl,
           obscureNew:   _obscureNew,
           obscureConf:  _obscureConf,
+          newPassError: _newPassError,
+          confPassError: _confPassError,
+          onChangedNew:  () => setState(() {}),
+          onChangedConf: () => setState(() {}),
           onToggleNew:  () => setState(() => _obscureNew  = !_obscureNew),
           onToggleConf: () => setState(() => _obscureConf = !_obscureConf),
           loading:  _loading,
@@ -2021,6 +2040,10 @@ class _StepNewPassword extends StatelessWidget {
     required this.confPassCtrl,
     required this.obscureNew,
     required this.obscureConf,
+    required this.newPassError,
+    required this.confPassError,
+    required this.onChangedNew,
+    required this.onChangedConf,
     required this.onToggleNew,
     required this.onToggleConf,
     required this.loading,
@@ -2030,6 +2053,8 @@ class _StepNewPassword extends StatelessWidget {
 
   final TextEditingController newPassCtrl, confPassCtrl;
   final bool obscureNew, obscureConf, loading;
+  final String? newPassError, confPassError;
+  final VoidCallback onChangedNew, onChangedConf;
   final VoidCallback onToggleNew, onToggleConf, onSubmit;
   final String? error;
 
@@ -2040,18 +2065,27 @@ class _StepNewPassword extends StatelessWidget {
       children: [
         _LabeledField(
           label: 'New Password',
+          error: newPassError,
           child: _PasswordField(
               controller: newPassCtrl,
               obscure: obscureNew,
+              onChanged: (_) => onChangedNew(),
               onToggle: onToggleNew),
         ),
         const SizedBox(height: 14),
         _LabeledField(
           label: 'Confirm New Password',
+          error: confPassError,
           child: _PasswordField(
               controller: confPassCtrl,
               obscure: obscureConf,
+              onChanged: (_) => onChangedConf(),
               onToggle: onToggleConf),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Min. 8 characters · 1 uppercase · 1 number · 1 special character',
+          style: TextStyle(color: AppColors.textSubtle, fontSize: 10.5),
         ),
         if (error != null) ...[
           const SizedBox(height: 12),
@@ -2355,17 +2389,20 @@ class _PasswordField extends StatelessWidget {
     required this.controller,
     required this.obscure,
     required this.onToggle,
+    this.onChanged,
   });
 
   final TextEditingController controller;
   final bool obscure;
   final VoidCallback onToggle;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       obscureText: obscure,
+      onChanged: onChanged,
       style: const TextStyle(color: AppColors.textWhite, fontSize: 13.5),
       decoration: _inputDeco().copyWith(
         suffixIcon: IconButton(

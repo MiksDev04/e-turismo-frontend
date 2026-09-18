@@ -38,6 +38,7 @@ class SexDistribution {
   int get total => male + female + other;
   double get maleRatio => total == 0 ? 0 : male / total;
   double get femaleRatio => total == 0 ? 0 : female / total;
+  double get otherRatio => total == 0 ? 0 : other / total;
 }
 
 class CountryCount {
@@ -724,10 +725,10 @@ class BusinessDashboardApi extends BaseApi {
     final provinceMap = <String, int>{};
     for (final b in breakdowns) {
       final province = _stringValue(b, 'province')?.trim() ?? '';
-      if (province.isEmpty) continue;
+      final provinceKey = province.isEmpty ? 'Unspecified' : province;
       final recordId = _stringValue(b, 'guest_record_id') ?? '';
       final guestDays = recordGuestDays[recordId] ?? 1;
-      provinceMap[province] = (provinceMap[province] ?? 0) + guestDays;
+      provinceMap[provinceKey] = (provinceMap[provinceKey] ?? 0) + guestDays;
     }
     final provinces =
         (provinceMap.entries
@@ -743,11 +744,12 @@ class BusinessDashboardApi extends BaseApi {
     for (final b in breakdowns) {
       final cityMunicipality =
           _stringValue(b, 'city_municipality')?.trim() ?? '';
-      if (cityMunicipality.isEmpty) continue;
+      final cityKey =
+          cityMunicipality.isEmpty ? 'Unspecified' : cityMunicipality;
       final recordId = _stringValue(b, 'guest_record_id') ?? '';
       final guestDays = recordGuestDays[recordId] ?? 1;
-      cityMunicipalityMap[cityMunicipality] =
-          (cityMunicipalityMap[cityMunicipality] ?? 0) + guestDays;
+      cityMunicipalityMap[cityKey] =
+          (cityMunicipalityMap[cityKey] ?? 0) + guestDays;
     }
     final cityMunicipalities =
         (cityMunicipalityMap.entries
@@ -1050,12 +1052,12 @@ class BusinessDashboardApi extends BaseApi {
 
   /// Bucket label for a guest breakdown row: 'Overseas Filipino' for overseas
   /// Filipino leads (regardless of any selected country), the country name
-  /// when present, and 'Unknown' only for genuine data gaps.
+  /// when present, and 'Unspecified' only for genuine data gaps.
   String _countryLabel(Map<String, dynamic> b) {
     final isOverseas = b['is_overseas'] == true || b['is_overseas'] == 1;
     if (isOverseas) return 'Overseas Filipino';
     final country = _stringValue(b, 'country')?.trim() ?? '';
-    return country.isEmpty ? 'Unknown' : country;
+    return country.isEmpty ? 'Unspecified' : country;
   }
 
   String? _stringValue(Map<String, dynamic> data, String key) {

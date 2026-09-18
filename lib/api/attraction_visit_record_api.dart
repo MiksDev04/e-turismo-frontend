@@ -27,6 +27,7 @@ class VisitRecord {
     required this.guestCount,
     this.maleCount,
     this.femaleCount,
+    this.isForeign = false,
     this.country,
     this.province,
     this.cityMunicipality,
@@ -41,6 +42,7 @@ class VisitRecord {
   final int guestCount;
   final int? maleCount;
   final int? femaleCount;
+  final bool isForeign;
   final String? country;
   final String? province;
   final String? cityMunicipality;
@@ -74,6 +76,7 @@ class VisitRecord {
       guestCount: (json['guest_count'] as num?)?.toInt() ?? 0,
       maleCount: (json['male_count'] as num?)?.toInt(),
       femaleCount: (json['female_count'] as num?)?.toInt(),
+      isForeign: _isForeignFromJson(json),
       country: json['country'] as String?,
       province: json['province'] as String?,
       cityMunicipality: json['city_municipality'] as String? ??
@@ -83,8 +86,6 @@ class VisitRecord {
       updatedAt: parseDate(json['updated_at'] ?? json['updatedAt']),
     );
   }
-
-  bool get isForeign => country != null && country != 'Philippines';
 }
 
 // Newest-first by creation time; rows missing createdAt fall back to their
@@ -95,6 +96,17 @@ int _compareVisitRecordsByCreatedDesc(VisitRecord a, VisitRecord b) {
   final byCreated = bCreated.compareTo(aCreated);
   if (byCreated != 0) return byCreated;
   return b.id.compareTo(a.id);
+}
+
+/// Normalizes the `is_foreign` flag into a bool. The backend returns it as a
+/// MySQL tinyint (1/0); older payloads used the camelCase JSON key. Falling
+/// back to a non-Philippines country keeps rows synced before the column was
+/// added classified the same way.
+bool _isForeignFromJson(Map<String, dynamic> json) {
+  final v = json['is_foreign'] ?? json['isForeign'];
+  if (v is num) return v.toInt() == 1;
+  if (v is bool) return v;
+  return json['country'] is String && json['country'] != 'Philippines';
 }
 
 // ─── Visit Record API ─────────────────────────────────────────────────────────
@@ -112,7 +124,7 @@ class AttractionVisitRecordApi extends BaseApi {
   /// Fetch paginated visit records for the current attraction.
   ///
   /// Parameters mirror the backend query-string contract:
-  ///   page, pageSize, dateFrom, dateTo, origin
+  ///   page, pageSize, dateFrom, dateTo, origin, attractionId
   ///
   /// Online: fetches from the API, back-fills the SQLite cache and merges
   /// locally-pending rows into the returned page. Any failure falls through
@@ -127,6 +139,7 @@ class AttractionVisitRecordApi extends BaseApi {
     String? dateFrom,
     String? dateTo,
     String? origin,
+    String? attractionId,
   }) async {
     if (ConnectivityService.instance.isOnline && hasToken) {
       try {
@@ -136,6 +149,7 @@ class AttractionVisitRecordApi extends BaseApi {
           dateFrom: dateFrom,
           dateTo: dateTo,
           origin: origin,
+          attractionId: attractionId,
         );
       } on ApiException catch (e) {
         debugPrint('fetchVisitRecords: API error ${e.statusCode} - ${e.message}');
@@ -183,6 +197,7 @@ class AttractionVisitRecordApi extends BaseApi {
     String? dateFrom,
     String? dateTo,
     String? origin,
+    String? attractionId,
   }) async {
     final queryParams = <String, String>{
       'page': page.toString(),
@@ -191,6 +206,9 @@ class AttractionVisitRecordApi extends BaseApi {
     if (dateFrom != null) queryParams['dateFrom'] = dateFrom;
     if (dateTo != null) queryParams['dateTo'] = dateTo;
     if (origin != null && origin != 'all') queryParams['origin'] = origin;
+    if (attractionId != null && attractionId.isNotEmpty) {
+      queryParams['attractionId'] = attractionId;
+    }
 
     final uri = Uri.parse('/api/attraction/visit-records').replace(
       queryParameters: queryParams,
@@ -274,6 +292,7 @@ class AttractionVisitRecordApi extends BaseApi {
               (r['female_count'] as num?)?.toInt() ??
               (r['femaleCount'] as num?)?.toInt() ??
               0,
+          'is_foreign':       _isForeignFromJson(r) ? 1 : 0,
           'country':           r['country'],
           'province':          r['province'],
           'city_municipality': r['city_municipality'] ?? r['cityMunicipality'],
@@ -410,9 +429,13 @@ class AttractionVisitRecordApi extends BaseApi {
     String? origin,
   ) {
     if (origin == 'local') {
-      conditions.add("(country IS NULL OR country = 'Philippines')");
+      conditions.add(
+        "(country IS NULL OR country = 'Philippines') AND is_foreign = 0",
+      );
     } else if (origin == 'foreign') {
-      conditions.add("(country IS NOT NULL AND country != 'Philippines')");
+      conditions.add(
+        "(country IS NOT NULL AND country != 'Philippines') OR is_foreign = 1",
+      );
     }
   }
 
@@ -431,6 +454,9 @@ class AttractionVisitRecordApi extends BaseApi {
       return null;
     }
 
+    final isForeign = (row['is_foreign'] as num?)?.toInt() == 1 ||
+        (row['country'] is String && row['country'] != 'Philippines');
+
     return VisitRecord(
       id: row['id'] as String? ?? '',
       attractionId: row['attraction_id'] as String? ?? '',
@@ -438,6 +464,7 @@ class AttractionVisitRecordApi extends BaseApi {
       guestCount: (row['guest_count'] as num?)?.toInt() ?? 0,
       maleCount: (row['male_count'] as num?)?.toInt(),
       femaleCount: (row['female_count'] as num?)?.toInt(),
+      isForeign: isForeign,
       country: row['country'] as String?,
       province: row['province'] as String?,
       cityMunicipality: row['city_municipality'] as String?,

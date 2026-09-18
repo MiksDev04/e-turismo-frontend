@@ -321,7 +321,6 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
                         _SectionLabel(
                           icon: Icons.table_chart_rounded,
                           label: 'Report Batches',
-                          subtitle: 'Live data \u2014 no files stored',
                         ),
                         const SizedBox(height: 12),
                         if (_loadingReports)
@@ -380,7 +379,7 @@ class _SectionLabel extends StatelessWidget {
   const _SectionLabel({
     required this.icon,
     required this.label,
-    required this.subtitle,
+    this.subtitle = '',
   });
 
   final IconData icon;
@@ -414,10 +413,11 @@ class _SectionLabel extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              Text(
-                subtitle,
-                style: const TextStyle(color: AppColors.textGray, fontSize: 12),
-              ),
+              if (subtitle.isNotEmpty)
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: AppColors.textGray, fontSize: 12),
+                ),
             ],
           ),
         ),
@@ -943,7 +943,7 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
   String get _dialogSubtitle {
     if (_isVar2) return 'Combined attractions and accommodations \u2014 one row each';
     if (_isVar1) return 'Daily visitor breakdown for tourist attractions';
-    return 'View live data \u2014 no file generated until you download';
+    return 'Daily, monthly totals, and monthly series';
   }
 
   String get _effectiveVariant {

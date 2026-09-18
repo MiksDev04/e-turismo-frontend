@@ -86,6 +86,7 @@ class GenderDistribution {
   int get total => male + female + other;
   double get maleRatio => total == 0 ? 0 : male / total;
   double get femaleRatio => total == 0 ? 0 : female / total;
+  double get otherRatio => total == 0 ? 0 : other / total;
 }
 
 typedef SexDistribution = GenderDistribution;
@@ -465,16 +466,13 @@ class AdminDashboardApi extends BaseApi {
 
     // Attraction visit logs: each log is a single-day visit, so guest_count,
     // male_count and female_count contribute directly (no day weighting).
+    // Gender is optional: a headcount-only log with no recorded male/female
+    // counts contributes to "other" (the report estimates the split instead).
     for (final log in attractionVisitLogs) {
       final guestCount = (log['guest_count'] as num?)?.toInt() ?? 0;
       if (guestCount <= 0) continue;
-      var maleCount = (log['male_count'] as num?)?.toInt() ?? 0;
-      var femaleCount = (log['female_count'] as num?)?.toInt() ?? 0;
-      if (maleCount + femaleCount == 0) {
-        // PSA 47.1% / 52.9% split fallback for legacy/anomalous rows.
-        maleCount = (guestCount * 0.471).round();
-        femaleCount = guestCount - maleCount;
-      }
+      final maleCount = (log['male_count'] as num?)?.toInt() ?? 0;
+      final femaleCount = (log['female_count'] as num?)?.toInt() ?? 0;
       male += maleCount;
       female += femaleCount;
       final unaccounted = guestCount - maleCount - femaleCount;
@@ -492,8 +490,7 @@ class AdminDashboardApi extends BaseApi {
         label = 'Overseas Filipino';
       } else {
         final country = (breakdown['country'] as String? ?? '').trim();
-        if (country.isEmpty) continue;
-        label = _toTitleCase(country);
+        label = country.isEmpty ? 'Unspecified' : _toTitleCase(country);
       }
       final recordId = breakdown['guest_record_id']?.toString() ?? '';
       final guestDays = recordGuestDays[recordId] ?? 1;
@@ -503,8 +500,7 @@ class AdminDashboardApi extends BaseApi {
       final guestCount = (log['guest_count'] as num?)?.toInt() ?? 0;
       if (guestCount <= 0) continue;
       final country = (log['country'] as String? ?? '').trim();
-      if (country.isEmpty) continue;
-      final label = _toTitleCase(country);
+      final label = country.isEmpty ? 'Unspecified' : _toTitleCase(country);
       nationalityMap[label] = (nationalityMap[label] ?? 0) + guestCount;
     }
     final topNationalities =
@@ -523,8 +519,10 @@ class AdminDashboardApi extends BaseApi {
     final provinceMap = <String, int>{};
     for (final breakdown in breakdowns) {
       final province = (breakdown['province'] as String? ?? '').trim();
-      if (province.isEmpty) continue;
-      final label = _toTitleCase(province);
+      final provinceKey = province.isEmpty ? 'Unspecified' : province;
+      final label = provinceKey == 'Unspecified'
+          ? 'Unspecified'
+          : _toTitleCase(provinceKey);
       final recordId = breakdown['guest_record_id']?.toString() ?? '';
       final guestDays = recordGuestDays[recordId] ?? 1;
       provinceMap[label] = (provinceMap[label] ?? 0) + guestDays;
@@ -533,8 +531,8 @@ class AdminDashboardApi extends BaseApi {
       final guestCount = (log['guest_count'] as num?)?.toInt() ?? 0;
       if (guestCount <= 0) continue;
       final province = (log['province'] as String? ?? '').trim();
-      if (province.isEmpty) continue;
-      final label = _toTitleCase(province);
+      final label =
+          province.isEmpty ? 'Unspecified' : _toTitleCase(province);
       provinceMap[label] = (provinceMap[label] ?? 0) + guestCount;
     }
     final provinces =
@@ -548,8 +546,7 @@ class AdminDashboardApi extends BaseApi {
     final cityMap = <String, int>{};
     for (final breakdown in breakdowns) {
       final city = (breakdown['city_municipality'] as String? ?? '').trim();
-      if (city.isEmpty) continue;
-      final label = _toTitleCase(city);
+      final label = city.isEmpty ? 'Unspecified' : _toTitleCase(city);
       final recordId = breakdown['guest_record_id']?.toString() ?? '';
       final guestDays = recordGuestDays[recordId] ?? 1;
       cityMap[label] = (cityMap[label] ?? 0) + guestDays;
@@ -558,8 +555,7 @@ class AdminDashboardApi extends BaseApi {
       final guestCount = (log['guest_count'] as num?)?.toInt() ?? 0;
       if (guestCount <= 0) continue;
       final city = (log['city_municipality'] as String? ?? '').trim();
-      if (city.isEmpty) continue;
-      final label = _toTitleCase(city);
+      final label = city.isEmpty ? 'Unspecified' : _toTitleCase(city);
       cityMap[label] = (cityMap[label] ?? 0) + guestCount;
     }
     final cityMunicipalities =

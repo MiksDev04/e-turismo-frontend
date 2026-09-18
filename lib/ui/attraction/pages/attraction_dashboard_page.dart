@@ -317,6 +317,9 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
       buf.writeln(
         'Female,${g.female},${(g.femaleRatio * 100).toStringAsFixed(1)}%',
       );
+      buf.writeln(
+        'Unspecified,${g.other},${(g.otherRatio * 100).toStringAsFixed(1)}%',
+      );
       buf.writeln();
 
       buf.writeln('TOP COUNTRIES');
@@ -483,6 +486,11 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
                   'Female',
                   '${d.genderDistribution.female}',
                   '${(d.genderDistribution.femaleRatio * 100).toStringAsFixed(1)}%',
+                ],
+                [
+                  'Unspecified',
+                  '${d.genderDistribution.other}',
+                  '${(d.genderDistribution.otherRatio * 100).toStringAsFixed(1)}%',
                 ],
               ],
               cellStyle: const pw.TextStyle(fontSize: 10),
@@ -767,6 +775,7 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
                                 name: _attractionName,
                                 types: _attractionTypes,
                                 address: _address,
+                                onReload: () => _reloadAll(),
                               ),
                               const SizedBox(height: 16),
                               _FilterRow(
@@ -785,13 +794,14 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
                               ),
                             ] else ...[
                               Row(
-                                crossAxisAlignment: CrossAxisAlignment.end,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Expanded(
                                     child: _AttractionHeader(
                                       name: _attractionName,
                                       types: _attractionTypes,
                                       address: _address,
+                                      onReload: () => _reloadAll(),
                                     ),
                                   ),
                                   const SizedBox(width: 16),
@@ -1000,64 +1010,93 @@ class _AttractionHeader extends StatelessWidget {
     required this.name,
     required this.types,
     required this.address,
+    this.onReload,
   });
 
   final String name;
   final List<String> types;
   final String address;
+  final VoidCallback? onReload;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          name.isEmpty ? 'Tourist Attraction' : name,
-          style: const TextStyle(
-            color: AppColors.textWhite,
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name.isEmpty ? 'Tourist Attraction' : name,
+                style: const TextStyle(
+                  color: AppColors.textWhite,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: types.isNotEmpty
+                        ? Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: types.map((type) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primaryCyan.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: AppColors.primaryCyan.withOpacity(0.25),
+                                  ),
+                                ),
+                                child: Text(
+                                  _displayTypeLabel(type),
+                                  style: const TextStyle(
+                                    color: AppColors.primaryCyan,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          )
+                        : const Text(
+                            'Attraction type unavailable',
+                            style: TextStyle(
+                              color: AppColors.textGray,
+                              fontSize: 13,
+                            ),
+                          ),
+                  ),
+                  if (address.trim().isNotEmpty) ...[
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Text(
+                        address.trim().replaceAll(', ,', ','),
+                        style: const TextStyle(
+                          color: AppColors.textGray,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 8),
-        if (types.isNotEmpty)
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: types.map((type) {
-              return Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryCyan.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: AppColors.primaryCyan.withOpacity(0.25),
-                  ),
-                ),
-                child: Text(
-                  _displayTypeLabel(type),
-                  style: const TextStyle(
-                    color: AppColors.primaryCyan,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              );
-            }).toList(),
-          )
-        else
-          const Text(
-            'Attraction type unavailable',
-            style: TextStyle(color: AppColors.textGray, fontSize: 13),
-          ),
-        const SizedBox(height: 6),
-        Text(
-          address.trim().replaceAll(', ,', ','),
-          style: const TextStyle(color: AppColors.textGray, fontSize: 13),
-        ),
+        if (onReload != null) ...[
+          const SizedBox(width: 12),
+          _ReloadButton(onReload: onReload!),
+        ],
       ],
     );
   }
@@ -1106,31 +1145,54 @@ class _FilterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isNarrow = MediaQuery.of(context).size.width < 600;
-    return Wrap(
-      spacing: isNarrow ? 6 : 10,
-      runSpacing: isNarrow ? 6 : 10,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        SizedBox(
-          width: isNarrow ? 140 : 170,
-          child: _FilterDropdown<int>(
-            value: selectedMonth,
-            items: _months.map((m) => (m.$1, m.$2)).toList(),
-            onChanged: onMonthChanged,
-            icon: Icons.calendar_month_rounded,
-          ),
+    final dropdowns = [
+      SizedBox(
+        width: isNarrow ? 140 : 170,
+        child: _FilterDropdown<int>(
+          value: selectedMonth,
+          items: _months.map((m) => (m.$1, m.$2)).toList(),
+          onChanged: onMonthChanged,
+          icon: Icons.calendar_month_rounded,
         ),
-        SizedBox(
-          width: isNarrow ? 90 : 110,
-          child: _FilterDropdown<int>(
-            value: selectedYear,
-            items: _years.map((y) => (y, '$y')).toList(),
-            onChanged: onYearChanged,
-            icon: Icons.event_rounded,
-          ),
+      ),
+      SizedBox(
+        width: isNarrow ? 90 : 110,
+        child: _FilterDropdown<int>(
+          value: selectedYear,
+          items: _years.map((y) => (y, '$y')).toList(),
+          onChanged: onYearChanged,
+          icon: Icons.event_rounded,
         ),
-        _ExportButton(onTap: onExport, isLoading: isExporting),
-      ],
+      ),
+    ];
+    final export = _ExportButton(onTap: onExport, isLoading: isExporting);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedWidth) {
+          return Wrap(
+            spacing: isNarrow ? 6 : 10,
+            runSpacing: isNarrow ? 6 : 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [...dropdowns, export],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Wrap(
+                spacing: isNarrow ? 6 : 10,
+                runSpacing: isNarrow ? 6 : 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: dropdowns,
+              ),
+            ),
+            const SizedBox(width: 10),
+            export,
+          ],
+        );
+      },
     );
   }
 }
@@ -1240,6 +1302,36 @@ class _ExportButton extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReloadButton extends StatelessWidget {
+  const _ReloadButton({required this.onReload});
+
+  final VoidCallback? onReload;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Reload',
+      child: GestureDetector(
+        onTap: onReload,
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: AppColors.cardBackground,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.cardBorder),
+          ),
+          child: const Icon(
+            Icons.refresh_rounded,
+            size: 16,
+            color: AppColors.textWhite,
+          ),
         ),
       ),
     );
@@ -1639,7 +1731,7 @@ class _GenderCard extends StatelessWidget {
             _Segment(
               value: d.otherRatio,
               color: AppColors.chartGray,
-              label: 'Other',
+              label: 'Unspecified',
               count: d.other,
             ),
           ];
@@ -1647,7 +1739,7 @@ class _GenderCard extends StatelessWidget {
     const legend = [
       _LegendItem(label: 'Male', color: AppColors.chartCyan),
       _LegendItem(label: 'Female', color: AppColors.chartPurple),
-      _LegendItem(label: 'Other', color: AppColors.chartGray),
+      _LegendItem(label: 'Unspecified', color: AppColors.chartGray),
     ];
 
     return _DashCard(

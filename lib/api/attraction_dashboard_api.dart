@@ -394,19 +394,16 @@ class AttractionDashboardApi extends BaseApi {
       }
 
       final country = _stringValue(r, 'country')?.trim() ?? '';
-      if (country.isNotEmpty) {
-        countryMap[country] = (countryMap[country] ?? 0) + count;
-      }
+      final countryLabel = country.isEmpty ? 'Unspecified' : country;
+      countryMap[countryLabel] = (countryMap[countryLabel] ?? 0) + count;
 
       final province = _stringValue(r, 'province')?.trim() ?? '';
-      if (province.isNotEmpty) {
-        provinceMap[province] = (provinceMap[province] ?? 0) + count;
-      }
+      final provinceLabel = province.isEmpty ? 'Unspecified' : province;
+      provinceMap[provinceLabel] = (provinceMap[provinceLabel] ?? 0) + count;
 
       final city = _stringValue(r, 'city_municipality')?.trim() ?? '';
-      if (city.isNotEmpty) {
-        cityMap[city] = (cityMap[city] ?? 0) + count;
-      }
+      final cityLabel = city.isEmpty ? 'Unspecified' : city;
+      cityMap[cityLabel] = (cityMap[cityLabel] ?? 0) + count;
     }
 
     return AttractionDashboardData(

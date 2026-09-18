@@ -19,7 +19,7 @@ String _fmtDate(DateTime dt) {
 String _locationDisplay(VisitRecord r) {
   if (r.isForeign) {
     if (r.country != null && r.country!.isNotEmpty) return r.country!;
-    return 'Unknown';
+    return 'Not specified';
   }
   final parts = <String>[];
   if (r.province != null && r.province!.isNotEmpty) parts.add(r.province!);
@@ -41,6 +41,7 @@ class AttractionVisitRecordsPage extends StatefulWidget {
 class _AttractionVisitRecordsPageState extends State<AttractionVisitRecordsPage> {
   final _api = AttractionVisitRecordApi();
 
+  String? _attractionId;
   List<VisitRecord> _records = [];
   bool _isLoading = true;
   String? _loadError;
@@ -107,12 +108,15 @@ class _AttractionVisitRecordsPageState extends State<AttractionVisitRecordsPage>
       });
     }
 
+    _attractionId ??= await _api.resolveAttractionId();
+
     try {
       final result = await _api.fetchVisitRecords(
         page: _currentPage + 1,
         pageSize: _pageSize,
         dateFrom: _dateFrom?.toIso8601String().split('T').first,
         dateTo: _dateTo?.toIso8601String().split('T').first,
+        attractionId: _attractionId,
       );
 
       if (!mounted) return;
@@ -1150,6 +1154,7 @@ class _GuestDemoGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = [
+      (Icons.flag_outlined,             'Foreign',        record.isForeign ? 'Yes' : 'No'),
       (Icons.public_outlined,           'Country',         record.isForeign
           ? (record.country ?? '-')
           : 'Philippines'),
