@@ -1205,9 +1205,8 @@ class _DialogHeader extends StatelessWidget {
                 subtitle,
                 style: const TextStyle(
                   color: AppColors.textGray,
-                  fontSize: 11.5,
+                  fontSize: 11,
                 ),
-                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
