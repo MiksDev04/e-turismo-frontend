@@ -33,16 +33,17 @@ class ConnectivityService {
   StreamSubscription? _subscription;
 
   /// Starts monitoring connectivity changes.
- Future<void> startWatching() async { // was: void startWatching()
-  _subscription?.cancel();
-  _subscription = _connectivity.onConnectivityChanged.listen((results) {
-    _check();
-  });
+  Future<void> startWatching() async {
+    // was: void startWatching()
+    _subscription?.cancel();
+    _subscription = _connectivity.onConnectivityChanged.listen((results) {
+      _check();
+    });
 
-  _timer?.cancel();
-  _timer = Timer.periodic(const Duration(seconds: 5), (_) => _check());
-  await _check(); // was: _check() — now awaited so initial state is accurate
-}
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 5), (_) => _check());
+    await _check(); // was: _check() — now awaited so initial state is accurate
+  }
 
   void dispose() {
     _timer?.cancel();
@@ -68,10 +69,12 @@ class ConnectivityService {
       online = results.any((r) => r != ConnectivityResult.none);
     } else {
       try {
-        final result = await InternetAddress.lookup('google.com')
-            .timeout(const Duration(seconds: 2));
+        final result = await InternetAddress.lookup(
+          'google.com',
+        ).timeout(const Duration(seconds: 5)); // was 2
         online = result.isNotEmpty && result.first.rawAddress.isNotEmpty;
-      } catch (_) {
+      } catch (e) {
+        debugPrint('🌐 Connectivity check failed: $e'); // ADD THIS
         online = false;
       }
     }

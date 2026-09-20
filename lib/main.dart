@@ -74,7 +74,8 @@ void main() async {
   await PsgcRepository.instance.load();
 
   // ── Step 6: Window constraints (desktop only) ──────────────────────────────
-  if (!kIsWeb) {
+  // ── Step 6: Window constraints (desktop only) ──────────────────────────────
+  if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
     await windowManager.ensureInitialized();
     await windowManager.setMinimumSize(const Size(375, 500));
     await windowManager.setMaximumSize(const Size(1440, 900));
