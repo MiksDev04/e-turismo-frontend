@@ -113,7 +113,7 @@ class LoginApi extends BaseApi {
 
     // ── OFFLINE ATTEMPT ──────────────────────────────────────────────────────
     // Web doesn't support local SQLite — skip offline login entirely
-    if (!kIsWeb && !await ConnectivityService.instance.isOnlineAsync) {
+    if (!kIsWeb && !ConnectivityService.instance.isOnline) {
       try {
         final db = await LocalDatabase.instance.database;
 

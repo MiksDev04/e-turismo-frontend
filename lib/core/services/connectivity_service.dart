@@ -2,13 +2,14 @@ import 'dart:async';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ConnectivityService (Unified)
 //
-//  Wraps connectivity_plus and performs an active ping check to verify
-//  actual internet connectivity.
+//  Wraps connectivity_plus and performs an active reachability check against
+//  the app's own backend to verify actual internet + server connectivity.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ConnectivityService {
@@ -32,9 +33,17 @@ class ConnectivityService {
   Timer? _timer;
   StreamSubscription? _subscription;
 
+  /// The host to check reachability against — your own backend, not a
+  /// third-party domain, so the check reflects what the app actually needs.
+  String get _checkHost {
+    final url = defaultTargetPlatform == TargetPlatform.android
+        ? (dotenv.env['ANDROID_BACKEND_URL'] ?? 'https://e-turismo-backend-main.onrender.com')
+        : (dotenv.env['BACKEND_URL'] ?? 'https://e-turismo-backend-main.onrender.com');
+    return Uri.parse(url).host;
+  }
+
   /// Starts monitoring connectivity changes.
   Future<void> startWatching() async {
-    // was: void startWatching()
     _subscription?.cancel();
     _subscription = _connectivity.onConnectivityChanged.listen((results) {
       _check();
@@ -42,7 +51,7 @@ class ConnectivityService {
 
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 5), (_) => _check());
-    await _check(); // was: _check() — now awaited so initial state is accurate
+    await _check();
   }
 
   void dispose() {
@@ -69,12 +78,11 @@ class ConnectivityService {
       online = results.any((r) => r != ConnectivityResult.none);
     } else {
       try {
-        final result = await InternetAddress.lookup(
-          'google.com',
-        ).timeout(const Duration(seconds: 5)); // was 2
+        final result = await InternetAddress.lookup(_checkHost)
+            .timeout(const Duration(seconds: 5));
         online = result.isNotEmpty && result.first.rawAddress.isNotEmpty;
       } catch (e) {
-        debugPrint('🌐 Connectivity check failed: $e'); // ADD THIS
+        debugPrint('🌐 Connectivity check failed: $e');
         online = false;
       }
     }

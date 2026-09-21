@@ -7,6 +7,7 @@ import '../core/services/session_service.dart';
 
 class BaseApi {
   static const _timeout = Duration(seconds: 30);
+  static final http.Client _client = http.Client();
 
   String get baseUrl {
     if (kIsWeb) {
@@ -51,7 +52,7 @@ class BaseApi {
     final session = SessionService.instance.current;
     if (session != null && session.username != null && session.password != null) {
       try {
-        final response = await http.post(
+        final response = await _client.post(
           Uri.parse('$baseUrl/api/auth/login'),
           headers: {'Content-Type': 'application/json', 'x-api-key': apiKey ?? ''},
           body: jsonEncode({
@@ -74,24 +75,24 @@ class BaseApi {
 
   Future<http.Response> get(String endpoint, {Duration? timeout}) async {
     final t = timeout ?? _timeout;
-    var response = await http.get(Uri.parse('$baseUrl$endpoint'), headers: headers).timeout(t);
+    var response = await _client.get(Uri.parse('$baseUrl$endpoint'), headers: headers).timeout(t);
     if (response.statusCode == 401 && endpoint != '/api/auth/login') {
       if (await _attemptReauth()) {
-        response = await http.get(Uri.parse('$baseUrl$endpoint'), headers: headers).timeout(t);
+        response = await _client.get(Uri.parse('$baseUrl$endpoint'), headers: headers).timeout(t);
       }
     }
     return response;
   }
 
   Future<http.Response> post(String endpoint, Map<String, dynamic> body) async {
-    var response = await http.post(
+    var response = await _client.post(
       Uri.parse('$baseUrl$endpoint'),
       headers: headers,
       body: jsonEncode(body),
     ).timeout(_timeout);
     if (response.statusCode == 401 && endpoint != '/api/auth/login') {
       if (await _attemptReauth()) {
-        response = await http.post(
+        response = await _client.post(
           Uri.parse('$baseUrl$endpoint'),
           headers: headers,
           body: jsonEncode(body),
@@ -102,14 +103,14 @@ class BaseApi {
   }
 
   Future<http.Response> put(String endpoint, Map<String, dynamic> body) async {
-    var response = await http.put(
+    var response = await _client.put(
       Uri.parse('$baseUrl$endpoint'),
       headers: headers,
       body: jsonEncode(body),
     ).timeout(_timeout);
     if (response.statusCode == 401 && endpoint != '/api/auth/login') {
       if (await _attemptReauth()) {
-        response = await http.put(
+        response = await _client.put(
           Uri.parse('$baseUrl$endpoint'),
           headers: headers,
           body: jsonEncode(body),
@@ -120,10 +121,10 @@ class BaseApi {
   }
 
   Future<http.Response> delete(String endpoint) async {
-    var response = await http.delete(Uri.parse('$baseUrl$endpoint'), headers: headers).timeout(_timeout);
+    var response = await _client.delete(Uri.parse('$baseUrl$endpoint'), headers: headers).timeout(_timeout);
     if (response.statusCode == 401 && endpoint != '/api/auth/login') {
       if (await _attemptReauth()) {
-        response = await http.delete(Uri.parse('$baseUrl$endpoint'), headers: headers).timeout(_timeout);
+        response = await _client.delete(Uri.parse('$baseUrl$endpoint'), headers: headers).timeout(_timeout);
       }
     }
     return response;

@@ -146,7 +146,7 @@ class _AttractionMessagesPageState extends State<AttractionMessagesPage> {
     });
 
     // ── Pre-check connectivity FIRST (before cache) ────────────────────────
-    final online = await ConnectivityService.instance.checkOnline;
+    final online = ConnectivityService.instance.isOnline;
     if (!mounted) return;
     if (!online) {
       setState(() { _isOffline = true; _isLoading = false; });

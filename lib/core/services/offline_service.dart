@@ -480,23 +480,18 @@ class SyncService {
       final hadPendingRooms = await _hasPendingRooms();
       final roomCreateResult = await _pushPendingRoomCreates();
       if (roomCreateResult.networkLost) {
-        final remaining = await _countPending();
-        _emit(SyncState(
-          status: SyncStatus.error,
-          errorMessage: 'Connection lost during room sync — will retry automatically',
-          pendingCount: remaining,
-        ));
+        // Room syncs are intentionally invisible to the banner — connectivity
+        // loss mid-room-push aborts the cycle and the connectivity listener
+        // retries automatically, so this stays silent (logged only).
+        debugPrint('🌐 SyncService: connection lost during room create push — '
+            'aborting cycle, will retry on next connectivity check');
         return;
       }
 
       final roomUpdateResult = await _pushPendingRoomUpdates();
       if (roomUpdateResult.networkLost) {
-        final remaining = await _countPending();
-        _emit(SyncState(
-          status: SyncStatus.error,
-          errorMessage: 'Connection lost during room sync — will retry automatically',
-          pendingCount: remaining,
-        ));
+        debugPrint('🌐 SyncService: connection lost during room update push — '
+            'aborting cycle, will retry on next connectivity check');
         return;
       }
 
@@ -533,12 +528,20 @@ class SyncService {
       await _pullFromBackend();                         // GET  → /api/business/guest-records
 
       final remaining = await _countPending();
-      final anyFailed = roomCreateResult.failed > 0 ||
-          roomUpdateResult.failed > 0 ||
-          createResult.failed > 0 ||
+      final roomFailed = roomCreateResult.failed > 0 ||
+          roomUpdateResult.failed > 0;
+      final guestFailed = createResult.failed > 0 ||
           updateResult.failed > 0;
 
-      if (anyFailed) {
+      // Room push failures are logged for diagnostics but intentionally kept
+      // out of the user-facing banner — room syncs are invisible by design.
+      if (roomFailed) {
+        debugPrint('⚠️ Room sync failed: '
+            '${roomCreateResult.failed} create(s), '
+            '${roomUpdateResult.failed} update(s) — hidden from banner by design');
+      }
+
+      if (guestFailed) {
         _emit(SyncState(
           status: SyncStatus.error,
           errorMessage: '$remaining record(s) failed to sync',
@@ -2309,18 +2312,17 @@ class SyncService {
     if (kIsWeb) return 0;
 
     final db = await LocalDatabase.instance.database;
+    // Only guest records and visit entries are counted — rooms sync under the
+    // hood and must never drive the sync banner.
     final result = await db.rawQuery(
       '''
       SELECT COUNT(*) as count FROM (
         SELECT id FROM ${LocalDatabase.tableGuestRecords} WHERE sync_status != ?
         UNION ALL
-        SELECT id FROM ${LocalDatabase.tableLocalRooms} WHERE sync_status != ?
-        UNION ALL
         SELECT id FROM ${LocalDatabase.tableVisitEntries} WHERE sync_status != ?
       )
       ''',
       [
-        LocalDatabase.syncSynced,
         LocalDatabase.syncSynced,
         LocalDatabase.syncSynced,
       ],

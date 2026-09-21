@@ -16,8 +16,6 @@ import 'package:app/ui/shared/widgets/admin_nav_items.dart';
 //     child: YourPageContent(),
 //   )
 
-
-
 class AdminLayout extends StatelessWidget {
   const AdminLayout({
     super.key,
@@ -41,7 +39,10 @@ class AdminLayout extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
-      body: isMobile ? _buildMobileLayout() : _buildDesktopLayout(),
+      body: SafeArea(
+        bottom: false,
+        child: isMobile ? _buildMobileLayout() : _buildDesktopLayout(),
+      ),
     );
   }
 
@@ -57,10 +58,7 @@ class AdminLayout extends StatelessWidget {
             children: [
               AdminHeader(title: title),
               Expanded(
-                child: Container(
-                  color: AppColors.backgroundDark,
-                  child: child,
-                ),
+                child: Container(color: AppColors.backgroundDark, child: child),
               ),
             ],
           ),
@@ -76,10 +74,7 @@ class AdminLayout extends StatelessWidget {
         children: [
           AdminHeader(title: title),
           Expanded(
-            child: Container(
-              color: AppColors.backgroundDark,
-              child: child,
-            ),
+            child: Container(color: AppColors.backgroundDark, child: child),
           ),
         ],
       ),
@@ -128,9 +123,7 @@ class _AdminBottomNavBarState extends State<AdminBottomNavBar> {
         return Container(
           decoration: BoxDecoration(
             color: AppColors.sidebarBg,
-            border: const Border(
-              top: BorderSide(color: AppColors.cardBorder),
-            ),
+            border: const Border(top: BorderSide(color: AppColors.cardBorder)),
           ),
           child: SafeArea(
             child: Row(
@@ -221,7 +214,9 @@ class _BottomNavTile extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                (item.label == 'Accommodations' && isMobile) ? 'Accom' : item.label,
+                (item.label == 'Accommodations' && isMobile)
+                    ? 'Accom'
+                    : item.label,
                 style: TextStyle(
                   color: isSelected
                       ? AppColors.primaryCyan

@@ -34,7 +34,10 @@ class AttractionLayout extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
-      body: isMobile ? _buildMobileLayout() : _buildDesktopLayout(),
+      body: SafeArea(
+        bottom: false,
+        child: isMobile ? _buildMobileLayout() : _buildDesktopLayout(),
+      ),
     );
   }
 
@@ -50,10 +53,7 @@ class AttractionLayout extends StatelessWidget {
             children: [
               AttractionHeader(title: title),
               Expanded(
-                child: Container(
-                  color: AppColors.backgroundDark,
-                  child: child,
-                ),
+                child: Container(color: AppColors.backgroundDark, child: child),
               ),
             ],
           ),
@@ -69,10 +69,7 @@ class AttractionLayout extends StatelessWidget {
         children: [
           AttractionHeader(title: title),
           Expanded(
-            child: Container(
-              color: AppColors.backgroundDark,
-              child: child,
-            ),
+            child: Container(color: AppColors.backgroundDark, child: child),
           ),
         ],
       ),
@@ -177,9 +174,7 @@ class _BottomNavTile extends StatelessWidget {
               Icon(
                 item.icon,
                 size: 22,
-                color: isSelected
-                    ? AppColors.primaryCyan
-                    : AppColors.textGray,
+                color: isSelected ? AppColors.primaryCyan : AppColors.textGray,
               ),
               const SizedBox(height: 4),
               Text(
