@@ -146,13 +146,15 @@ class AccommodationExportService {
       final path = await _saveToDevice(fileName, bytes);
       if (path == null) throw Exception('Failed to save file to device.');
 
-      if (!kIsWeb) {
+      if (!kIsWeb && !(Platform.isAndroid || Platform.isIOS)) {
         await OpenFile.open(path);
       }
 
       _showSnack(
         context,
-        'Excel saved:\n$path',
+        (Platform.isAndroid || Platform.isIOS)
+            ? 'Excel ready — choose where to save it'
+            : 'Excel saved:\n$path',
       );
     } catch (e) {
       debugPrint('❌ Excel export error: $e');
@@ -256,13 +258,15 @@ class AccommodationExportService {
 
       if (!context.mounted) return;
 
-      if (!kIsWeb) {
+      if (!kIsWeb && !(Platform.isAndroid || Platform.isIOS)) {
         await OpenFile.open(path);
       }
 
       _showSnack(
         context,
-        'PDF saved:\n$path',
+        (Platform.isAndroid || Platform.isIOS)
+            ? 'PDF ready — choose where to save it'
+            : 'PDF saved:\n$path',
       );
     } catch (e) {
       debugPrint('❌ PDF export error: $e');
@@ -299,15 +303,8 @@ class AccommodationExportService {
     }
 
     try {
-      if (Platform.isAndroid) {
-        // Try public Downloads first, fall back to app-scoped external storage
-        return await tryWrite('/storage/emulated/0/Download') ??
-            await tryWrite(
-              (await getExternalStorageDirectory())?.path ??
-                  (await getApplicationDocumentsDirectory()).path,
-            );
-      } else if (Platform.isIOS) {
-        return await tryWrite((await getApplicationDocumentsDirectory()).path);
+      if (Platform.isAndroid || Platform.isIOS) {
+        return await saveFileToDownloads(fileName, bytes);
       } else {
         return await tryWrite(
           (await getDownloadsDirectory())?.path ??

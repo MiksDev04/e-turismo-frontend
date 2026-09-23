@@ -434,6 +434,10 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
         await saveFileToDownloads(fileName, bytes);
         if (!mounted) return;
         _showSnack('CSV downloaded: $fileName');
+      } else if (Platform.isAndroid || Platform.isIOS) {
+        await saveFileToDownloads(fileName, bytes);
+        if (!mounted) return;
+        _showSnack('Choose where to save $fileName');
       } else {
         final dir = await _exportDirectory();
         final file = File(p.join(dir.path, fileName));
@@ -710,6 +714,10 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
         await saveFileToDownloads(fileName, pdfBytes);
         if (!mounted) return;
         _showSnack('PDF downloaded: $fileName');
+      } else if (Platform.isAndroid || Platform.isIOS) {
+        await saveFileToDownloads(fileName, pdfBytes);
+        if (!mounted) return;
+        _showSnack('Choose where to save $fileName');
       } else {
         final dir = await _exportDirectory();
         final file = File(p.join(dir.path, fileName));
