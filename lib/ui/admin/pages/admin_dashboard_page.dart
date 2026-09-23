@@ -2267,19 +2267,29 @@ class _ComparisonBarChartState extends State<_ComparisonBarChart>
             }
           },
           onExit: (_) => setState(() => _hoveredMonth = -1),
-          child: AnimatedBuilder(
-            animation: _ctrl,
-            builder: (_, __) => CustomPaint(
-              painter: _ComparisonBarPainter(
-                year1: widget.year1,
-                year2: widget.year2,
-                year1Data: widget.year1Data,
-                year2Data: widget.year2Data,
-                animValue: _ctrl.value,
-                hoveredMonth: _hoveredMonth,
-                hoveredIsYear2: _hoveredIsYear2,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (details) {
+              _detectHover(
+                details.localPosition,
+                constraints.biggest,
+                fromTouch: true,
+              );
+            },
+            child: AnimatedBuilder(
+              animation: _ctrl,
+              builder: (_, __) => CustomPaint(
+                painter: _ComparisonBarPainter(
+                  year1: widget.year1,
+                  year2: widget.year2,
+                  year1Data: widget.year1Data,
+                  year2Data: widget.year2Data,
+                  animValue: _ctrl.value,
+                  hoveredMonth: _hoveredMonth,
+                  hoveredIsYear2: _hoveredIsYear2,
+                ),
+                size: constraints.biggest,
               ),
-              size: constraints.biggest,
             ),
           ),
         );
@@ -2287,7 +2297,7 @@ class _ComparisonBarChartState extends State<_ComparisonBarChart>
     );
   }
 
-  void _detectHover(Offset pos, Size size) {
+  void _detectHover(Offset pos, Size size, {bool fromTouch = false}) {
     const leftPad = 42.0;
     const bottomPad = 36.0;
     final chartW = size.width - leftPad;
@@ -2333,6 +2343,23 @@ class _ComparisonBarChartState extends State<_ComparisonBarChart>
           setState(() {
             _hoveredMonth = i;
             _hoveredIsYear2 = true;
+          });
+        }
+        return;
+      }
+    }
+
+    if (fromTouch && pos.dx >= leftPad && pos.dx < size.width) {
+      final monthIdx = ((pos.dx - leftPad) / groupW).floor();
+      if (monthIdx >= 0 && monthIdx < 12) {
+        final groupX = leftPad + monthIdx * groupW + groupW / 2 - barW - gap / 2;
+        final dist1 = (pos.dx - (groupX + barW / 2)).abs();
+        final dist2 = (pos.dx - (groupX + barW + gap + barW / 2)).abs();
+        final selectYear1 = dist1 <= dist2;
+        if (_hoveredMonth != monthIdx || _hoveredIsYear2 != !selectYear1) {
+          setState(() {
+            _hoveredMonth = monthIdx;
+            _hoveredIsYear2 = !selectYear1;
           });
         }
         return;
@@ -2778,31 +2805,40 @@ class _DonutChartState extends State<_DonutChart>
         }
       },
       onExit: (_) => setState(() => _hoveredIdx = -1),
-      child: AnimatedBuilder(
-        animation: _ctrl,
-        builder: (_, __) => Opacity(
-          opacity: _ctrl.value,
-          child: Transform.scale(
-            scale: 0.95 + _ctrl.value * 0.05,
-            child: SizedBox(
-              width: widget.size,
-              height: widget.size,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  CustomPaint(
-                    painter: _DonutPainter(
-                      segments: widget.segments,
-                      animValue: _ctrl.value,
-                      hoveredIdx: _hoveredIdx,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (details) {
+          _checkHover(
+            details.localPosition,
+            Size(widget.size, widget.size),
+          );
+        },
+        child: AnimatedBuilder(
+          animation: _ctrl,
+          builder: (_, __) => Opacity(
+            opacity: _ctrl.value,
+            child: Transform.scale(
+              scale: 0.95 + _ctrl.value * 0.05,
+              child: SizedBox(
+                width: widget.size,
+                height: widget.size,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CustomPaint(
+                      painter: _DonutPainter(
+                        segments: widget.segments,
+                        animValue: _ctrl.value,
+                        hoveredIdx: _hoveredIdx,
+                      ),
+                      size: Size(widget.size, widget.size),
                     ),
-                    size: Size(widget.size, widget.size),
-                  ),
-                  if (_hoveredIdx != -1 &&
-                      widget.segments[_hoveredIdx].label != null &&
-                      !widget.segments[_hoveredIdx].isEmpty)
-                    _DonutTooltip(segment: widget.segments[_hoveredIdx]),
-                ],
+                    if (_hoveredIdx != -1 &&
+                        widget.segments[_hoveredIdx].label != null &&
+                        !widget.segments[_hoveredIdx].isEmpty)
+                      _DonutTooltip(segment: widget.segments[_hoveredIdx]),
+                  ],
+                ),
               ),
             ),
           ),

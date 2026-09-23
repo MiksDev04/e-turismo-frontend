@@ -109,7 +109,6 @@ class LoginApi extends BaseApi {
     required String username,
     required String password,
   }) async {
-    await SessionService.instance.clear();
 
     // ── OFFLINE ATTEMPT ──────────────────────────────────────────────────────
     // Web doesn't support local SQLite — skip offline login entirely
