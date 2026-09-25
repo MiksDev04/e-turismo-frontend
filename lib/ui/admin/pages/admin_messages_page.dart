@@ -277,10 +277,8 @@ class _PageHeader extends StatelessWidget {
                     'Send notices to accommodation establishments and tourist attractions',
                     style: TextStyle(
                       color: AppColors.textGray,
-                      fontSize: isMobile ? 10 : (isSmall ? 11 : 13),
+                      fontSize: isMobile ? 12 : (isSmall ? 11 : 13),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),

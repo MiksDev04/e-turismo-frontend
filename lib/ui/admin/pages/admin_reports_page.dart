@@ -1851,8 +1851,6 @@ class _PageHeader extends StatelessWidget {
         Text(
           'View live data or download as Excel/PDF',
           style: TextStyle(color: AppColors.textGray, fontSize: 13),
-          overflow: TextOverflow.ellipsis,
-          maxLines: 1,
         ),
       ],
     );
