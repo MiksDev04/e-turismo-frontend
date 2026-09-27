@@ -3,12 +3,18 @@ import 'package:app/core/constants/app_colors.dart';
 import 'package:app/router/app_router.dart';
 import 'package:app/core/services/offline_service.dart';
 import 'package:app/core/services/session_service.dart';
+import 'package:app/core/widgets/app_toast.dart';
 import 'dart:async';
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 class App extends StatelessWidget {
   const App({super.key});
+
+  // The sync listener lives in MaterialApp.builder, which is a *sibling* of
+  // the Navigator — there is no Overlay above it for AppToast to find. This
+  // key is how the sync banner reaches the root overlay.
+  static final _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   Widget build(BuildContext context) {
@@ -18,6 +24,7 @@ class App extends StatelessWidget {
         return MaterialApp(
           title: _getDynamicTitle(),
           debugShowCheckedModeBanner: false,
+          navigatorKey: _navigatorKey,
 
           // ── Theme ──────────────────────────────────────────────────────────────
           theme: _buildTheme(),
@@ -75,18 +82,18 @@ class SyncBannerOverlay extends StatefulWidget {
 }
 
 class _SyncBannerOverlayState extends State<SyncBannerOverlay> {
-  Timer? _hideTimer;
-  bool _showBanner = false;
-  SyncState _currentState = const SyncState(status: SyncStatus.idle);
+  // True while a sync cycle is user-visible, i.e. one that had records
+  // actually waiting to push. An idle poll on a clean account emits
+  // syncing → synced with pendingCount 0 and must stay silent.
+  bool _cycleActive = false;
   StreamSubscription<SyncState>? _subscription;
 
   @override
   void initState() {
     super.initState();
 
-    // Listen to the stream here — NOT inside build — so the timer can
-    // set _showBanner = false without the StreamBuilder immediately
-    // reading the last-emitted value and restarting the whole cycle.
+    // Listen to the stream here — NOT inside build — so a state that was
+    // already active before this widget mounted is not missed.
     _subscription = SyncService.instance.syncStateStream.listen(_onSyncState);
 
     // Handle a state that was already active before this widget mounted.
@@ -97,117 +104,60 @@ class _SyncBannerOverlayState extends State<SyncBannerOverlay> {
   }
 
   void _onSyncState(SyncState state) {
-    if (!mounted) return;
-    setState(() {
-      _currentState = state;
-      switch (state.status) {
-        case SyncStatus.syncing:
-          // Only show the banner if there are actually local items pending to be synced online.
-          _showBanner = state.pendingCount > 0;
-          _hideTimer?.cancel();
-          _hideTimer = null;
-          break;
+    switch (state.status) {
+      case SyncStatus.syncing:
+        // Only surface the cycle if there are actually local items pending.
+        _cycleActive = state.pendingCount > 0;
+        if (_cycleActive) {
+          _toast(AppToast.warningOn, 'Syncing offline data…');
+        }
+        break;
 
-        case SyncStatus.error:
-          // If we were already showing the banner (pushed something) or have pending items.
-          if (_showBanner || state.pendingCount > 0) {
-            _showBanner = true;
-          }
-          _hideTimer?.cancel();
-          _hideTimer = null;
-          break;
+      case SyncStatus.error:
+        // If we were already syncing something (pushed something) or there
+        // are still items pending.
+        if (_cycleActive || state.pendingCount > 0) {
+          _cycleActive = true;
+          final message = state.errorMessage ?? 'Sync failed.';
+          _toast(
+            AppToast.warningOn,
+            message.length > 60 ? '${message.substring(0, 59)}…' : message,
+          );
+        }
+        break;
 
-        case SyncStatus.synced:
-          // Only show success snackbar if we were actually showing the "syncing" state.
-          if (_showBanner) {
-            _hideTimer?.cancel();
-            _hideTimer = Timer(const Duration(seconds: 3), () {
-              if (mounted) setState(() => _showBanner = false);
-            });
-          }
-          break;
+      case SyncStatus.synced:
+        // Only confirm if we were actually showing a cycle.
+        if (_cycleActive) {
+          _cycleActive = false;
+          _toast(AppToast.successOn, 'Data synced.');
+        }
+        break;
 
-        case SyncStatus.idle:
-          _showBanner = false;
-          _hideTimer?.cancel();
-          _hideTimer = null;
-          break;
-      }
-    });
+      case SyncStatus.idle:
+        _cycleActive = false;
+        break;
+    }
+  }
+
+  void _toast(void Function(ToastAnchor, String) show, String message) {
+    // Null before the Navigator has mounted — e.g. the currentState re-read
+    // in initState landing ahead of the first frame. The cycle flag is
+    // already set, so the follow-up state still reports itself.
+    final overlay = App._navigatorKey.currentState?.overlay;
+    if (overlay == null) return;
+    show(ToastAnchor(overlay, MediaQuery.of(context).padding.top), message);
   }
 
   @override
   void dispose() {
-    _hideTimer?.cancel();
     _subscription?.cancel();
     super.dispose();
   }
 
+  // This widget exists only to hold the stream subscription and provide a
+  // context for AppToast.capture. The toast itself renders in the root
+  // overlay via navigatorKey, so there is nothing to build here.
   @override
-  Widget build(BuildContext context) {
-    // When the timer fires it sets _showBanner = false. Because we're no
-    // longer using StreamBuilder here, the build won't re-read the last
-    // stream value and accidentally restart the timer.
-    if (!_showBanner || _currentState.status == SyncStatus.idle) {
-      return const SizedBox.shrink();
-    }
-
-    Color bgColor = AppColors.primaryBlue;
-    String message = 'Syncing offline data...';
-    IconData icon = Icons.sync;
-
-    if (_currentState.status == SyncStatus.error) {
-      bgColor = AppColors.accentRed;
-      message = 'Sync Error: ${_currentState.errorMessage ?? "Unknown"}';
-      icon = Icons.error_outline;
-    } else if (_currentState.status == SyncStatus.synced) {
-      bgColor = AppColors.primaryCyan;
-      message = 'Data synced successfully';
-      icon = Icons.check_circle_outline;
-    }
-
-    return Material(
-      color: bgColor,
-      child: SafeArea(
-        top: false,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          width: double.infinity,
-          child: Row(
-            children: [
-              Icon(icon, color: Colors.white, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  message,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (_currentState.pendingCount > 0 &&
-                  _currentState.status != SyncStatus.synced) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${_currentState.pendingCount} left',
-                    style: const TextStyle(color: Colors.white, fontSize: 11),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }

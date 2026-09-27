@@ -250,7 +250,7 @@ class BusinessDashboardApi extends BaseApi {
       return BusinessDetails(
         address: street,
         barangay: barangay,
-        totalRooms: (data['total_rooms'] as int?) ?? 0,
+        totalRooms: _intValue(data, 'total_rooms') ?? 0,
         businessLine: businessLine,
       );
     } catch (_) {
@@ -267,6 +267,7 @@ class BusinessDashboardApi extends BaseApi {
     String businessId,
   ) async {
     final db = await LocalDatabase.instance.database;
+    final totalRooms = await _localRoomCount(businessId);
     final rows = await db.query(
       LocalDatabase.tableLocalBusinesses,
       where: 'id = ?',
@@ -275,11 +276,11 @@ class BusinessDashboardApi extends BaseApi {
     );
 
     if (rows.isEmpty) {
-      return const BusinessDetails(
+      return BusinessDetails(
         address: '',
         barangay: '',
-        totalRooms: 0,
-        businessLine: [],
+        totalRooms: totalRooms,
+        businessLine: const [],
       );
     }
 
@@ -304,9 +305,23 @@ class BusinessDashboardApi extends BaseApi {
     return BusinessDetails(
       address: street,
       barangay: barangay,
-      totalRooms: (row['total_rooms'] as int?) ?? 0,
+      totalRooms: totalRooms,
       businessLine: businessLine,
     );
+  }
+
+  /// Total rooms for a business, counted from the cached `local_rooms` table.
+  /// `local_businesses.total_rooms` was dropped in DB v9 — the count is now
+  /// always derived from the rooms table, same as the backend's
+  /// `/api/dashboard/details` (COUNT(*) FROM rooms).
+  Future<int> _localRoomCount(String businessId) async {
+    final db = await LocalDatabase.instance.database;
+    final rows = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM ${LocalDatabase.tableLocalRooms} '
+      'WHERE business_id = ?',
+      [businessId],
+    );
+    return (rows.first['count'] as int?) ?? 0;
   }
 
   // ===========================================================================

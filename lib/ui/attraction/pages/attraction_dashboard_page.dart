@@ -2656,12 +2656,32 @@ class _DonutChartState extends State<_DonutChart>
     )..forward();
   }
 
+  static bool _segmentsEqual(List<_Segment> a, List<_Segment> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final x = a[i];
+      final y = b[i];
+      if (x.value != y.value ||
+          x.color != y.color ||
+          x.label != y.label ||
+          x.percentage != y.percentage ||
+          x.count != y.count ||
+          x.isEmpty != y.isEmpty) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   @override
   void didUpdateWidget(_DonutChart old) {
     super.didUpdateWidget(old);
-    _ctrl
-      ..reset()
-      ..forward();
+    if (!_segmentsEqual(old.segments, widget.segments)) {
+      _ctrl
+        ..reset()
+        ..forward();
+    }
   }
 
   @override
