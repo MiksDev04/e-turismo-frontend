@@ -261,8 +261,8 @@ class SyncService {
     final Map<String, String> h = {
       'Content-Type': 'application/json',
       'x-api-key': kIsWeb
-          ? const String.fromEnvironment('API_KEY', defaultValue: '')
-          : (dotenv.env['API_KEY'] ?? 'tourism_app_v2_secret_key_2026'),
+          ? const String.fromEnvironment('API_KEY')
+          : (dotenv.env['API_KEY'] ?? ''),
     };
 
     final token = SessionService.instance.current?.token;
