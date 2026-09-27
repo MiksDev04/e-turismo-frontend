@@ -11,6 +11,7 @@ import 'package:app/ui/shared/layouts/admin_layout.dart';
 import 'package:app/ui/shared/widgets/paginator.dart';
 import 'package:app/api/admin_report_api.dart';
 import 'package:app/ui/admin/widgets/report_view_modal.dart';
+import 'package:app/core/widgets/app_toast.dart';
 
 // ─── Admin Reports Page ───────────────────────────────────────────────────────
 
@@ -165,16 +166,16 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       await _fetchBatches();
       if (!mounted) return;
       if (result.alreadyExisted) {
-        _showWarning('Report already exists');
+        AppToast.warning(context, 'Report already exists');
       } else {
-        _showSuccess('Report batch created successfully');
+        AppToast.success(context, 'Report batch created.');
       }
     } on ApiException catch (e) {
       if (!mounted) return;
-      _showError(e.message);
+      AppToast.warning(context, e.message);
     } catch (e) {
       if (!mounted) return;
-      _showError('Error creating report batch: $e');
+      AppToast.warning(context, "Couldn't create report: $e");
     }
   }
 
@@ -190,7 +191,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
 
   Future<void> _downloadReport(ReportBatch batch, {String format = 'xlsx'}) async {
     try {
-      _showSuccess('Downloading $format...');
+      AppToast.success(context, 'Downloading $format...');
       final bytes = await _reportService.downloadReport(DownloadReportParams(
         reportType: batch.reportType,
         reportVariant: batch.reportVariant,
@@ -204,9 +205,9 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       final fileName = '${typePrefix}_${batch.reportVariant}_${periodSlug}.$format';
       await _saveFile(fileName, bytes);
       if (!mounted) return;
-      _showSuccess('File downloaded: $fileName');
+      AppToast.success(context, 'File downloaded: $fileName');
     } catch (e) {
-      if (mounted) _showError('Error downloading file: $e');
+      if (mounted) AppToast.warning(context, 'Download failed: $e');
     }
   }
 
@@ -223,41 +224,6 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       _currentPage = 0;
     });
     _fetchBatches();
-  }
-
-  void _showSuccess(String msg) {
-    if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearSnackBars();
-    messenger.showSnackBar(
-      SnackBar(
-        backgroundColor: const Color(0xFF00C48C),
-        duration: const Duration(seconds: 3),
-        content: Text(msg, style: const TextStyle(color: Colors.white)),
-      ),
-    );
-  }
-
-  void _showError(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: const Color(0xFFFF4D6A),
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
-  void _showWarning(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: const Color(0xFFFFCA28),
-        duration: const Duration(seconds: 3),
-      ),
-    );
   }
 
   @override

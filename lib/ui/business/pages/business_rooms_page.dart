@@ -5,6 +5,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/services/session_service.dart';
 import '../../../core/services/offline_service.dart';
 import '../../../core/utils/datetime_utils.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../shared/widgets/paginator.dart';
 import '../../../api/business_room_api.dart';
@@ -190,12 +191,14 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
     Navigator.of(context).pop();
 
     if (result.success) {
-      _showSnack(
-          'Room ${room.roomNumber} marked as ${_labels[newStatus]?.toLowerCase()}.');
+      AppToast.success(
+        context,
+        'Room ${room.roomNumber} marked as ${_labels[newStatus]?.toLowerCase()}.',
+      );
       _loadRooms();
     } else {
-      _showSnack(result.error ?? 'Failed to update room status.',
-          isError: true);
+      AppToast.warning(
+          context, result.error ?? 'Failed to update room status.');
     }
   }
 
@@ -213,7 +216,7 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
 
   Future<void> _onAddRoom() async {
     if (_businessId == null) {
-      _showSnack('Business account not found.', isError: true);
+      AppToast.warning(context, 'Business account not found.');
       return;
     }
     final names = _rooms.map((r) => r.roomNumber).toList();
@@ -225,16 +228,6 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
     if (created == true && mounted) {
       _loadRooms();
     }
-  }
-
-  void _showSnack(String msg, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: isError ? AppColors.accentRed : AppColors.primaryCyan,
-        duration: const Duration(seconds: 3),
-      ),
-    );
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

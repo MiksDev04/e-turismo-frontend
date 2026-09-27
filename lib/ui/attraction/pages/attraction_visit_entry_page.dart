@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../core/constants/country_constants.dart';
 import '../../../core/services/psgc_repository.dart';
 import '../../../core/models/psgc_models.dart';
@@ -161,16 +162,6 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
     _clearFieldError("city");
   }
 
-  void _showSnackBar(String message, {Color? color}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: color ?? AppColors.primaryCyan,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
   void _clearForm() {
     setState(() {
       _visitDate = DateTime.now();
@@ -271,18 +262,12 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
     if (result.success) {
       _clearForm();
       if (result.syncedToCloud) {
-        _showSnackBar("Visit entry saved successfully!");
+        AppToast.success(context, 'Visit entry saved.');
       } else {
-        _showSnackBar(
-          "Entry saved offline — will sync when you're back online.",
-          color: const Color(0xFFF59E0B),
-        );
+        AppToast.warning(context, 'Saved offline. Will sync when online.');
       }
     } else if (result.error != null) {
-      _showSnackBar(
-        result.error!,
-        color: const Color(0xFFEF4444),
-      );
+      AppToast.warning(context, result.error!);
     }
   }
 
@@ -663,7 +648,7 @@ const Text(
                     isSaving: _isSaving,
                     onClear: () {
                       _clearForm();
-                      _showSnackBar("Form cleared.");
+                      AppToast.success(context, 'Form cleared.');
                     },
                     onSave: _save,
                     saveLabel: _isSaving ? "Saving..." : "Save Visit Entry",

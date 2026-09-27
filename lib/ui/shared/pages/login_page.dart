@@ -8,6 +8,7 @@ import 'package:app/core/services/connectivity_service.dart';
 import '../../../router/app_routes.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/password_validator.dart';
+import '../../../core/widgets/app_toast.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Login Page
@@ -257,13 +258,7 @@ class _LoginCardState extends State<_LoginCard> {
         otp: otp,
         onSuccess: () {
           Navigator.of(context).pop();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Password reset successfully! Please sign in.'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 3),
-            ),
-          );
+          AppToast.success(context, 'Password reset. Please sign in.');
         },
       ),
     );

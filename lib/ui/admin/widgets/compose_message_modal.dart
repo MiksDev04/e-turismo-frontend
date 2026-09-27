@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../api/messages_api.dart';
 import '../../../api/admin_profile_api.dart';
 
@@ -330,10 +331,7 @@ class _ComposeMessageDialogState extends State<ComposeMessageDialog>
     } catch (e) {
       if (mounted) {
         setState(() => _sending = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content:         Text('Failed to send: $e'),
-          backgroundColor: Colors.redAccent,
-        ));
+        AppToast.warning(context, 'Failed to send: $e');
       }
     }
   }

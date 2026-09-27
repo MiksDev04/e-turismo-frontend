@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:app/core/services/connectivity_service.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../core/utils/password_validator.dart';
 import '../../../core/services/session_service.dart';
 import '../../shared/layouts/admin_layout.dart';
@@ -96,18 +97,6 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
     }
   }
 
-  // ── Snackbar ─────────────────────────────────────────────────────────────────
-
-  void _showSnackbar(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red : Colors.green,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
   // ── Save account info ─────────────────────────────────────────────────────────
 
   Future<void> _saveAccountInfo() async {
@@ -142,10 +131,10 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
       final updated = await _api.fetchProfile();
       if (!mounted) return;
       setState(() => _profile = updated);
-      _showSnackbar('Account information saved successfully!');
+      AppToast.success(context, 'Account details saved.');
     } on ProfileApiException catch (e) {
       if (!mounted) return;
-      _showSnackbar(e.message, isError: true);
+      AppToast.warning(context, e.message);
     } finally {
       if (mounted) setState(() => _savingInfo = false);
     }
@@ -180,7 +169,7 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
         otp: otp,
         onSuccess: () {
           Navigator.of(context).pop();
-          _showSnackbar('Password updated successfully!');
+          AppToast.success(context, 'Password updated.');
         },
       ),
     );

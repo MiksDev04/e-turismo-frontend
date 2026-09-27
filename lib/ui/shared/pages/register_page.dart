@@ -8,6 +8,7 @@ import 'package:app/api/register_api.dart';
 import 'package:app/core/enums/business_enums.dart';
 import 'package:app/router/app_routes.dart';
 import 'package:app/core/constants/app_colors.dart';
+import 'package:app/core/widgets/app_toast.dart';
 
 class RegisterPage extends StatelessWidget {
   const RegisterPage({super.key});
@@ -505,12 +506,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _confirmationSent = true;
         _startConfirmationPolling();
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.message ?? 'Confirmation email sent.'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      AppToast.success(context, result.message ?? 'Confirmation email sent.');
     } else {
       setState(() => _errorMessage = result.error);
     }
@@ -564,12 +560,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _showErrors = false;
         _errorMessage = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Email confirmed successfully.'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      AppToast.success(context, 'Email confirmed. You can sign in now.');
     }
   }
 
@@ -808,12 +799,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = false);
 
     if (result.success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Registration submitted! Awaiting admin approval.'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      AppToast.success(context, 'Registration submitted. Awaiting approval.');
       Navigator.pushReplacementNamed(context, AppRoutes.login);
     } else {
       setState(() => _errorMessage = result.error);

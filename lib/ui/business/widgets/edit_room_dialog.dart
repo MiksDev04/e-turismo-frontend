@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/offline_service.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../api/business_room_api.dart';
 
 // ─── Show helper ──────────────────────────────────────────────────────────────
@@ -123,13 +124,7 @@ class _EditRoomDialogState extends State<_EditRoomDialog> {
     if (!result.success) {
       if (mounted) {
         setState(() => _isSaving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.error ?? 'Failed to update room.'),
-            backgroundColor: AppColors.accentRed,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+        AppToast.warning(context, result.error ?? 'Failed to update room.');
       }
       return;
     }
@@ -145,7 +140,7 @@ class _EditRoomDialogState extends State<_EditRoomDialog> {
     if (!mounted) return;
 
     final isOnline = ConnectivityService.instance.isOnline;
-    final messenger = ScaffoldMessenger.of(context);
+    final anchor = AppToast.capture(context);
     Navigator.of(context).pop(
       RoomData(
         id: widget.room.id,
@@ -157,18 +152,11 @@ class _EditRoomDialogState extends State<_EditRoomDialog> {
       ),
     );
 
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          isOnline
-              ? 'Room updated successfully!'
-              : 'Changes saved offline — will sync when you\'re back online.',
-        ),
-        backgroundColor:
-            isOnline ? AppColors.primaryCyan : const Color(0xFFF59E0B),
-        duration: const Duration(seconds: 3),
-      ),
-    );
+    if (isOnline) {
+      AppToast.successOn(anchor, 'Room updated.');
+    } else {
+      AppToast.warningOn(anchor, 'Saved offline. Will sync when online.');
+    }
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────

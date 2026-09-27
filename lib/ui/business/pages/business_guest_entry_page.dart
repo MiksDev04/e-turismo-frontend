@@ -6,6 +6,7 @@ import '../../../core/constants/country_constants.dart';
 import '../../../core/services/offline_service.dart';
 import '../../../core/services/psgc_repository.dart';
 import '../../../core/models/psgc_models.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../../api/business_guest_entry_api.dart';
 import '../../../models/origin_group.dart';
@@ -253,16 +254,6 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
     }
   }
 
-  void _showSnackBar(String message, {Color? color}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: color ?? AppColors.primaryCyan,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
   void _clearForm() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -470,13 +461,13 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
     if (result.success) {
       _clearForm();
       if (result.syncedToCloud) {
-        _showSnackBar('Guest entry saved successfully!');
+        AppToast.success(context, 'Guest entry saved.');
       } else {
-        _showSnackBar(
+        AppToast.warning(
+          context,
           ConnectivityService.instance.isOnline
-              ? 'Entry saved — will sync in the background.'
-              : 'Entry saved offline — will sync when you\'re back online.',
-          color: const Color(0xFFF59E0B),
+              ? 'Saved. Syncing in background.'
+              : 'Saved offline. Will sync when online.',
         );
       }
     }
@@ -746,7 +737,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                     isSaving: _isSaving,
                     onClear: () {
                       _clearForm();
-                      _showSnackBar('Form cleared.');
+                      AppToast.success(context, 'Form cleared.');
                     },
                     onSave: _save,
                   ),

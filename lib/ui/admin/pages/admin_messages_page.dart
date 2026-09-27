@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:app/core/services/connectivity_service.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../api/messages_api.dart';
 import '../../../core/services/session_service.dart';
 import '../../shared/layouts/admin_layout.dart';
@@ -128,13 +129,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
     if (sent == true && mounted) {
       await _loadMessages();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Message sent successfully'),
-            backgroundColor: AppColors.accentGreen,
-            duration: Duration(seconds: 2),
-          ),
-        );
+        AppToast.success(context, 'Message sent.');
       }
     }
   }

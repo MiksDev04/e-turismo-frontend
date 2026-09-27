@@ -6,6 +6,7 @@ import '../../../core/services/connectivity_service.dart';
 import '../../../core/services/document_service.dart';
 import '../../../core/services/file_saver.dart';
 import '../../../core/services/session_service.dart';
+import '../../../core/widgets/app_toast.dart';
 
 // ─── Document Preview Dialog ────────────────────────────────────────────────
 
@@ -147,21 +148,11 @@ class _DocumentPreviewModalState extends State<DocumentPreviewModal> {
       await saveFileToDownloads(fileName, _bytes!);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Downloaded successfully: $fileName'),
-            backgroundColor: const Color(0xFF00C48C),
-          ),
-        );
+        AppToast.success(context, 'Downloaded $fileName');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to download: $e'),
-            backgroundColor: const Color(0xFFFF4D6A),
-          ),
-        );
+        AppToast.warning(context, 'Failed to download: $e');
       }
     } finally {
       if (mounted) {

@@ -11,6 +11,7 @@ import 'dart:async';
 import '../../../core/services/offline_service.dart';
 import '../../../core/services/psgc_repository.dart';
 import '../../../core/models/psgc_models.dart';
+import '../../../core/widgets/app_toast.dart';
 
 // ─── Light input colours ──────────────────────────────────────────────────────
 
@@ -570,23 +571,16 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
       originGroups: _originGroups,
     );
 
-    final messenger = ScaffoldMessenger.of(context);
+    final anchor = AppToast.capture(context);
     final isOnline = ConnectivityService.instance.isOnline;
 
     Navigator.of(context).pop(updated);
 
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          isOnline
-              ? 'Guest record updated successfully!'
-              : 'Changes saved offline — will sync when you\'re back online.',
-        ),
-        backgroundColor:
-            isOnline ? AppColors.primaryCyan : const Color(0xFFF59E0B),
-        duration: const Duration(seconds: 3),
-      ),
-    );
+    if (isOnline) {
+      AppToast.successOn(anchor, 'Guest record updated.');
+    } else {
+      AppToast.warningOn(anchor, 'Saved offline. Will sync when online.');
+    }
   }
 
   // ─── Clear form ──────────────────────────────────────────────────────────

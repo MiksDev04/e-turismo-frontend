@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../core/services/document_service.dart';
 import '../../../core/utils/datetime_utils.dart';
 import '../../business/widgets/business_document_preview_modal.dart';
@@ -401,9 +402,7 @@ class _DocumentsSection extends StatelessWidget {
 
   void _previewDocument(BuildContext context, String title, String url) {
     if (url.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Document URL not available.')),
-      );
+      AppToast.warning(context, 'Document URL not available.');
       return;
     }
     DocumentService.instance.prefetch(url);

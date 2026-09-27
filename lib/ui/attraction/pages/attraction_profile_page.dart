@@ -8,6 +8,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import '../../business/widgets/business_document_preview_modal.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../core/utils/password_validator.dart';
 import '../../../core/services/session_service.dart';
 import '../../../core/services/connectivity_service.dart';
@@ -331,9 +332,9 @@ class _AttractionProfilePageState extends State<AttractionProfilePage> {
         username: _usernameCtrl.text.trim(),
         phone:    phone,
       );
-      _showSnack('Account information updated.', isError: false);
+      AppToast.success(context, 'Account details updated.');
     } on ProfileApiException catch (e) {
-      _showSnack(e.message);
+      AppToast.warning(context, e.message);
     } finally {
       if (mounted) setState(() => _isSavingAccount = false);
     }
@@ -341,7 +342,7 @@ class _AttractionProfilePageState extends State<AttractionProfilePage> {
 
   Future<void> _saveAttractionInfo() async {
     if (_attraction == null) {
-      _showSnack('No attraction record found.');
+      AppToast.warning(context, 'No attraction record found.');
       return;
     }
     setState(() => _isSavingAttraction = true);
@@ -352,9 +353,9 @@ class _AttractionProfilePageState extends State<AttractionProfilePage> {
         street:         _streetCtrl.text,
         barangay:       _selectedBarangay ?? _barangayCtrl.text,
       );
-      _showSnack('Attraction information updated.', isError: false);
+      AppToast.success(context, 'Attraction information updated.');
     } on ProfileApiException catch (e) {
-      _showSnack(e.message);
+      AppToast.warning(context, e.message);
     } finally {
       if (mounted) setState(() => _isSavingAttraction = false);
     }
@@ -374,7 +375,7 @@ class _AttractionProfilePageState extends State<AttractionProfilePage> {
 
   void _viewFile(BuildContext context, String title, String url) {
     if (url.isEmpty) {
-      _showSnack('Document URL not available.');
+      AppToast.warning(context, 'Document URL not available.');
       return;
     }
     DocumentService.instance.prefetch(url);
@@ -383,7 +384,7 @@ class _AttractionProfilePageState extends State<AttractionProfilePage> {
 
   Future<void> _uploadDocuments() async {
     if (_selectedValidIdFile == null) {
-      _showSnack('Select at least one file to upload.');
+      AppToast.warning(context, 'Select a file to upload.');
       return;
     }
     setState(() => _isSavingDocuments = true);
@@ -405,9 +406,9 @@ class _AttractionProfilePageState extends State<AttractionProfilePage> {
         );
       }
       setState(() => _selectedValidIdFile = null);
-      _showSnack('Valid ID uploaded successfully.', isError: false);
+      AppToast.success(context, 'Valid ID uploaded.');
     } on ProfileApiException catch (e) {
-      _showSnack(e.message);
+      AppToast.warning(context, e.message);
     } finally {
       if (mounted) setState(() => _isSavingDocuments = false);
     }
@@ -431,19 +432,6 @@ class _AttractionProfilePageState extends State<AttractionProfilePage> {
         api:          _api,
         currentEmail: _profile?.email ?? '',
         onSuccess: (_) {},
-      ),
-    );
-  }
-
-  // ── Snackbar helper ───────────────────────────────────────────────────────
-
-  void _showSnack(String msg, {bool isError = true}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor:
-            isError ? const Color(0xFFB91C1C) : const Color(0xFF065F46),
       ),
     );
   }
@@ -1326,13 +1314,9 @@ class _PasswordChangeDialogState extends State<_PasswordChangeDialog> {
         confirmPassword: _confPassCtrl.text,
       );
       if (mounted) {
+        final anchor = AppToast.capture(context);
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Password changed successfully.'),
-            backgroundColor: Color(0xFF065F46),
-          ),
-        );
+        AppToast.successOn(anchor, 'Password changed.');
       }
     } on ProfileApiException catch (e) {
       if (!mounted) return;

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/database/local_database.dart';
 import '../../../core/services/offline_service.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../models/origin_group.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../shared/widgets/paginator.dart';
@@ -386,7 +387,7 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
     if (result.isSuccess) {
       _loadRecords();
     } else {
-      _showSnack(result.error ?? 'Failed to update.', isError: true);
+      AppToast.warning(context, result.error ?? 'Update failed.');
     }
   }
 
@@ -583,16 +584,14 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       status:                 'archived',
     );
     if (updateResult.isSuccess) {
-      _showSnack(
+      AppToast.warning(
+        context,
         allSuccess
-            ? 'Guest checked out successfully.'
-            : 'Guest checked out, but some rooms could not be marked vacant.',
+            ? 'Guest checked out.'
+            : 'Checked out, but some rooms stayed occupied.',
       );
     } else {
-      _showSnack(
-        'Guest checked out but the check-out time was not recorded.',
-        isError: true,
-      );
+      AppToast.warning(context, 'Checked out, but check-out time not saved.');
     }
 
     // The junction rows were marked pending_update above so a failed cloud
@@ -616,18 +615,6 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
     }
 
     _loadRecords();
-  }
-
-  void _showSnack(String msg, {bool isError = false, Color? color}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: isError
-            ? AppColors.accentRed
-            : (color ?? AppColors.primaryCyan),
-        duration: const Duration(seconds: 3),
-      ),
-    );
   }
 
   void _clearAllFilters() {

@@ -13,6 +13,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path/path.dart' as p;
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../core/services/offline_service.dart';
 import '../../shared/layouts/attraction_layout.dart';
 import '../../../api/attraction_dashboard_api.dart';
@@ -365,11 +366,11 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
       if (kIsWeb) {
         await saveFileToDownloads(fileName, bytes);
         if (!mounted) return;
-        _showSnack('CSV downloaded: $fileName');
+        AppToast.success(context, 'Downloaded $fileName');
       } else if (Platform.isAndroid || Platform.isIOS) {
         await saveFileToDownloads(fileName, bytes);
         if (!mounted) return;
-        _showSnack('Choose where to save $fileName');
+        AppToast.warning(context, 'Choose where to save $fileName');
       } else {
         final dir = await _exportDirectory();
         final file = File(p.join(dir.path, fileName));
@@ -378,13 +379,13 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
         final result = await OpenFile.open(file.path);
         if (!mounted) return;
         if (result.type != ResultType.done) {
-          _showSnack('CSV saved to ${file.path}. ${result.message}');
+          AppToast.success(context, 'Saved $fileName');
         } else {
-          _showSnack('CSV exported to ${file.path}');
+          AppToast.success(context, 'Downloaded $fileName');
         }
       }
     } catch (e) {
-      _showSnack('Export failed: $e');
+      if (mounted) AppToast.warning(context, 'Export failed: $e');
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -609,11 +610,11 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
       if (kIsWeb) {
         await saveFileToDownloads(fileName, pdfBytes);
         if (!mounted) return;
-        _showSnack('PDF downloaded: $fileName');
+        AppToast.success(context, 'Downloaded $fileName');
       } else if (Platform.isAndroid || Platform.isIOS) {
         await saveFileToDownloads(fileName, pdfBytes);
         if (!mounted) return;
-        _showSnack('Choose where to save $fileName');
+        AppToast.warning(context, 'Choose where to save $fileName');
       } else {
         final dir = await _exportDirectory();
         final file = File(p.join(dir.path, fileName));
@@ -621,13 +622,13 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
         final result = await OpenFile.open(file.path);
         if (!mounted) return;
         if (result.type != ResultType.done) {
-          _showSnack('PDF saved to ${file.path}. ${result.message}');
+          AppToast.success(context, 'Saved $fileName');
         } else {
-          _showSnack('PDF exported to ${file.path}');
+          AppToast.success(context, 'Downloaded $fileName');
         }
       }
     } catch (e) {
-      _showSnack('PDF export failed: $e');
+      if (mounted) AppToast.warning(context, 'PDF export failed: $e');
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -740,13 +741,6 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
           ),
         ),
       ),
-    );
-  }
-
-  void _showSnack(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: AppColors.accentGreen),
     );
   }
 

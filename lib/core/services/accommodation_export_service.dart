@@ -14,6 +14,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../../api/admin_accommodation_api.dart';
+import '../widgets/app_toast.dart';
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 
@@ -150,15 +151,14 @@ class AccommodationExportService {
         await OpenFile.open(path);
       }
 
-      _showSnack(
-        context,
-        (Platform.isAndroid || Platform.isIOS)
-            ? 'Excel ready — choose where to save it'
-            : 'Excel saved:\n$path',
-      );
+      if (Platform.isAndroid || Platform.isIOS) {
+        AppToast.warning(context, 'Excel ready — choose where to save it');
+      } else {
+        AppToast.success(context, 'Downloaded $fileName');
+      }
     } catch (e) {
       debugPrint('❌ Excel export error: $e');
-      if (context.mounted) _showSnack(context, 'Export failed: $e', error: true);
+      if (context.mounted) AppToast.warning(context, 'Export failed: $e');
     }
   }
 
@@ -262,16 +262,15 @@ class AccommodationExportService {
         await OpenFile.open(path);
       }
 
-      _showSnack(
-        context,
-        (Platform.isAndroid || Platform.isIOS)
-            ? 'PDF ready — choose where to save it'
-            : 'PDF saved:\n$path',
-      );
+      if (Platform.isAndroid || Platform.isIOS) {
+        AppToast.warning(context, 'PDF ready — choose where to save it');
+      } else {
+        AppToast.success(context, 'Downloaded $fileName');
+      }
     } catch (e) {
       debugPrint('❌ PDF export error: $e');
       if (context.mounted) {
-        _showSnack(context, 'PDF export failed: $e', error: true);
+        AppToast.warning(context, 'PDF export failed: $e');
       }
     }
   }
@@ -334,23 +333,5 @@ class AccommodationExportService {
       'July', 'August', 'September', 'October', 'November', 'December',
     ];
     return '${months[dt.month]} ${dt.day}, ${dt.year}  ${_p(dt.hour)}:${_p(dt.minute)}';
-  }
-
-  static void _showSnack(
-    BuildContext context,
-    String msg, {
-    bool error = false,
-    SnackBarAction? action,
-  }) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor:
-            error ? const Color(0xFFFF4D6A) : const Color(0xFF0E7490),
-        action: action,
-        duration: Duration(seconds: error ? 4 : 8),
-      ),
-    );
   }
 }

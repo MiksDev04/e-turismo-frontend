@@ -8,6 +8,7 @@ import 'package:app/core/services/connectivity_service.dart';
 import 'package:app/core/utils/datetime_utils.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../core/services/accommodation_export_service.dart';
 import '../../shared/layouts/admin_layout.dart';
 import '../../shared/widgets/paginator.dart';
@@ -183,12 +184,7 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
       final rows = await _api.fetchExportRows();
       if (!mounted) return;
       if (rows.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No accommodation data to export.'),
-            backgroundColor: Color(0xFFFFA000),
-          ),
-        );
+        AppToast.warning(context, 'No data to export.');
         return;
       }
       if (excel) {
@@ -228,23 +224,14 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
     if (result.success) {
       await _sendDecisionLetter(item, newStatus, remarks: remarks);
       _loadAccommodations();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${item.name} has been ${newStatus.name}.'),
-          backgroundColor: newStatus == AccommodationStatus.approved
-              ? const Color(0xFF00C48C)
-              : const Color(0xFFFF4D6A),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      final msg = '${item.name} — ${newStatus.name}.';
+      if (newStatus == AccommodationStatus.approved) {
+        AppToast.success(context, msg);
+      } else {
+        AppToast.warning(context, msg);
+      }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.error ?? 'Something went wrong.'),
-          backgroundColor: const Color(0xFFFF4D6A),
-          duration: const Duration(seconds: 3),
-        ),
-      );
+      AppToast.warning(context, result.error ?? 'Status update failed.');
     }
   }
 
@@ -265,14 +252,9 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
         senderName == null ||
         senderEmail == null ||
         senderPhone == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Accommodation was updated, but the decision letter could not be sent because the admin session is missing.',
-          ),
-          backgroundColor: Color(0xFFFFA000),
-          duration: Duration(seconds: 3),
-        ),
+      AppToast.warning(
+        context,
+        'Updated, but decision letter not sent — admin session missing.',
       );
       return;
     }
@@ -309,15 +291,7 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
       unawaited(MessageBadgeController.instance.refresh());
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Accommodation was updated, but the decision letter failed to send: $e',
-          ),
-          backgroundColor: const Color(0xFFFFA000),
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      AppToast.warning(context, 'Updated, but decision letter failed: $e');
     }
   }
 
@@ -385,27 +359,16 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
     if (result.success) {
       unawaited(MessageBadgeController.instance.refresh());
       _loadAccommodations();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            newStatus == 'warning'
-                ? '${item.name} has been flagged with a warning.'
-                : '${item.name} has been restored to approved.',
-          ),
-          backgroundColor: newStatus == 'warning'
-              ? const Color(0xFFFFA000)
-              : const Color(0xFF00C48C),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      final msg = newStatus == 'warning'
+          ? '${item.name} has been flagged with a warning.'
+          : '${item.name} has been restored to approved.';
+      if (newStatus == 'warning') {
+        AppToast.warning(context, msg);
+      } else {
+        AppToast.success(context, msg);
+      }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.error ?? 'Something went wrong.'),
-          backgroundColor: const Color(0xFFFF4D6A),
-          duration: const Duration(seconds: 3),
-        ),
-      );
+      AppToast.warning(context, result.error ?? 'Status update failed.');
     }
   }
 
