@@ -21,9 +21,17 @@ class AppToast {
   static Timer? _timer;
   static String? _currentMessage;
 
+  /// Reads the real top inset (status bar / display cutout) of the view
+  /// rendering [context]. Deliberately not `MediaQuery.padding.top`: SafeArea
+  /// — and therefore every showDialog route, plus the SafeArea-wrapped app
+  /// layouts — zeroes it for its subtree, which pinned the toast to the very
+  /// top edge of the screen instead of below the system UI.
+  static double _topInsetOf(BuildContext context) =>
+      MediaQueryData.fromView(View.of(context)).viewPadding.top;
+
   static ToastAnchor capture(BuildContext context) => ToastAnchor(
         Overlay.of(context, rootOverlay: true),
-        MediaQuery.of(context).padding.top,
+        _topInsetOf(context),
       );
 
   static void success(BuildContext c, String m) => successOn(capture(c), m);

@@ -583,13 +583,10 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       actualCheckOut:         actualCheckOut,
       status:                 'archived',
     );
-    if (updateResult.isSuccess) {
-      AppToast.warning(
-        context,
-        allSuccess
-            ? 'Guest checked out.'
-            : 'Checked out, but some rooms stayed occupied.',
-      );
+    if (updateResult.isSuccess && allSuccess) {
+      AppToast.success(context, 'Guest checked out.');
+    } else if (updateResult.isSuccess) {
+      AppToast.warning(context, 'Checked out, but some rooms stayed occupied.');
     } else {
       AppToast.warning(context, 'Checked out, but check-out time not saved.');
     }

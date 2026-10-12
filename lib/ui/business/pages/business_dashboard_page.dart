@@ -1880,11 +1880,15 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
 
   List<_LegendItem> get _legend {
     if (_tab == 0) {
-      return const [
-        _LegendItem(label: 'Male', color: AppColors.chartCyan),
-        _LegendItem(label: 'Female', color: AppColors.chartPurple),
-        _LegendItem(label: 'Unspecified', color: AppColors.chartGray),
+      final d = widget.sexDist;
+      final items = <_LegendItem>[
+        const _LegendItem(label: 'Male', color: AppColors.chartCyan),
+        const _LegendItem(label: 'Female', color: AppColors.chartPurple),
       ];
+      if (d.other > 0) {
+        items.add(const _LegendItem(label: 'Unspecified', color: AppColors.chartGray));
+      }
+      return items;
     }
     return widget.ageGroups
         .asMap()

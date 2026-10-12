@@ -146,8 +146,16 @@ class _V {
   static String? registrationNumber(String v) =>
       v.trim().isEmpty ? 'Registration number is required' : null;
 
-  static String? aeId(String v) =>
-      v.trim().isEmpty ? 'AE ID is required' : null;
+  static final _aeIdSuffixRe = RegExp(r'^\d{9}$');
+
+  static String? aeId(String v) {
+    final digits = v.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return 'AE ID is required';
+    if (!_aeIdSuffixRe.hasMatch(digits)) {
+      return 'AE ID must be 5 digits (serial) + 4 digits (year)';
+    }
+    return null;
+  }
 
   static String? street(String v) =>
       v.trim().isEmpty ? 'Street is required' : null;
@@ -217,6 +225,8 @@ const _attractionTypeLabels = {
 const _fixedCityMunicipality = 'San Pablo City';
 const _fixedProvince = 'Laguna';
 const _fixedRegion = 'Region IV-A';
+
+const _aeIdPrefix = 'DOT-R4A-ACC-';
 
 const _sanPabloBarangays = <String>[
   'Atisan',
@@ -784,7 +794,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         rooms: _rooms,
         permitNumber: _permitNumberCtrl.text.trim(),
         registrationNumber: _registrationCtrl.text.trim(),
-        aeId: _aeIdCtrl.text.trim(),
+        aeId: '$_aeIdPrefix${_aeIdCtrl.text.trim()}',
         street: _streetCtrl.text.trim(),
         barangay: _barangayCtrl.text.trim(),
         cityMunicipality: _fixedCityMunicipality,
@@ -2240,12 +2250,28 @@ class _Step2FormState extends State<_Step2Form> {
         _LabeledField(
           label: 'AE ID',
           error: _show('aeId') ? _V.aeId(widget.aeIdCtrl.text) : null,
-          child: _Input(
+          child: _PrefixedInput(
+            prefix: _aeIdPrefix,
             controller: widget.aeIdCtrl,
-            hint: 'e.g. 9-902',
-            hasError:
-                _show('aeId') && _V.aeId(widget.aeIdCtrl.text) != null,
+            hint: 'XXXXX-XXXX',
+            hasError: _show('aeId') && _V.aeId(widget.aeIdCtrl.text) != null,
             onChanged: (_) => _touch('aeId'),
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              _AeIdFormatter(),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Example: DOT-R4A-ACC-XXXXX-XXXX — DOT (Department of Tourism, '
+          'accrediting agency) · R4A (Region IV-A / CALABARZON) · ACC '
+          '(accommodation establishment) · XXXXX (serial number) · XXXX (year '
+          'issued).',
+          style: TextStyle(
+            color: AppColors.textSubtle,
+            fontSize: 11,
+            height: 1.4,
           ),
         ),
         const SizedBox(height: 16),
@@ -3070,6 +3096,25 @@ class _PhoneFormatter extends TextInputFormatter {
   }
 }
 
+class _AeIdFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    if (digits.length > 9) return oldValue;
+    final buf = StringBuffer();
+    for (int i = 0; i < digits.length; i++) {
+      if (i == 5) buf.write('-');
+      buf.write(digits[i]);
+    }
+    final formatted = buf.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
 class _Input extends StatelessWidget {
   const _Input({
     required this.controller,
@@ -3143,6 +3188,110 @@ class _Input extends StatelessWidget {
           ),
         ),
         suffixIcon: suffixIcon,
+      ),
+    );
+  }
+}
+
+class _PrefixedInput extends StatefulWidget {
+  const _PrefixedInput({
+    required this.prefix,
+    required this.controller,
+    required this.hint,
+    this.hasError = false,
+    this.onChanged,
+    this.inputFormatters,
+  });
+
+  final String prefix;
+  final TextEditingController controller;
+  final String hint;
+  final bool hasError;
+  final ValueChanged<String>? onChanged;
+  final List<TextInputFormatter>? inputFormatters;
+
+  @override
+  State<_PrefixedInput> createState() => _PrefixedInputState();
+}
+
+class _PrefixedInputState extends State<_PrefixedInput> {
+  final _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_onFocusChanged);
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChanged);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChanged() => setState(() {});
+
+  @override
+  Widget build(BuildContext context) {
+    final focused = _focusNode.hasFocus;
+    final borderColor = widget.hasError
+        ? RegisterColors.textRed
+        : focused
+            ? AppColors.primaryCyan
+            : AppColors.inputBorder;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.inputBackground,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: borderColor,
+          width: focused && !widget.hasError ? 1.5 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 14),
+            child: Text(
+              widget.prefix,
+              style: const TextStyle(
+                color: AppColors.textGray,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: TextField(
+              controller: widget.controller,
+              focusNode: _focusNode,
+              onChanged: widget.onChanged,
+              inputFormatters: widget.inputFormatters,
+              style: const TextStyle(
+                color: AppColors.textWhite,
+                fontSize: 13.5,
+              ),
+              decoration: InputDecoration(
+                hintText: widget.hint,
+                hintStyle: const TextStyle(
+                  color: AppColors.textSubtle,
+                  fontSize: 13.5,
+                ),
+                isDense: true,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 4,
+                  vertical: 13,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+        ],
       ),
     );
   }

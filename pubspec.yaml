@@ -90,6 +90,9 @@ dev_dependencies:
 
   flutter_lints: ^6.0.0
 
+  flutter_native_splash: ^2.4.0
+  flutter_launcher_icons: ^0.14.4
+
 
 flutter:
 
@@ -97,8 +100,32 @@ flutter:
   
   assets:
     - .env
+    - assets/logo/
     - assets/images/tourism_office_logo.jpg
     - assets/images/qr-pic.png
     - assets/data/regions.json
     - assets/data/provinces_by_region.json
     - assets/data/cities_municipalities.json
+
+flutter_native_splash:
+  color: "#FFFFFF"
+  image: assets/logo/splash_icon.png
+  android_12:
+    image: assets/logo/splash_icon.png
+    color: "#FFFFFF"
+  android: true
+  ios: false
+  web: false
+
+flutter_launcher_icons:
+  android: false
+  ios: false
+  windows:
+    generate: true
+    image_path: "assets/logo/windows_icon.png"
+    icon_size: 256
+  web:
+    generate: true
+    image_path: "assets/logo/favicon.png"
+    background_color: "#FFFFFF"
+    theme_color: "#2563EB"
