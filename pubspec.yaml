@@ -122,10 +122,10 @@ flutter_launcher_icons:
   ios: false
   windows:
     generate: true
-    image_path: "assets/logo/windows_icon.png"
+    image_path: "assets/logo/chrome-256x256.png"
     icon_size: 256
   web:
     generate: true
-    image_path: "assets/logo/favicon.png"
+    image_path: "assets/logo/chrome-512x512.png"
     background_color: "#FFFFFF"
     theme_color: "#2563EB"
