@@ -5,6 +5,7 @@ import 'package:app/api/admin_setup_api.dart';
 import 'package:app/api/base_api.dart';
 import 'package:app/core/constants/app_colors.dart';
 import 'package:app/router/app_routes.dart';
+import 'package:app/ui/shared/widgets/privacy_consent_dialog.dart';
 
 class AdminSetupPage extends StatelessWidget {
   const AdminSetupPage({super.key});
@@ -35,6 +36,7 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
 
   bool _loadingStatus = true;
   bool _setupAvailable = false;
+  bool _consentGranted = false;
   bool _submitting = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
@@ -78,6 +80,8 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
         _pollTimer?.cancel();
         await AdminSetupApi.setAdminExists(true);
         Navigator.pushNamedAndRemoveUntil(context, AppRoutes.login, (route) => false);
+      } else if (status.setupAvailable && !_consentGranted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _promptConsent());
       }
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -92,6 +96,17 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
         _loadingStatus = false;
       });
     }
+  }
+
+  Future<void> _promptConsent() async {
+    if (!mounted || _consentGranted) return;
+    final agreed = await showPrivacyConsent(context, accountType: 'admin');
+    if (!mounted) return;
+    if (!agreed) {
+      Navigator.pushReplacementNamed(context, AppRoutes.login);
+      return;
+    }
+    setState(() => _consentGranted = true);
   }
 
   Future<void> _requestConfirmation() async {
@@ -256,7 +271,9 @@ class _AdminSetupScreenState extends State<AdminSetupScreen> {
             : _waitingForConfirmation
                 ? _buildWaitingState(key: const ValueKey('waiting'))
                 : _setupAvailable
-                    ? _buildForm(key: const ValueKey('form'))
+                    ? (_consentGranted
+                        ? _buildForm(key: const ValueKey('form'))
+                        : const _SetupLoading(key: ValueKey('consent')))
                     : _buildLocked(key: const ValueKey('locked')),
       ),
     );

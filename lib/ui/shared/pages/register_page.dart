@@ -9,6 +9,7 @@ import 'package:app/core/enums/business_enums.dart';
 import 'package:app/router/app_routes.dart';
 import 'package:app/core/constants/app_colors.dart';
 import 'package:app/core/widgets/app_toast.dart';
+import 'package:app/ui/shared/widgets/privacy_consent_dialog.dart';
 
 class RegisterPage extends StatelessWidget {
   const RegisterPage({super.key});
@@ -607,7 +608,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  void _selectAccountType(String type) {
+  Future<void> _selectAccountType(String type) async {
+    final agreed = await showPrivacyConsent(
+      context,
+      accountType: type == 'attraction' ? 'attraction' : 'business',
+    );
+    if (!mounted) return;
+    if (!agreed) {
+      Navigator.pushReplacementNamed(context, AppRoutes.login);
+      return;
+    }
     _confirmationPollTimer?.cancel();
     setState(() {
       _accountType = type;
