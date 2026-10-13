@@ -340,7 +340,7 @@ class _AdminAttractionsPageState extends State<AdminAttractionsPage> {
     final session = SessionService.instance.current;
     final messageContent = buildOfficialMessageLetter(
       recipient: item.name,
-      subject: 'Business Status Update',
+      subject: 'Attraction Status Update',
       messageContent: reason,
       senderFullName: session?.fullName ?? 'Tourism Officer',
       senderEmail: session?.email ?? '',
