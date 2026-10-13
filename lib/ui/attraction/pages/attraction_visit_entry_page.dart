@@ -44,6 +44,7 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
   String? _selectedCityCode;
   bool _isSaving = false;
   bool _psgcLoaded = false;
+  String? _lastEditedSexField;
 
   Map<String, String?> _errors = {};
 
@@ -110,17 +111,38 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
         "${_visitDate!.day.toString().padLeft(2, '0')}";
   }
 
-  void _recomputeMissingSexCount() {
+  void _recomputeSexCount() {
     final total = _guestCount;
     if (total <= 0) return;
+
     final male = int.tryParse(_maleCountCtrl.text);
     final female = int.tryParse(_femaleCountCtrl.text);
-    if (male != null && female == null) {
+
+    String? source = _lastEditedSexField;
+    if (source == null) {
+      if (male != null && female == null) {
+        source = 'male';
+      } else if (female != null && male == null) {
+        source = 'female';
+      } else {
+        return;
+      }
+    }
+
+    if (source == 'male') {
+      if (male == null) {
+        _lastEditedSexField = null;
+        return;
+      }
       final f = total - male;
-      _femaleCountCtrl.text = f >= 0 ? "$f" : _femaleCountCtrl.text;
-    } else if (female != null && male == null) {
+      if (f >= 0) _femaleCountCtrl.text = '$f';
+    } else {
+      if (female == null) {
+        _lastEditedSexField = null;
+        return;
+      }
       final m = total - female;
-      _maleCountCtrl.text = m >= 0 ? "$m" : _maleCountCtrl.text;
+      if (m >= 0) _maleCountCtrl.text = '$m';
     }
   }
 
@@ -172,6 +194,7 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
       _selectedCountry = null;
       _selectedProvinceCode = null;
       _selectedCityCode = null;
+      _lastEditedSexField = null;
       _errors = {};
     });
   }
@@ -377,7 +400,7 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
                               onChanged: (_) {
                                 setState(() {});
                                 _clearFieldError("guestCount");
-                                _recomputeMissingSexCount();
+                                _recomputeSexCount();
                               },
                             ),
                           ),
@@ -408,7 +431,7 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
                                     onChanged: (_) {
                                       setState(() {});
                                       _clearFieldError("guestCount");
-                                      _recomputeMissingSexCount();
+                                      _recomputeSexCount();
                                     },
                                   ),
                                 ),
@@ -615,7 +638,8 @@ const Text(
                                   onChanged: (_) {
                                     setState(() {});
                                     _clearFieldError("maleCount");
-                                    _recomputeMissingSexCount();
+                                    _lastEditedSexField = 'male';
+                                    _recomputeSexCount();
                                   },
                                 ),
                               ),
@@ -633,7 +657,8 @@ const Text(
                                   onChanged: (_) {
                                     setState(() {});
                                     _clearFieldError("femaleCount");
-                                    _recomputeMissingSexCount();
+                                    _lastEditedSexField = 'female';
+                                    _recomputeSexCount();
                                   },
                                 ),
                               ),

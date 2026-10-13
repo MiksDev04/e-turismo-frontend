@@ -61,6 +61,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
   final _purposeOtherCtrl = TextEditingController();
   bool _showPurposeOther = false;
   bool _isSaving = false;
+  String? _lastEditedSexField;
 
   // ── Room selection ──────────────────────────────────────────────────────────
   List<RoomInfo> _vacantRooms = [];
@@ -240,17 +241,39 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
     });
   }
 
-  void _recomputeMissingSexCount() {
+  void _recomputeSexCount() {
+    if (_hasOriginGroups) return;
     final total = int.tryParse(_totalGuestsCtrl.text) ?? 0;
     if (total <= 0) return;
+
     final male = int.tryParse(_maleGuestsCtrl.text);
     final female = int.tryParse(_femaleGuestsCtrl.text);
-    if (male != null && female == null) {
+
+    String? source = _lastEditedSexField;
+    if (source == null) {
+      if (male != null && female == null) {
+        source = 'male';
+      } else if (female != null && male == null) {
+        source = 'female';
+      } else {
+        return;
+      }
+    }
+
+    if (source == 'male') {
+      if (male == null) {
+        _lastEditedSexField = null;
+        return;
+      }
       final f = total - male;
-      _femaleGuestsCtrl.text = f >= 0 ? '$f' : _femaleGuestsCtrl.text;
-    } else if (female != null && male == null) {
+      if (f >= 0) _femaleGuestsCtrl.text = '$f';
+    } else {
+      if (female == null) {
+        _lastEditedSexField = null;
+        return;
+      }
       final m = total - female;
-      _maleGuestsCtrl.text = m >= 0 ? '$m' : _maleGuestsCtrl.text;
+      if (m >= 0) _maleGuestsCtrl.text = '$m';
     }
   }
 
@@ -276,6 +299,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
       _leadBirthdate = null;
       _leadSex = null;
       _originGroups = [];
+      _lastEditedSexField = null;
       _errors = {};
     });
   }
@@ -619,17 +643,19 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                       setState(() {});
                       _clearFieldError('totalGuests');
                       _validateRoomCapacity();
-                      _recomputeMissingSexCount();
+                      _recomputeSexCount();
                     },
                     onMaleGuestsChanged: (_) {
                       setState(() {});
                       _clearFieldError('maleGuests');
-                      _recomputeMissingSexCount();
+                      _lastEditedSexField = 'male';
+                      _recomputeSexCount();
                     },
                     onFemaleGuestsChanged: (_) {
                       setState(() {});
                       _clearFieldError('femaleGuests');
-                      _recomputeMissingSexCount();
+                      _lastEditedSexField = 'female';
+                      _recomputeSexCount();
                     },
                     onRoomToggled: (roomId) {
                       setState(() {
