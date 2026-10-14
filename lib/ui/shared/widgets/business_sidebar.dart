@@ -210,7 +210,7 @@ class _BusinessBadge extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             const Text(
-              'Business',
+              'Accommodation',
               style: TextStyle(
                 color: AppColors.accentPurple,
                 fontSize: 11,

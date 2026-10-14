@@ -151,7 +151,7 @@ class AccommodationExportService {
         await OpenFile.open(path);
       }
 
-      if (Platform.isAndroid || Platform.isIOS) {
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
         AppToast.warning(context, 'Excel ready — choose where to save it');
       } else {
         AppToast.success(context, 'Downloaded $fileName');
@@ -262,7 +262,7 @@ class AccommodationExportService {
         await OpenFile.open(path);
       }
 
-      if (Platform.isAndroid || Platform.isIOS) {
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
         AppToast.warning(context, 'PDF ready — choose where to save it');
       } else {
         AppToast.success(context, 'Downloaded $fileName');
