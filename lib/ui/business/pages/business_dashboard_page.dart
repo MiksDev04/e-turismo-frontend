@@ -1801,7 +1801,7 @@ class _ToggleCardTitle extends StatelessWidget {
   }
 }
 
-// ─── Gender / Age Group Card ──────────────────────────────────────────────────
+// ─── Sex / Age Group Card ──────────────────────────────────────────────────
 
 class _GenderAgeCard extends StatefulWidget {
   const _GenderAgeCard({required this.sexDist, required this.ageGroups});
@@ -1814,7 +1814,7 @@ class _GenderAgeCard extends StatefulWidget {
 }
 
 class _GenderAgeCardState extends State<_GenderAgeCard> {
-  int _tab = 0; // 0 = Gender, 1 = Age Group
+  int _tab = 0; // 0 = Sex, 1 = Age Group
 
   static const _ageColors = [
     AppColors.chartBlue,
@@ -1920,7 +1920,7 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _ToggleCardTitle(
-            options: const ['Gender', 'Age Group'],
+            options: const ['Sex', 'Age Group'],
             selectedIndex: _tab,
             onChanged: (i) => setState(() => _tab = i),
           ),

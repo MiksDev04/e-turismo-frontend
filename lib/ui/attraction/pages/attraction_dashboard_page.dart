@@ -309,8 +309,8 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
       );
       buf.writeln();
 
-      buf.writeln('GENDER DISTRIBUTION');
-      buf.writeln('Gender,Count,Percentage');
+      buf.writeln('SEX DISTRIBUTION');
+      buf.writeln('Sex,Count,Percentage');
       final g = d.genderDistribution;
       buf.writeln(
         'Male,${g.male},${(g.maleRatio * 100).toStringAsFixed(1)}%',
@@ -472,7 +472,7 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
             ),
             pw.SizedBox(height: 16),
             pw.Text(
-              'Gender Distribution',
+              'Sex Distribution',
               style: pw.TextStyle(
                 fontSize: 14,
                 fontWeight: pw.FontWeight.bold,
@@ -480,7 +480,7 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
             ),
             pw.SizedBox(height: 8),
             pw.Table.fromTextArray(
-              headers: ['Gender', 'Count', 'Percentage'],
+              headers: ['Sex', 'Count', 'Percentage'],
               data: [
                 [
                   'Male',
@@ -1692,7 +1692,7 @@ class _ToggleCardTitle extends StatelessWidget {
   }
 }
 
-// ─── Gender Card ──────────────────────────────────────────────────────────────
+// ─── Sex Card ──────────────────────────────────────────────────────────────
 
 class _GenderCard extends StatelessWidget {
   const _GenderCard({required this.genderDist});
@@ -1748,7 +1748,7 @@ class _GenderCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _CardTitle(title: 'Gender'),
+          const _CardTitle(title: 'Sex'),
           if (isEmpty) ...[
             const SizedBox(height: 6),
             const Text(

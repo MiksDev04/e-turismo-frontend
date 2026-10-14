@@ -599,12 +599,12 @@ const Text(
 
                         Divider(height: 32, color: AppColors.cardBorder),
 
-                        // ── Gender Distribution ──
+                        // ── Sex Distribution ──
                         const Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              "Gender Distribution",
+                              "Sex Distribution",
                               style: TextStyle(
                                 color: AppColors.textWhite,
                                 fontSize: 13,

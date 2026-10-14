@@ -159,9 +159,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       buf.writeln('Total Tourists This Year,${d.stats.touristsThisYear}');
       buf.writeln();
 
-      // ── Gender Distribution ────────────────────────────────────────────────
-      buf.writeln('GENDER DISTRIBUTION');
-      buf.writeln('Gender,Count,Percentage');
+      // ── Sex Distribution ────────────────────────────────────────────────
+      buf.writeln('SEX DISTRIBUTION');
+      buf.writeln('Sex,Count,Percentage');
       buf.writeln(
         'Male,${d.genderDistribution.male},'
         '${(d.genderDistribution.maleRatio * 100).toStringAsFixed(1)}%',
@@ -332,14 +332,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             ),
             pw.SizedBox(height: 16),
 
-            // ── Gender Distribution ───────────────────────────────────────────
+            // ── Sex Distribution ───────────────────────────────────────────
             pw.Text(
-              'Gender Distribution',
+              'Sex Distribution',
               style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 8),
             pw.Table.fromTextArray(
-              headers: ['Gender', 'Count', 'Percentage'],
+              headers: ['Sex', 'Count', 'Percentage'],
               data: [
                 [
                   'Male',
@@ -1618,7 +1618,7 @@ class _ToggleCardTitle extends StatelessWidget {
   }
 }
 
-// ─── Gender / City-Municipality Card ──────────────────────────────────────────
+// ─── Sex / City-Municipality Card ──────────────────────────────────────────
 
 class _GenderCityCard extends StatefulWidget {
   const _GenderCityCard({
@@ -1633,7 +1633,7 @@ class _GenderCityCard extends StatefulWidget {
   State<_GenderCityCard> createState() => _GenderCityCardState();
 }
 class _GenderCityCardState extends State<_GenderCityCard> {
-  int _tab = 0; // 0 = Gender, 1 = City / Municipality
+  int _tab = 0; // 0 = Sex, 1 = City / Municipality
 
   static const _cityColors = [
     AppColors.chartBlue,
@@ -1735,7 +1735,7 @@ class _GenderCityCardState extends State<_GenderCityCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _ToggleCardTitle(
-            options: const ['Gender', 'City / Municipality'],
+            options: const ['Sex', 'City / Municipality'],
             selectedIndex: _tab,
             onChanged: (i) => setState(() => _tab = i),
           ),
