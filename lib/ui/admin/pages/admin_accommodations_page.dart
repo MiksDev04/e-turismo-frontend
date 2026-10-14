@@ -1323,35 +1323,16 @@ class _RankingCard extends StatelessWidget {
   final AccommodationRankingRow row;
   final int maxGuests;
 
-  static const _medals = ['🥇', '🥈', '🥉'];
-
-  Color get _rankColor {
-    switch (row.rank) {
-      case 1:
-        return const Color(0xFFFFD700);
-      case 2:
-        return const Color(0xFFC0C0C0);
-      case 3:
-        return const Color(0xFFCD7F32);
-      default:
-        return AppColors.textGray;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final isTop3 = row.rank <= 3;
-    final rankColor = _rankColor;
     final progress = maxGuests > 0 ? row.totalGuests / maxGuests : 0.0;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: isTop3 ? rankColor.withOpacity(0.06) : AppColors.cardBackground,
+        color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isTop3 ? rankColor.withOpacity(0.28) : AppColors.cardBorder,
-        ),
+        border: Border.all(color: AppColors.cardBorder),
       ),
       child: Row(
         children: [
@@ -1359,29 +1340,24 @@ class _RankingCard extends StatelessWidget {
           SizedBox(
             width: 48,
             child: Center(
-              child: isTop3
-                  ? Text(
-                      _medals[row.rank - 1],
-                      style: const TextStyle(fontSize: 28),
-                    )
-                  : Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: AppColors.cardBorder.withOpacity(0.5),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          '${row.rank}',
-                          style: const TextStyle(
-                            color: AppColors.textGray,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: AppColors.cardBorder.withOpacity(0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    '${row.rank}',
+                    style: const TextStyle(
+                      color: AppColors.textGray,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
+                  ),
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -1392,10 +1368,10 @@ class _RankingCard extends StatelessWidget {
               children: [
                 Text(
                   row.businessName,
-                  style: TextStyle(
-                    color: isTop3 ? AppColors.textWhite : AppColors.textGray,
-                    fontSize: isTop3 ? 14.5 : 14,
-                    fontWeight: isTop3 ? FontWeight.w600 : FontWeight.w500,
+                  style: const TextStyle(
+                    color: AppColors.textGray,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1405,10 +1381,8 @@ class _RankingCard extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: progress,
                     backgroundColor: AppColors.cardBorder.withOpacity(0.3),
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      isTop3
-                          ? rankColor.withOpacity(0.65)
-                          : AppColors.primaryCyan.withOpacity(0.35),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      AppColors.primaryCyan,
                     ),
                     minHeight: 4,
                   ),
@@ -1423,8 +1397,8 @@ class _RankingCard extends StatelessWidget {
             children: [
               Text(
                 _commify(row.totalGuests),
-                style: TextStyle(
-                  color: isTop3 ? rankColor : AppColors.textWhite,
+                style: const TextStyle(
+                  color: AppColors.textWhite,
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
                   height: 1,
