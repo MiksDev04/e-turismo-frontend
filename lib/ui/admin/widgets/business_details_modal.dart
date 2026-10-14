@@ -430,10 +430,12 @@ class _DetailsGrid extends StatelessWidget {
         const SizedBox(height: 12),
         _DetailRow(
           first: _DetailField(label: 'Permit #', value: details.permitNumber),
-          second: _DetailField(
-            label: 'Registration #',
-            value: details.registrationNumber,
-          ),
+          // HIDDEN: registration number not required
+          // second: _DetailField(
+          //   label: 'Registration #',
+          //   value: details.registrationNumber,
+          // ),
+          second: const SizedBox.shrink(),
         ),
         const SizedBox(height: 12),
         _DetailRow(

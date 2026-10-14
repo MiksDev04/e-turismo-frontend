@@ -1122,16 +1122,18 @@ class _BusinessInfoCard extends StatelessWidget {
           if (isNarrow) ...[
             _LabeledField(label: 'Permit Number',
                 child: _InputField(controller: permitNumberCtrl)),
-            const SizedBox(height: 14),
-            _LabeledField(label: 'Registration Number',
-                child: _InputField(controller: registrationCtrl)),
+            // HIDDEN: registration number not required
+            // const SizedBox(height: 14),
+            // _LabeledField(label: 'Registration Number',
+            //     child: _InputField(controller: registrationCtrl)),
           ] else
             Row(children: [
               Expanded(child: _LabeledField(label: 'Permit Number',
                   child: _InputField(controller: permitNumberCtrl))),
-              const SizedBox(width: 14),
-              Expanded(child: _LabeledField(label: 'Registration Number',
-                  child: _InputField(controller: registrationCtrl))),
+              // HIDDEN: registration number not required
+              // const SizedBox(width: 14),
+              // Expanded(child: _LabeledField(label: 'Registration Number',
+              //     child: _InputField(controller: registrationCtrl))),
             ]),
           const SizedBox(height: 22),
 

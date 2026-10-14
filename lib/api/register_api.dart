@@ -454,9 +454,10 @@ class RegisterApi {
     if (ownerFirstName.trim().isEmpty) return 'Owner first name is required.';
     if (ownerLastName.trim().isEmpty) return 'Owner last name is required.';
     if (permitNumber.trim().isEmpty) return 'Permit number is required.';
-    if (registrationNumber.trim().isEmpty) {
-      return 'Registration number is required.';
-    }
+    // HIDDEN: registration number not required
+    // if (registrationNumber.trim().isEmpty) {
+    //   return 'Registration number is required.';
+    // }
     if (aeId.trim().isEmpty) return 'AE ID is required.';
     if (street.trim().isEmpty) return 'Street is required.';
     if (barangay.trim().isEmpty) return 'Barangay is required.';

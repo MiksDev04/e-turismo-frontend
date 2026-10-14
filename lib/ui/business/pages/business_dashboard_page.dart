@@ -1829,29 +1829,33 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
     if (_tab == 0) {
       final d = widget.sexDist;
       final isEmpty = d.total == 0;
-      return [
+      final segments = <_Segment>[
         _Segment(
-          value: isEmpty ? 1 / 3 : d.maleRatio,
+          value: isEmpty ? 0.5 : d.maleRatio,
           color: AppColors.chartCyan,
           label: 'Male',
           count: d.male,
           isEmpty: isEmpty,
         ),
         _Segment(
-          value: isEmpty ? 1 / 3 : d.femaleRatio,
+          value: isEmpty ? 0.5 : d.femaleRatio,
           color: AppColors.chartPurple,
           label: 'Female',
           count: d.female,
           isEmpty: isEmpty,
         ),
-        _Segment(
-          value: isEmpty ? 1 / 3 : d.otherRatio,
-          color: AppColors.chartGray,
-          label: 'Unspecified',
-          count: d.other,
-          isEmpty: isEmpty,
-        ),
       ];
+      if (d.other > 0) {
+        segments.add(
+          _Segment(
+            value: d.otherRatio,
+            color: AppColors.chartGray,
+            label: 'Unspecified',
+            count: d.other,
+          ),
+        );
+      }
+      return segments;
     } else {
       if (widget.ageGroups.isEmpty) {
         return List.generate(

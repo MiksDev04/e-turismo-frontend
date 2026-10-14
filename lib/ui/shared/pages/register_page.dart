@@ -144,8 +144,8 @@ class _V {
   static String? permitNumber(String v) =>
       v.trim().isEmpty ? 'Permit number is required' : null;
 
-  static String? registrationNumber(String v) =>
-      v.trim().isEmpty ? 'Registration number is required' : null;
+  // HIDDEN: registration number not required
+  static String? registrationNumber(String v) => null;
 
   static final _aeIdSuffixRe = RegExp(r'^\d{9}$');
 
@@ -2224,34 +2224,49 @@ class _Step2FormState extends State<_Step2Form> {
         const SizedBox(height: 16),
 
         // ── Permit Number + Registration Number ───────────────────────────
-        _ResponsiveFieldPair(
-          first: _LabeledField(
-            label: 'Permit Number',
-            error: _show('permitNumber')
-                ? _V.permitNumber(widget.permitNumberCtrl.text)
-                : null,
-            child: _Input(
-              controller: widget.permitNumberCtrl,
-              hint: 'SP-HTL-2024-XXX',
-              hasError:
-                  _show('permitNumber') &&
-                  _V.permitNumber(widget.permitNumberCtrl.text) != null,
-              onChanged: (_) => _touch('permitNumber'),
-            ),
-          ),
-          second: _LabeledField(
-            label: 'Registration Number',
-            error: _show('registration')
-                ? _V.registrationNumber(widget.registrationCtrl.text)
-                : null,
-            child: _Input(
-              controller: widget.registrationCtrl,
-              hint: 'BIR-2024-XXXXX',
-              hasError:
-                  _show('registration') &&
-                  _V.registrationNumber(widget.registrationCtrl.text) != null,
-              onChanged: (_) => _touch('registration'),
-            ),
+        // HIDDEN: registration number not required
+        // _ResponsiveFieldPair(
+        //   first: _LabeledField(
+        //     label: 'Permit Number',
+        //     error: _show('permitNumber')
+        //         ? _V.permitNumber(widget.permitNumberCtrl.text)
+        //         : null,
+        //     child: _Input(
+        //       controller: widget.permitNumberCtrl,
+        //       hint: 'SP-HTL-2024-XXX',
+        //       hasError:
+        //           _show('permitNumber') &&
+        //           _V.permitNumber(widget.permitNumberCtrl.text) != null,
+        //       onChanged: (_) => _touch('permitNumber'),
+        //     ),
+        //   ),
+        //   second: _LabeledField(
+        //     label: 'Registration Number',
+        //     error: _show('registration')
+        //         ? _V.registrationNumber(widget.registrationCtrl.text)
+        //         : null,
+        //     child: _Input(
+        //       controller: widget.registrationCtrl,
+        //       hint: 'BIR-2024-XXXXX',
+        //       hasError:
+        //           _show('registration') &&
+        //           _V.registrationNumber(widget.registrationCtrl.text) != null,
+        //       onChanged: (_) => _touch('registration'),
+        //     ),
+        //   ),
+        // ),
+        _LabeledField(
+          label: 'Permit Number',
+          error: _show('permitNumber')
+              ? _V.permitNumber(widget.permitNumberCtrl.text)
+              : null,
+          child: _Input(
+            controller: widget.permitNumberCtrl,
+            hint: 'SP-HTL-2024-XXX',
+            hasError:
+                _show('permitNumber') &&
+                _V.permitNumber(widget.permitNumberCtrl.text) != null,
+            onChanged: (_) => _touch('permitNumber'),
           ),
         ),
         const SizedBox(height: 16),
