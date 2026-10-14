@@ -2182,7 +2182,7 @@ class _Step2FormState extends State<_Step2Form> {
         // ── Owner First Name + Last Name ───────────────────────────────────
         _ResponsiveFieldPair(
           first: _LabeledField(
-            label: 'Owner First Name',
+            label: 'In-charge First Name',
             error: _show('ownerFirstName')
                 ? _V.ownerFirstName(widget.ownerFirstNameCtrl.text)
                 : null,
@@ -2196,7 +2196,7 @@ class _Step2FormState extends State<_Step2Form> {
             ),
           ),
           second: _LabeledField(
-            label: 'Owner Last Name',
+            label: 'In-charge Last Name',
             error: _show('ownerLastName')
                 ? _V.ownerLastName(widget.ownerLastNameCtrl.text)
                 : null,
@@ -2214,7 +2214,7 @@ class _Step2FormState extends State<_Step2Form> {
 
         // ── Owner Middle Name ───────────────────────────────────────────────
         _LabeledField(
-          label: 'Middle Name (Optional)',
+          label: 'In-charge Middle Name (Optional)',
           child: _Input(
             controller: widget.ownerMiddleNameCtrl,
             hint: 'Middle name',
@@ -2262,7 +2262,7 @@ class _Step2FormState extends State<_Step2Form> {
               : null,
           child: _Input(
             controller: widget.permitNumberCtrl,
-            hint: 'SP-HTL-2024-XXX',
+            hint: 'e.g. 1234',
             hasError:
                 _show('permitNumber') &&
                 _V.permitNumber(widget.permitNumberCtrl.text) != null,
@@ -2391,10 +2391,10 @@ class _Step2FormState extends State<_Step2Form> {
         ),
         const SizedBox(height: 16),
         _LabeledField(
-          label: "Owner's Valid ID",
+          label: "In-charge's Valid ID",
           error: widget.showErrors ? _V.file(widget.validIdFile) : null,
           child: _FilePicker(
-            label: "Upload Owner's Valid ID (PDF / Image)",
+            label: "Upload In-charge's Valid ID (PDF / Image)",
             file: widget.validIdFile,
             hasError: widget.showErrors && _V.file(widget.validIdFile) != null,
             onPick: widget.onPickValidId,
