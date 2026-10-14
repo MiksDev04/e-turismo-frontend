@@ -2393,11 +2393,30 @@ class _Step2FormState extends State<_Step2Form> {
         _LabeledField(
           label: "In-charge's Valid ID",
           error: widget.showErrors ? _V.file(widget.validIdFile) : null,
-          child: _FilePicker(
-            label: "Upload In-charge's Valid ID (PDF / Image)",
-            file: widget.validIdFile,
-            hasError: widget.showErrors && _V.file(widget.validIdFile) != null,
-            onPick: widget.onPickValidId,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _FilePicker(
+                label: "Upload In-charge's Valid ID (PDF / Image)",
+                file: widget.validIdFile,
+                hasError:
+                    widget.showErrors && _V.file(widget.validIdFile) != null,
+                onPick: widget.onPickValidId,
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Accepted valid IDs (any one): National ID (PhilSys), Passport, '
+                "Driver's License, UMID, Postal ID, or any other valid "
+                'government-issued ID.\n'
+                'Upload a clear photo of the required document/s. Make sure '
+                'it is not expired and all details are readable.',
+                style: TextStyle(
+                  color: AppColors.textGray,
+                  fontSize: 11.5,
+                  height: 1.4,
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 16),
@@ -2554,11 +2573,30 @@ class _AttractionDetailsFormState extends State<_AttractionDetailsForm> {
         _LabeledField(
           label: "Representative's Valid ID",
           error: widget.showErrors ? _V.file(widget.validIdFile) : null,
-          child: _FilePicker(
-            label: "Upload Representative's Valid ID (PDF / Image)",
-            file: widget.validIdFile,
-            hasError: widget.showErrors && _V.file(widget.validIdFile) != null,
-            onPick: widget.onPickValidId,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _FilePicker(
+                label: "Upload Representative's Valid ID (PDF / Image)",
+                file: widget.validIdFile,
+                hasError:
+                    widget.showErrors && _V.file(widget.validIdFile) != null,
+                onPick: widget.onPickValidId,
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Accepted valid IDs (any one): National ID (PhilSys), Passport, '
+                "Driver's License, UMID, Postal ID, or any other valid "
+                'government-issued ID.\n'
+                'Upload a clear photo of the required document/s. Make sure '
+                'it is not expired and all details are readable.',
+                style: TextStyle(
+                  color: AppColors.textGray,
+                  fontSize: 11.5,
+                  height: 1.4,
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 16),
