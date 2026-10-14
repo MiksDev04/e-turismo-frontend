@@ -155,7 +155,7 @@ class _EditRoomDialogState extends State<_EditRoomDialog> {
     if (isOnline) {
       AppToast.successOn(anchor, 'Room updated.');
     } else {
-      AppToast.warningOn(anchor, 'Saved offline. Will sync when online.');
+      AppToast.successOn(anchor, 'Saved offline. Will sync when online.');
     }
   }
 

@@ -580,7 +580,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
     if (isOnline) {
       AppToast.successOn(anchor, 'Guest record updated.');
     } else {
-      AppToast.warningOn(anchor, 'Saved offline. Will sync when online.');
+      AppToast.successOn(anchor, 'Saved offline. Will sync when online.');
     }
   }
 

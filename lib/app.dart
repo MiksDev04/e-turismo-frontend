@@ -109,7 +109,7 @@ class _SyncBannerOverlayState extends State<SyncBannerOverlay> {
         // Only surface the cycle if there are actually local items pending.
         _cycleActive = state.pendingCount > 0;
         if (_cycleActive) {
-          _toast(AppToast.warningOn, 'Syncing offline data…');
+          _toast(AppToast.successOn, 'Syncing offline data…');
         }
         break;
 

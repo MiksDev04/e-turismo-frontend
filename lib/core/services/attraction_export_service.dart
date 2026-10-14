@@ -128,7 +128,7 @@ class AttractionExportService {
       }
 
       if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-        AppToast.warning(context, 'Excel ready — choose where to save it');
+        AppToast.success(context, 'Excel ready — choose where to save it');
       } else {
         AppToast.success(context, 'Downloaded $fileName');
       }
@@ -239,7 +239,7 @@ class AttractionExportService {
       }
 
       if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-        AppToast.warning(context, 'PDF ready — choose where to save it');
+        AppToast.success(context, 'PDF ready — choose where to save it');
       } else {
         AppToast.success(context, 'Downloaded $fileName');
       }

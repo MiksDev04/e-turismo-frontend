@@ -487,7 +487,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
       if (result.syncedToCloud) {
         AppToast.success(context, 'Guest entry saved.');
       } else {
-        AppToast.warning(
+        AppToast.success(
           context,
           ConnectivityService.instance.isOnline
               ? 'Saved. Syncing in background.'

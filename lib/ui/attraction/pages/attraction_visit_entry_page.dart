@@ -287,7 +287,7 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
       if (result.syncedToCloud) {
         AppToast.success(context, 'Visit entry saved.');
       } else {
-        AppToast.warning(context, 'Saved offline. Will sync when online.');
+        AppToast.success(context, 'Saved offline. Will sync when online.');
       }
     } else if (result.error != null) {
       AppToast.warning(context, result.error!);

@@ -370,7 +370,7 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
       } else if (Platform.isAndroid || Platform.isIOS) {
         await saveFileToDownloads(fileName, bytes);
         if (!mounted) return;
-        AppToast.warning(context, 'Choose where to save $fileName');
+        AppToast.success(context, 'Choose where to save $fileName');
       } else {
         final dir = await _exportDirectory();
         final file = File(p.join(dir.path, fileName));
@@ -614,7 +614,7 @@ class _AttractionDashboardPageState extends State<AttractionDashboardPage> {
       } else if (Platform.isAndroid || Platform.isIOS) {
         await saveFileToDownloads(fileName, pdfBytes);
         if (!mounted) return;
-        AppToast.warning(context, 'Choose where to save $fileName');
+        AppToast.success(context, 'Choose where to save $fileName');
       } else {
         final dir = await _exportDirectory();
         final file = File(p.join(dir.path, fileName));

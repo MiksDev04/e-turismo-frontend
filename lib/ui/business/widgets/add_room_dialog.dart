@@ -98,7 +98,7 @@ class _AddRoomDialogState extends State<_AddRoomDialog> {
     if (isOnline) {
       AppToast.successOn(anchor, 'Room created.');
     } else {
-      AppToast.warningOn(anchor, 'Saved offline. Will sync when online.');
+      AppToast.successOn(anchor, 'Saved offline. Will sync when online.');
     }
   }
 
