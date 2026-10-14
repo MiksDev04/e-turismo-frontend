@@ -18,7 +18,7 @@ class RegisterPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Scaffold(body: RegisterScreen());
   }
-}
+} 
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
 
