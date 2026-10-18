@@ -14,6 +14,7 @@ import 'package:path/path.dart' as p;
 import 'package:app/ui/shared/pages/error_page.dart';
 import 'package:app/core/services/connectivity_service.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../shared/layouts/admin_layout.dart';
 import '../../../api/admin_dashboard_api.dart';
 import '../../../api/base_api.dart';
@@ -98,6 +99,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     }
   }
 
+  Future<void> _reloadAll() async {
+    await Future.wait([_loadDashboard(), _loadTrend()]);
+  }
+
   // ── Exports ───────────────────────────────────────────────────────────────────
 
   Future<Directory> _exportDirectory() async {
@@ -149,14 +154,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       buf.writeln('SUMMARY');
       buf.writeln('Metric,Value');
       buf.writeln('Active Accommodations,${d.stats.activeAccommodations}');
+      buf.writeln('Active Attractions,${d.stats.activeAttractions}');
       buf.writeln('Tourists This Period,${d.stats.touristsThisPeriod}');
-      buf.writeln('Pending Registrations,${d.stats.pendingRegistrations}');
       buf.writeln('Total Tourists This Year,${d.stats.touristsThisYear}');
       buf.writeln();
 
-      // ── Gender Distribution ────────────────────────────────────────────────
-      buf.writeln('GENDER DISTRIBUTION');
-      buf.writeln('Gender,Count,Percentage');
+      // ── Sex Distribution ────────────────────────────────────────────────
+      buf.writeln('SEX DISTRIBUTION');
+      buf.writeln('Sex,Count,Percentage');
       buf.writeln(
         'Male,${d.genderDistribution.male},'
         '${(d.genderDistribution.maleRatio * 100).toStringAsFixed(1)}%',
@@ -165,16 +170,21 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         'Female,${d.genderDistribution.female},'
         '${(d.genderDistribution.femaleRatio * 100).toStringAsFixed(1)}%',
       );
+      buf.writeln(
+        'Unspecified,${d.genderDistribution.other},'
+        '${(d.genderDistribution.otherRatio * 100).toStringAsFixed(1)}%',
+      );
       buf.writeln();
 
-      // ── Age Group Distribution ─────────────────────────────────────────────
-      buf.writeln('AGE GROUP DISTRIBUTION');
-      buf.writeln('Age Group,Count,Percentage');
-      final totalAge = d.ageGroups.fold<int>(0, (s, a) => s + a.count);
-      for (final a in d.ageGroups) {
-        final pct = totalAge == 0 ? 0.0 : (a.count / totalAge * 100);
+      // ── City / Municipality Distribution ───────────────────────────────────
+      buf.writeln('CITY / MUNICIPALITY DISTRIBUTION');
+      buf.writeln('City / Municipality,Count,Percentage');
+      final totalCity =
+          d.cityMunicipalities.fold<int>(0, (s, c) => s + c.count);
+      for (final c in d.cityMunicipalities) {
+        final pct = totalCity == 0 ? 0.0 : (c.count / totalCity * 100);
         buf.writeln(
-          '${_csvCell(a.ageGroup)},${a.count},${pct.toStringAsFixed(1)}%',
+          '${_csvCell(c.cityMunicipality)},${c.count},${pct.toStringAsFixed(1)}%',
         );
       }
       buf.writeln();
@@ -203,11 +213,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       }
       buf.writeln();
 
-      // ── Purpose of Visit ───────────────────────────────────────────────────
-      buf.writeln('PURPOSE OF VISIT');
-      buf.writeln('Purpose,Tourists');
-      for (final pv in d.purposeOfVisit) {
-        buf.writeln('${_csvCell(pv.purpose)},${pv.count}');
+      // ── Attractions ──────────────────────────────────────────────────────
+      buf.writeln('ATTRACTIONS');
+      buf.writeln('Attraction Type,Tourists');
+      for (final a in d.attractions) {
+        buf.writeln('${_csvCell(a.type)},${a.count}');
       }
       buf.writeln();
 
@@ -233,7 +243,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       if (kIsWeb) {
         await saveFileToDownloads(fileName, bytes);
         if (!mounted) return;
-        _showSnack('CSV downloaded: $fileName');
+        AppToast.success(context, 'Downloaded $fileName');
+      } else if (Platform.isAndroid || Platform.isIOS) {
+        final saved = await saveFileToDownloads(fileName, bytes);
+        if (!mounted) return;
+        if (saved != null) AppToast.success(context, 'Saved $fileName');
       } else {
         final dir = await _exportDirectory();
         final file = File(p.join(dir.path, fileName));
@@ -242,13 +256,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         final result = await OpenFile.open(file.path);
         if (!mounted) return;
         if (result.type != ResultType.done) {
-          _showSnack('CSV saved to ${file.path}. ${result.message}');
+          AppToast.success(context, 'Saved $fileName');
         } else {
-          _showSnack('CSV exported to ${file.path}');
+          AppToast.success(context, 'Downloaded $fileName');
         }
       }
     } catch (e) {
-      _showSnack('Export failed: $e');
+      if (mounted) AppToast.warning(context, 'Export failed: $e');
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -273,8 +287,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       final y2Data =
           _trendData[_trendYear2] ??
           List.generate(12, (i) => MonthlyCount(month: i + 1, count: 0));
-
-      final totalAge = d.ageGroups.fold<int>(0, (s, a) => s + a.count);
 
       doc.addPage(
         pw.MultiPage(
@@ -308,8 +320,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               headers: ['Metric', 'Value'],
               data: [
                 ['Active Accommodations', '${d.stats.activeAccommodations}'],
+                ['Active Attractions', '${d.stats.activeAttractions}'],
                 ['Tourists This Period', '${d.stats.touristsThisPeriod}'],
-                ['Pending Registrations', '${d.stats.pendingRegistrations}'],
                 ['Total Tourists This Year', '${d.stats.touristsThisYear}'],
               ],
               cellStyle: const pw.TextStyle(fontSize: 10),
@@ -320,14 +332,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             ),
             pw.SizedBox(height: 16),
 
-            // ── Gender Distribution ───────────────────────────────────────────
+            // ── Sex Distribution ───────────────────────────────────────────
             pw.Text(
-              'Gender Distribution',
+              'Sex Distribution',
               style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 8),
             pw.Table.fromTextArray(
-              headers: ['Gender', 'Count', 'Percentage'],
+              headers: ['Sex', 'Count', 'Percentage'],
               data: [
                 [
                   'Male',
@@ -339,6 +351,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   '${d.genderDistribution.female}',
                   '${(d.genderDistribution.femaleRatio * 100).toStringAsFixed(1)}%',
                 ],
+                [
+                  'Unspecified',
+                  '${d.genderDistribution.other}',
+                  '${(d.genderDistribution.otherRatio * 100).toStringAsFixed(1)}%',
+                ],
               ],
               cellStyle: const pw.TextStyle(fontSize: 10),
               headerStyle: pw.TextStyle(
@@ -348,17 +365,25 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             ),
             pw.SizedBox(height: 16),
 
-            // ── Age Group Distribution ────────────────────────────────────────
+            // ── City / Municipality Distribution ─────────────────────────────
             pw.Text(
-              'Age Group Distribution',
+              'City / Municipality Distribution',
               style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 8),
             pw.Table.fromTextArray(
-              headers: ['Age Group', 'Count', 'Percentage'],
-              data: d.ageGroups.map((a) {
-                final pct = totalAge == 0 ? 0.0 : (a.count / totalAge * 100);
-                return [a.ageGroup, '${a.count}', '${pct.toStringAsFixed(1)}%'];
+              headers: ['City / Municipality', 'Count', 'Percentage'],
+              data: d.cityMunicipalities.map((c) {
+                final total = d.cityMunicipalities.fold<int>(
+                  0,
+                  (s, x) => s + x.count,
+                );
+                final pct = total == 0 ? 0.0 : (c.count / total * 100);
+                return [
+                  c.cityMunicipality,
+                  '${c.count}',
+                  '${pct.toStringAsFixed(1)}%',
+                ];
               }).toList(),
               cellStyle: const pw.TextStyle(fontSize: 10),
               headerStyle: pw.TextStyle(
@@ -425,16 +450,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             ),
             pw.SizedBox(height: 16),
 
-            // ── Purpose of Visit ──────────────────────────────────────────────
+            // ── Attractions ──────────────────────────────────────────────────
             pw.Text(
-              'Purpose of Visit',
+              'Attractions',
               style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 8),
             pw.Table.fromTextArray(
-              headers: ['Purpose', 'Tourists'],
-              data: d.purposeOfVisit
-                  .map((pv) => [pv.purpose, '${pv.count}'])
+              headers: ['Attraction Type', 'Tourists'],
+              data: d.attractions
+                  .map((a) => [a.type, '${a.count}'])
                   .toList(),
               cellStyle: const pw.TextStyle(fontSize: 10),
               headerStyle: pw.TextStyle(
@@ -482,7 +507,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       if (kIsWeb) {
         await saveFileToDownloads(fileName, pdfBytes);
         if (!mounted) return;
-        _showSnack('PDF downloaded: $fileName');
+        AppToast.success(context, 'Downloaded $fileName');
+      } else if (Platform.isAndroid || Platform.isIOS) {
+        final saved = await saveFileToDownloads(fileName, pdfBytes);
+        if (!mounted) return;
+        if (saved != null) AppToast.success(context, 'Saved $fileName');
       } else {
         final dir = await _exportDirectory();
         final file = File(p.join(dir.path, fileName));
@@ -491,13 +520,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         final result = await OpenFile.open(file.path);
         if (!mounted) return;
         if (result.type != ResultType.done) {
-          _showSnack('PDF saved to ${file.path}. ${result.message}');
+          AppToast.success(context, 'Saved $fileName');
         } else {
-          _showSnack('PDF exported to ${file.path}');
+          AppToast.success(context, 'Downloaded $fileName');
         }
       }
     } catch (e) {
-      _showSnack('PDF export failed: $e');
+      if (mounted) AppToast.warning(context, 'PDF export failed: $e');
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -619,13 +648,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
-  void _showSnack(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: AppColors.accentGreen),
-    );
-  }
-
   // ── Label helpers ─────────────────────────────────────────────────────────────
 
   static String _monthName(int m) => const [
@@ -685,6 +707,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             _DashboardHeader(
                               selectedMonth: _selectedMonth,
                               selectedYear: _selectedYear,
+                              onReload: _reloadAll,
                             ),
                             const SizedBox(height: 12),
                             _FilterRow(
@@ -703,12 +726,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             ),
                           ] else ...[
                             Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(
                                   child: _DashboardHeader(
                                     selectedMonth: _selectedMonth,
                                     selectedYear: _selectedYear,
+                                    onReload: _reloadAll,
                                   ),
                                 ),
                                 const SizedBox(width: 16),
@@ -741,11 +765,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             const SizedBox(height: 20),
                             _DonutChartsRow(
                               genderDist: _dashData!.genderDistribution,
-                              ageGroups: _dashData!.ageGroups,
+                              cityMunicipalities: _dashData!.cityMunicipalities,
                               topNationalities: _dashData!.topNationalities,
                               provinces: _dashData!.provinces,
                               accommodationTypes: _dashData!.accommodationTypes,
-                              purposeOfVisit: _dashData!.purposeOfVisit,
+                              attractions: _dashData!.attractions,
                               isNarrow: isNarrow,
                               isMedium: isMedium,
                             ),
@@ -887,10 +911,12 @@ class _DashboardHeader extends StatelessWidget {
   const _DashboardHeader({
     required this.selectedMonth,
     required this.selectedYear,
+    this.onReload,
   });
 
   final int selectedMonth;
   final int selectedYear;
+  final VoidCallback? onReload;
 
   String get _periodLabel {
     if (selectedMonth == 0)
@@ -916,22 +942,33 @@ class _DashboardHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Tourism Overview',
-          style: TextStyle(
-            color: AppColors.textWhite,
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Tourism Overview',
+                style: TextStyle(
+                  color: AppColors.textWhite,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _periodLabel,
+                style: const TextStyle(color: AppColors.textGray, fontSize: 13),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          _periodLabel,
-          style: const TextStyle(color: AppColors.textGray, fontSize: 13),
-        ),
+        if (onReload != null) ...[
+          const SizedBox(width: 12),
+          _ReloadButton(onReload: onReload!),
+        ],
       ],
     );
   }
@@ -980,31 +1017,54 @@ class _FilterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isNarrow = MediaQuery.of(context).size.width < 600;
-    return Wrap(
-      spacing: isNarrow ? 6 : 10,
-      runSpacing: isNarrow ? 6 : 10,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        SizedBox(
-          width: isNarrow ? 140 : 170,
-          child: _FilterDropdown<int>(
-            value: selectedMonth,
-            items: _months.map((m) => (m.$1, m.$2)).toList(),
-            onChanged: onMonthChanged,
-            icon: Icons.calendar_month_rounded,
-          ),
+    final dropdowns = [
+      SizedBox(
+        width: isNarrow ? 140 : 170,
+        child: _FilterDropdown<int>(
+          value: selectedMonth,
+          items: _months.map((m) => (m.$1, m.$2)).toList(),
+          onChanged: onMonthChanged,
+          icon: Icons.calendar_month_rounded,
         ),
-        SizedBox(
-          width: isNarrow ? 90 : 110,
-          child: _FilterDropdown<int>(
-            value: selectedYear,
-            items: _years.map((y) => (y, '$y')).toList(),
-            onChanged: onYearChanged,
-            icon: Icons.event_rounded,
-          ),
+      ),
+      SizedBox(
+        width: isNarrow ? 90 : 110,
+        child: _FilterDropdown<int>(
+          value: selectedYear,
+          items: _years.map((y) => (y, '$y')).toList(),
+          onChanged: onYearChanged,
+          icon: Icons.event_rounded,
         ),
-        _ExportButton(onTap: onExport, isLoading: isExporting),
-      ],
+      ),
+    ];
+    final export = _ExportButton(onTap: onExport, isLoading: isExporting);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedWidth) {
+          return Wrap(
+            spacing: isNarrow ? 6 : 10,
+            runSpacing: isNarrow ? 6 : 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [...dropdowns, export],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Wrap(
+                spacing: isNarrow ? 6 : 10,
+                runSpacing: isNarrow ? 6 : 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: dropdowns,
+              ),
+            ),
+            const SizedBox(width: 10),
+            export,
+          ],
+        );
+      },
     );
   }
 }
@@ -1120,6 +1180,36 @@ class _ExportButton extends StatelessWidget {
   }
 }
 
+class _ReloadButton extends StatelessWidget {
+  const _ReloadButton({required this.onReload});
+
+  final VoidCallback? onReload;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Reload',
+      child: GestureDetector(
+        onTap: onReload,
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: AppColors.cardBackground,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.cardBorder),
+          ),
+          child: const Icon(
+            Icons.refresh_rounded,
+            size: 16,
+            color: AppColors.textWhite,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Stat Cards ───────────────────────────────────────────────────────────────
 
 class _StatCards extends StatelessWidget {
@@ -1164,22 +1254,24 @@ class _StatCards extends StatelessWidget {
         iconColor: AppColors.primaryCyan,
         value: '${stats.activeAccommodations}',
         label: 'Active Accommodations',
+        pending: stats.pendingAccommodations,
         onTap: () =>
             Navigator.pushReplacementNamed(context, AppRoutes.adminAccommodations),
+      ),
+      _StatCard(
+        icon: Icons.attractions_rounded,
+        iconColor: AppColors.accentOrange,
+        value: '${stats.activeAttractions}',
+        label: 'Active Attractions',
+        pending: stats.pendingAttractions,
+        onTap: () =>
+            Navigator.pushReplacementNamed(context, AppRoutes.adminAttractions),
       ),
       _StatCard(
         icon: Icons.people_alt_rounded,
         iconColor: AppColors.primaryBlue,
         value: '${stats.touristsThisPeriod}',
         label: 'Tourists $_periodLabel',
-      ),
-      _StatCard(
-        icon: Icons.calendar_today_rounded,
-        iconColor: AppColors.accentOrange,
-        value: '${stats.pendingRegistrations}',
-        label: 'Pending Registrations',
-        onTap: () =>
-            Navigator.pushReplacementNamed(context, AppRoutes.adminAccommodations),
       ),
       _StatCard(
         icon: Icons.groups_rounded,
@@ -1237,6 +1329,7 @@ class _StatCard extends StatelessWidget {
     required this.iconColor,
     required this.value,
     required this.label,
+    this.pending,
     this.infoTooltip,
     this.onTap,
   });
@@ -1245,8 +1338,24 @@ class _StatCard extends StatelessWidget {
   final Color iconColor;
   final String value;
   final String label;
+  final int? pending;
   final String? infoTooltip;
   final VoidCallback? onTap;
+
+  Widget _pendingHint() {
+    if (pending == null || pending! <= 0) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        '${pending!} pending',
+        style: const TextStyle(
+          color: AppColors.accentOrange,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1275,6 +1384,8 @@ class _StatCard extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
+                      const SizedBox(width: 8),
+                      _pendingHint(),
                     ],
                   ),
                   const SizedBox(height: 2),
@@ -1307,13 +1418,20 @@ class _StatCard extends StatelessWidget {
                 children: [
                   Icon(icon, color: iconColor, size: 18),
                   const SizedBox(height: 10),
-                  Text(
-                    value,
-                    style: const TextStyle(
-                      color: AppColors.textWhite,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        value,
+                        style: const TextStyle(
+                          color: AppColors.textWhite,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _pendingHint(),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Row(
@@ -1357,43 +1475,43 @@ class _StatCard extends StatelessWidget {
 class _DonutChartsRow extends StatelessWidget {
   const _DonutChartsRow({
     required this.genderDist,
-    required this.ageGroups,
+    required this.cityMunicipalities,
     required this.topNationalities,
     required this.provinces,
     required this.accommodationTypes,
-    required this.purposeOfVisit,
+    required this.attractions,
     required this.isNarrow,
     required this.isMedium,
   });
 
   final GenderDistribution genderDist;
-  final List<AgeGroupCount> ageGroups;
+  final List<CityMunicipalityCount> cityMunicipalities;
   final List<NationalityCount> topNationalities;
   final List<ProvinceCount> provinces;
   final List<AccommodationTypeCount> accommodationTypes;
-  final List<PurposeCount> purposeOfVisit;
+  final List<AttractionCount> attractions;
   final bool isNarrow;
   final bool isMedium;
 
   @override
   Widget build(BuildContext context) {
-    final genderAgeCard = _GenderAgeCard(
+    final genderCityCard = _GenderCityCard(
       genderDist: genderDist,
-      ageGroups: ageGroups,
+      cityMunicipalities: cityMunicipalities,
     );
     final countriesCard = _CountriesCard(
       topNationalities: topNationalities,
       provinces: provinces,
     );
-    final accommodationPurposeCard = _AccommodationPurposeCard(
+    final accommodationPurposeCard = _AccommodationAttractionCard(
       accommodationTypes: accommodationTypes,
-      purposeOfVisit: purposeOfVisit,
+      attractions: attractions,
     );
 
     if (isNarrow) {
       return Column(
         children: [
-          genderAgeCard,
+          genderCityCard,
           const SizedBox(height: 14),
           countriesCard,
           const SizedBox(height: 14),
@@ -1405,7 +1523,7 @@ class _DonutChartsRow extends StatelessWidget {
     if (isMedium) {
       return Column(
         children: [
-          genderAgeCard,
+          genderCityCard,
           const SizedBox(height: 14),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1422,7 +1540,7 @@ class _DonutChartsRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: genderAgeCard),
+        Expanded(child: genderCityCard),
         const SizedBox(width: 14),
         Expanded(child: countriesCard),
         const SizedBox(width: 14),
@@ -1500,22 +1618,24 @@ class _ToggleCardTitle extends StatelessWidget {
   }
 }
 
-// ─── Gender / Age Group Card ──────────────────────────────────────────────────
+// ─── Sex / City-Municipality Card ──────────────────────────────────────────
 
-class _GenderAgeCard extends StatefulWidget {
-  const _GenderAgeCard({required this.genderDist, required this.ageGroups});
+class _GenderCityCard extends StatefulWidget {
+  const _GenderCityCard({
+    required this.genderDist,
+    required this.cityMunicipalities,
+  });
 
   final GenderDistribution genderDist;
-  final List<AgeGroupCount> ageGroups;
+  final List<CityMunicipalityCount> cityMunicipalities;
 
   @override
-  State<_GenderAgeCard> createState() => _GenderAgeCardState();
+  State<_GenderCityCard> createState() => _GenderCityCardState();
 }
+class _GenderCityCardState extends State<_GenderCityCard> {
+  int _tab = 0; // 0 = Sex, 1 = City / Municipality
 
-class _GenderAgeCardState extends State<_GenderAgeCard> {
-  int _tab = 0; // 0 = Gender, 1 = Age Group
-
-  static const _ageColors = [
+  static const _cityColors = [
     AppColors.chartBlue,
     AppColors.chartGreen,
     AppColors.chartOrange,
@@ -1530,40 +1650,50 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
       final isEmpty = d.total == 0;
       return [
         _Segment(
-          value: isEmpty ? 0.5 : d.maleRatio,
+          value: isEmpty ? 1 / 3 : d.maleRatio,
           color: AppColors.chartCyan,
           label: 'Male',
           percentage: '${d.male} tourists',
           isEmpty: isEmpty,
         ),
         _Segment(
-          value: isEmpty ? 0.5 : d.femaleRatio,
+          value: isEmpty ? 1 / 3 : d.femaleRatio,
           color: AppColors.chartPurple,
           label: 'Female',
           percentage: '${d.female} tourists',
           isEmpty: isEmpty,
         ),
+        _Segment(
+          value: isEmpty ? 1 / 3 : d.otherRatio,
+          color: AppColors.chartGray,
+          label: 'Unspecified',
+          percentage: '${d.other} tourists',
+          isEmpty: isEmpty,
+        ),
       ];
     } else {
-      if (widget.ageGroups.isEmpty) {
+      if (widget.cityMunicipalities.isEmpty) {
         return List.generate(
           5,
           (i) => _Segment(
             value: 0.2,
-            color: _ageColors[i % _ageColors.length],
+            color: _cityColors[i % _cityColors.length],
             isEmpty: true,
           ),
         );
       }
-      final total = widget.ageGroups.fold<int>(0, (s, a) => s + a.count);
-      return widget.ageGroups.asMap().entries.map((e) {
+      final total = widget.cityMunicipalities.fold<int>(
+        0,
+        (s, a) => s + a.count,
+      );
+      return widget.cityMunicipalities.asMap().entries.map((e) {
         final ratio = total == 0
-            ? 1 / widget.ageGroups.length
+            ? 1 / widget.cityMunicipalities.length
             : e.value.count / total;
         return _Segment(
           value: ratio,
-          color: _ageColors[e.key % _ageColors.length],
-          label: e.value.ageGroup,
+          color: _cityColors[e.key % _cityColors.length],
+          label: e.value.cityMunicipality,
           percentage: '${e.value.count} tourists',
         );
       }).toList();
@@ -1575,15 +1705,16 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
       return const [
         _LegendItem(label: 'Male', color: AppColors.chartCyan),
         _LegendItem(label: 'Female', color: AppColors.chartPurple),
+        _LegendItem(label: 'Unspecified', color: AppColors.chartGray),
       ];
     }
-    return widget.ageGroups
+    return widget.cityMunicipalities
         .asMap()
         .entries
         .map(
           (e) => _LegendItem(
-            label: e.value.ageGroup,
-            color: _ageColors[e.key % _ageColors.length],
+            label: e.value.cityMunicipality,
+            color: _cityColors[e.key % _cityColors.length],
           ),
         )
         .toList();
@@ -1592,7 +1723,8 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
   String? get _emptyHint {
     if (_tab == 0 && widget.genderDist.total == 0)
       return 'No data for this period';
-    if (_tab == 1 && widget.ageGroups.isEmpty) return 'No data for this period';
+    if (_tab == 1 && widget.cityMunicipalities.isEmpty)
+      return 'No data for this period';
     return null;
   }
 
@@ -1603,7 +1735,7 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _ToggleCardTitle(
-            options: const ['Gender', 'Age Group'],
+            options: const ['Sex', 'City / Municipality'],
             selectedIndex: _tab,
             onChanged: (i) => setState(() => _tab = i),
           ),
@@ -1762,24 +1894,25 @@ class _CountriesCardState extends State<_CountriesCard> {
   }
 }
 
-// ─── Accommodation / Purpose of Visit Card ────────────────────────────────────
+// ─── Accommodation / Attraction Card ──────────────────────────────────────────
 
-class _AccommodationPurposeCard extends StatefulWidget {
-  const _AccommodationPurposeCard({
+class _AccommodationAttractionCard extends StatefulWidget {
+  const _AccommodationAttractionCard({
     required this.accommodationTypes,
-    required this.purposeOfVisit,
+    required this.attractions,
   });
 
   final List<AccommodationTypeCount> accommodationTypes;
-  final List<PurposeCount> purposeOfVisit;
+  final List<AttractionCount> attractions;
 
   @override
-  State<_AccommodationPurposeCard> createState() =>
-      _AccommodationPurposeCardState();
+  State<_AccommodationAttractionCard> createState() =>
+      _AccommodationAttractionCardState();
 }
 
-class _AccommodationPurposeCardState extends State<_AccommodationPurposeCard> {
-  int _tab = 0; // 0 = Accommodation, 1 = Purpose of Visit
+class _AccommodationAttractionCardState
+    extends State<_AccommodationAttractionCard> {
+  int _tab = 0; // 0 = Accommodation, 1 = Attraction
 
   static const _accommodationColors = [
     AppColors.chartOrange,
@@ -1790,7 +1923,7 @@ class _AccommodationPurposeCardState extends State<_AccommodationPurposeCard> {
     AppColors.chartGray,
   ];
 
-  static const _purposeColors = [
+  static const _attractionColors = [
     AppColors.chartPurple,
     AppColors.chartOrange,
     AppColors.chartBlue,
@@ -1823,24 +1956,24 @@ class _AccommodationPurposeCardState extends State<_AccommodationPurposeCard> {
         );
       }).toList();
     } else {
-      final list = widget.purposeOfVisit;
+      final list = widget.attractions;
       if (list.isEmpty) {
         return List.generate(
           5,
           (i) => _Segment(
             value: 0.2,
-            color: _purposeColors[i % _purposeColors.length],
+            color: _attractionColors[i % _attractionColors.length],
             isEmpty: true,
           ),
         );
       }
-      final total = list.fold<int>(0, (s, p) => s + p.count);
+      final total = list.fold<int>(0, (s, a) => s + a.count);
       return list.asMap().entries.map((e) {
         final ratio = total == 0 ? 1 / list.length : e.value.count / total;
         return _Segment(
           value: ratio,
-          color: _purposeColors[e.key % _purposeColors.length],
-          label: e.value.purpose,
+          color: _attractionColors[e.key % _attractionColors.length],
+          label: e.value.type,
           percentage: '${e.value.count} tourists',
         );
       }).toList();
@@ -1860,13 +1993,13 @@ class _AccommodationPurposeCardState extends State<_AccommodationPurposeCard> {
           )
           .toList();
     }
-    return widget.purposeOfVisit
+    return widget.attractions
         .asMap()
         .entries
         .map(
           (e) => _LegendItem(
-            label: e.value.purpose,
-            color: _purposeColors[e.key % _purposeColors.length],
+            label: e.value.type,
+            color: _attractionColors[e.key % _attractionColors.length],
           ),
         )
         .toList();
@@ -1875,8 +2008,7 @@ class _AccommodationPurposeCardState extends State<_AccommodationPurposeCard> {
   String? get _emptyHint {
     if (_tab == 0 && widget.accommodationTypes.isEmpty)
       return 'No accommodation data';
-    if (_tab == 1 && widget.purposeOfVisit.isEmpty)
-      return 'No data for this period';
+    if (_tab == 1 && widget.attractions.isEmpty) return 'No attraction data';
     return null;
   }
 
@@ -1887,7 +2019,7 @@ class _AccommodationPurposeCardState extends State<_AccommodationPurposeCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _ToggleCardTitle(
-            options: const ['Accommodation', 'Purpose of Visit'],
+            options: const ['Accommodation', 'Attraction'],
             selectedIndex: _tab,
             onChanged: (i) => setState(() => _tab = i),
           ),
@@ -2137,19 +2269,29 @@ class _ComparisonBarChartState extends State<_ComparisonBarChart>
             }
           },
           onExit: (_) => setState(() => _hoveredMonth = -1),
-          child: AnimatedBuilder(
-            animation: _ctrl,
-            builder: (_, __) => CustomPaint(
-              painter: _ComparisonBarPainter(
-                year1: widget.year1,
-                year2: widget.year2,
-                year1Data: widget.year1Data,
-                year2Data: widget.year2Data,
-                animValue: _ctrl.value,
-                hoveredMonth: _hoveredMonth,
-                hoveredIsYear2: _hoveredIsYear2,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (details) {
+              _detectHover(
+                details.localPosition,
+                constraints.biggest,
+                fromTouch: true,
+              );
+            },
+            child: AnimatedBuilder(
+              animation: _ctrl,
+              builder: (_, __) => CustomPaint(
+                painter: _ComparisonBarPainter(
+                  year1: widget.year1,
+                  year2: widget.year2,
+                  year1Data: widget.year1Data,
+                  year2Data: widget.year2Data,
+                  animValue: _ctrl.value,
+                  hoveredMonth: _hoveredMonth,
+                  hoveredIsYear2: _hoveredIsYear2,
+                ),
+                size: constraints.biggest,
               ),
-              size: constraints.biggest,
             ),
           ),
         );
@@ -2157,7 +2299,7 @@ class _ComparisonBarChartState extends State<_ComparisonBarChart>
     );
   }
 
-  void _detectHover(Offset pos, Size size) {
+  void _detectHover(Offset pos, Size size, {bool fromTouch = false}) {
     const leftPad = 42.0;
     const bottomPad = 36.0;
     final chartW = size.width - leftPad;
@@ -2203,6 +2345,23 @@ class _ComparisonBarChartState extends State<_ComparisonBarChart>
           setState(() {
             _hoveredMonth = i;
             _hoveredIsYear2 = true;
+          });
+        }
+        return;
+      }
+    }
+
+    if (fromTouch && pos.dx >= leftPad && pos.dx < size.width) {
+      final monthIdx = ((pos.dx - leftPad) / groupW).floor();
+      if (monthIdx >= 0 && monthIdx < 12) {
+        final groupX = leftPad + monthIdx * groupW + groupW / 2 - barW - gap / 2;
+        final dist1 = (pos.dx - (groupX + barW / 2)).abs();
+        final dist2 = (pos.dx - (groupX + barW + gap + barW / 2)).abs();
+        final selectYear1 = dist1 <= dist2;
+        if (_hoveredMonth != monthIdx || _hoveredIsYear2 != !selectYear1) {
+          setState(() {
+            _hoveredMonth = monthIdx;
+            _hoveredIsYear2 = !selectYear1;
           });
         }
         return;
@@ -2590,12 +2749,31 @@ class _DonutChartState extends State<_DonutChart>
     )..forward();
   }
 
+  static bool _segmentsEqual(List<_Segment> a, List<_Segment> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final x = a[i];
+      final y = b[i];
+      if (x.value != y.value ||
+          x.color != y.color ||
+          x.label != y.label ||
+          x.percentage != y.percentage ||
+          x.isEmpty != y.isEmpty) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   @override
   void didUpdateWidget(covariant _DonutChart old) {
     super.didUpdateWidget(old);
-    _ctrl
-      ..reset()
-      ..forward();
+    if (!_segmentsEqual(old.segments, widget.segments)) {
+      _ctrl
+        ..reset()
+        ..forward();
+    }
   }
 
   @override
@@ -2648,31 +2826,40 @@ class _DonutChartState extends State<_DonutChart>
         }
       },
       onExit: (_) => setState(() => _hoveredIdx = -1),
-      child: AnimatedBuilder(
-        animation: _ctrl,
-        builder: (_, __) => Opacity(
-          opacity: _ctrl.value,
-          child: Transform.scale(
-            scale: 0.95 + _ctrl.value * 0.05,
-            child: SizedBox(
-              width: widget.size,
-              height: widget.size,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  CustomPaint(
-                    painter: _DonutPainter(
-                      segments: widget.segments,
-                      animValue: _ctrl.value,
-                      hoveredIdx: _hoveredIdx,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (details) {
+          _checkHover(
+            details.localPosition,
+            Size(widget.size, widget.size),
+          );
+        },
+        child: AnimatedBuilder(
+          animation: _ctrl,
+          builder: (_, __) => Opacity(
+            opacity: _ctrl.value,
+            child: Transform.scale(
+              scale: 0.95 + _ctrl.value * 0.05,
+              child: SizedBox(
+                width: widget.size,
+                height: widget.size,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CustomPaint(
+                      painter: _DonutPainter(
+                        segments: widget.segments,
+                        animValue: _ctrl.value,
+                        hoveredIdx: _hoveredIdx,
+                      ),
+                      size: Size(widget.size, widget.size),
                     ),
-                    size: Size(widget.size, widget.size),
-                  ),
-                  if (_hoveredIdx != -1 &&
-                      widget.segments[_hoveredIdx].label != null &&
-                      !widget.segments[_hoveredIdx].isEmpty)
-                    _DonutTooltip(segment: widget.segments[_hoveredIdx]),
-                ],
+                    if (_hoveredIdx != -1 &&
+                        widget.segments[_hoveredIdx].label != null &&
+                        !widget.segments[_hoveredIdx].isEmpty)
+                      _DonutTooltip(segment: widget.segments[_hoveredIdx]),
+                  ],
+                ),
               ),
             ),
           ),

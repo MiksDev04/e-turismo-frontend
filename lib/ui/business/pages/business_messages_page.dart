@@ -16,7 +16,7 @@ import '../../shared/widgets/paginator.dart';
 
 // ─── Filter Options ───────────────────────────────────────────────────────────
 
-enum _Filter { all, compliance, announcement, general }
+enum _Filter { all, compliance, announcement }
 
 // ─── Letter Preview Helper ────────────────────────────────────────────────────
 
@@ -146,7 +146,7 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
     });
 
     // ── Pre-check connectivity FIRST (before cache) ────────────────────────
-    final online = await ConnectivityService.instance.checkOnline;
+    final online = ConnectivityService.instance.isOnline;
     if (!mounted) return;
     if (!online) {
       setState(() { _isOffline = true; _isLoading = false; });
@@ -185,7 +185,6 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
         _Filter.all          => null,
         _Filter.compliance   => 'compliance',
         _Filter.announcement => 'announcement',
-        _Filter.general      => 'general',
       };
        final result = await _api.fetchInbox(
          _businessId!,
@@ -246,7 +245,7 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
   @override
   Widget build(BuildContext context) {
     return BusinessLayout(
-      title:         'Messages',
+      title:         'Notices',
       selectedIndex: 5,
       onNavSelected: (_) {},
       child: LayoutBuilder(
@@ -345,7 +344,7 @@ class _PageHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Messages',
+          'Notices',
           style: TextStyle(
             color:      AppColors.textWhite,
             fontSize:   22,
@@ -355,8 +354,8 @@ class _PageHeader extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           unreadCount > 0
-              ? '$unreadCount unread message${unreadCount > 1 ? 's' : ''}'
-              : 'No unread messages',
+              ? '$unreadCount unread notice${unreadCount > 1 ? 's' : ''}'
+              : 'No unread notices',
           style: TextStyle(
             color: unreadCount > 0
                 ? AppColors.primaryCyan
@@ -403,12 +402,6 @@ class _FilterTabBar extends StatelessWidget {
             emoji:    '📣',
             isActive: activeFilter == _Filter.announcement,
             onTap:    () => onChanged(_Filter.announcement),
-          ),
-          _FilterChip(
-            label:    'General',
-            emoji:    '💬',
-            isActive: activeFilter == _Filter.general,
-            onTap:    () => onChanged(_Filter.general),
           ),
         ],
       ),
@@ -694,7 +687,6 @@ class _TypeBadge extends StatelessWidget {
 
   static ({String label, Color color, String emoji}) _styleFor(MessageType t) =>
       switch (t) {
-        MessageType.general      => (label: 'General',      color: AppColors.primaryBlue,   emoji: '💬'),
         MessageType.compliance   => (label: 'Compliance',   color: AppColors.accentRed,     emoji: '⚠️'),
         MessageType.announcement => (label: 'Announcement', color: AppColors.accentPurple,  emoji: '📣'),
       };

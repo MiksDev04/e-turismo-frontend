@@ -72,6 +72,12 @@ class AppColors {
   static const accentPurple    = Color(0xFFA78BFA);  // Soft purple
   static const accentRed       = Color(0xFFEF476F);  // Muted red
 
+  // ─── Toast / Feedback ──────────────────────────────────────────
+  static const toastSuccessBg = Color(0xFFEDF8F2);  // pale mint surface
+  static const toastSuccessFg = Color(0xFF15603F);  // icon + text + hairline
+  static const toastWarningBg = Color(0xFFFFF6E6);  // pale cream surface
+  static const toastWarningFg = Color(0xFF7A4E00);  // icon + text + hairline
+
   // ─── Text ─────────────────────────────────────────────────────────────────────
   static const textWhite       = Color(0xFF1A1A2E);  // Dark text (was white)
   static const textGray        = Color(0xFF546E7A);  // Medium gray text

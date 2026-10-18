@@ -37,7 +37,10 @@ class BusinessLayout extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
-      body: isMobile ? _buildMobileLayout() : _buildDesktopLayout(),
+      body: SafeArea(
+        bottom: false,
+        child: isMobile ? _buildMobileLayout() : _buildDesktopLayout(),
+      ),
     );
   }
 
@@ -51,14 +54,9 @@ class BusinessLayout extends StatelessWidget {
         Expanded(
           child: Column(
             children: [
-              BusinessHeader(
-                title: title,
-              ),
+              BusinessHeader(title: title),
               Expanded(
-                child: Container(
-                  color: AppColors.backgroundDark,
-                  child: child,
-                ),
+                child: Container(color: AppColors.backgroundDark, child: child),
               ),
             ],
           ),
@@ -72,14 +70,9 @@ class BusinessLayout extends StatelessWidget {
       backgroundColor: AppColors.backgroundDark,
       body: Column(
         children: [
-          BusinessHeader(
-            title: title,
-          ),
+          BusinessHeader(title: title),
           Expanded(
-            child: Container(
-              color: AppColors.backgroundDark,
-              child: child,
-            ),
+            child: Container(color: AppColors.backgroundDark, child: child),
           ),
         ],
       ),
@@ -141,7 +134,7 @@ class _BusinessBottomNavBarState extends State<BusinessBottomNavBar> {
     ),
     BizNavItem(
       icon: Icons.chat_bubble_outline_rounded,
-      label: 'Messages',
+      label: 'Notices',
       index: 5,
       badge: unreadCount > 0 ? unreadCount : null,
       route: AppRoutes.businessMessages,
@@ -252,8 +245,7 @@ class _BottomNavTile extends StatelessWidget {
                       ? AppColors.primaryCyan
                       : AppColors.textGray,
                   fontSize: 11,
-                  fontWeight:
-                      isSelected ? FontWeight.w600 : FontWeight.w400,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                 ),
               ),
             ],

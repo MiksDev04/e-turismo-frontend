@@ -26,7 +26,7 @@ class LocalDatabase {
   static const String _kDbName = 'tourism_local.db';
 
   // ── schema version ─────────────────────────────────────────────────────────
-  static const int _kDbVersion = 13;
+  static const int _kDbVersion = 18;
 
   // ── table names ────────────────────────────────────────────────────────────
   static const String tableLocalProfiles   = 'local_profiles';
@@ -34,6 +34,9 @@ class LocalDatabase {
   static const String tableGuestRecords    = 'local_guest_records';
   static const String tableGuestRecordRooms = 'local_guest_record_rooms';
   static const String tableLocalRooms      = 'local_rooms';
+  static const String tableGuestOriginBreakdowns = 'local_guest_origin_breakdowns';
+  static const String tableLocalAttractions = 'local_attractions';
+  static const String tableVisitEntries     = 'local_visit_entries';
 
   // ── sync status constants ──────────────────────────────────────────────────
   /// Record exists on Backend and matches local copy.
@@ -89,12 +92,19 @@ class LocalDatabase {
       await txn.execute(_sqlCreateGuestRecords);
       await txn.execute(_sqlCreateLocalRooms);
       await txn.execute(_sqlCreateGuestRecordRooms);
+      await txn.execute(_sqlCreateGuestOriginBreakdowns);
+      await txn.execute(_sqlCreateLocalAttractions);
+      await txn.execute(_sqlCreateVisitEntries);
 
       await txn.execute(_sqlIndexGuestRecordsBusiness);
       await txn.execute(_sqlIndexGuestRecordsSyncStatus);
       await txn.execute(_sqlIndexLocalRoomsBusiness);
       await txn.execute(_sqlIndexGuestRecordRoomsRecord);
       await txn.execute(_sqlIndexLocalRoomsSyncStatus);
+      await txn.execute(_sqlIndexGuestOriginBreakdownsRecord);
+      await txn.execute(_sqlIndexVisitEntriesAttraction);
+      await txn.execute(_sqlIndexVisitEntriesSync);
+      await txn.execute(_sqlIndexVisitEntriesDate);
     });
   }
 
@@ -359,6 +369,98 @@ class LocalDatabase {
         await db.execute("ALTER TABLE $tableGuestRecords DROP COLUMN length_of_stay");
       }
     }
+
+    // v13 → v14: Add local_guest_origin_breakdowns table for offline origin
+    //            group storage. Mirrors the backend guest_origin_breakdowns table.
+    if (oldVersion < 14) {
+      final tables = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='$tableGuestOriginBreakdowns'",
+      );
+      if (tables.isEmpty) {
+        await db.execute(_sqlCreateGuestOriginBreakdowns);
+        await db.execute(_sqlIndexGuestOriginBreakdownsRecord);
+      }
+    }
+
+    // v14 → v15: Add nationality column to local_guest_origin_breakdowns.
+    if (oldVersion < 15) {
+      final cols = await db.rawQuery(
+        "PRAGMA table_info($tableGuestOriginBreakdowns)",
+      );
+      final colNames = cols.map((c) => c['name'] as String).toSet();
+      if (!colNames.contains('nationality')) {
+        await db.execute(
+          "ALTER TABLE $tableGuestOriginBreakdowns ADD COLUMN nationality TEXT",
+        );
+      }
+    }
+
+    // v15 → v16: Add attraction-side offline tables (local_attractions +
+    //            local_visit_entries) for tourist-attraction offline mode.
+    if (oldVersion < 16) {
+      final tables = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name IN ('$tableLocalAttractions', '$tableVisitEntries')",
+      );
+      final existing = tables.map((r) => r['name'] as String).toSet();
+
+      if (!existing.contains(tableLocalAttractions)) {
+        await db.execute(_sqlCreateLocalAttractions);
+      }
+      if (!existing.contains(tableVisitEntries)) {
+        await db.execute(_sqlCreateVisitEntries);
+        await db.execute(_sqlIndexVisitEntriesAttraction);
+        await db.execute(_sqlIndexVisitEntriesSync);
+        await db.execute(_sqlIndexVisitEntriesDate);
+      }
+    }
+
+    // v16 → v17: Make male_count/female_count NULLABLE on local_visit_entries
+    // so blank gender entries store NULL locally (no save-time PSA guess).
+    // SQLite can't ALTER a column's nullability, so the table is rebuilt.
+    // Legacy rows with guest_count > 0 but 0/0 gender are gender-unknown → NULL.
+    if (oldVersion < 17) {
+      await db.execute('ALTER TABLE $tableVisitEntries RENAME TO ${tableVisitEntries}_old');
+      await db.execute(_sqlCreateVisitEntries);
+      await db.execute('''
+        INSERT INTO $tableVisitEntries (
+          id, attraction_id, visit_date, guest_count, male_count, female_count,
+          country, province, city_municipality, nationality,
+          created_at, updated_at, sync_status, local_updated_at
+        )
+        SELECT id, attraction_id, visit_date, guest_count,
+               CASE WHEN guest_count > 0 AND male_count = 0 AND female_count = 0
+                    THEN NULL ELSE male_count END,
+               CASE WHEN guest_count > 0 AND male_count = 0 AND female_count = 0
+                    THEN NULL ELSE female_count END,
+               country, province, city_municipality, nationality,
+               created_at, updated_at, sync_status, local_updated_at
+        FROM ${tableVisitEntries}_old
+      ''');
+      await db.execute('DROP TABLE ${tableVisitEntries}_old');
+      await db.execute(_sqlIndexVisitEntriesAttraction);
+      await db.execute(_sqlIndexVisitEntriesSync);
+      await db.execute(_sqlIndexVisitEntriesDate);
+    }
+
+    // v17 → v18: Add `is_foreign` to local_visit_entries. It records that the
+    // entry was logged as a Foreign tourist even when no country was named
+    // (country stays NULL), so a foreign-without-country row is not lost as
+    // "origin not captured". Legacy rows are backfilled with the same heuristic
+    // as the online migration (a non-Philippines country means foreign).
+    if (oldVersion < 18) {
+      final cols = await db.rawQuery("PRAGMA table_info($tableVisitEntries)");
+      final colNames = cols.map((c) => c['name'] as String).toSet();
+      if (!colNames.contains('is_foreign')) {
+        await db.execute(
+          'ALTER TABLE $tableVisitEntries ADD COLUMN is_foreign INTEGER NOT NULL DEFAULT 0',
+        );
+      }
+      await db.rawUpdate(
+        "UPDATE $tableVisitEntries SET is_foreign = 1 "
+        "WHERE country IS NOT NULL AND country != 'Philippines'",
+      );
+    }
   }
 
   // ── helper: close (mainly for tests) ──────────────────────────────────────
@@ -496,6 +598,77 @@ class LocalDatabase {
     )
   ''';
 
+  /// Origin groups: repeatable Country / Province / City-Municipality /
+  /// Male / Female rows. Shared by accommodation guest records
+  /// (guest_record_id). country may be NULL when is_overseas = 1.
+  /// province / city_municipality are Philippines-only.
+  static const String _sqlCreateGuestOriginBreakdowns = '''
+    CREATE TABLE $tableGuestOriginBreakdowns (
+      id                    TEXT PRIMARY KEY,
+      guest_record_id       TEXT NOT NULL,
+      country               TEXT,
+      nationality           TEXT,
+      is_overseas           INTEGER NOT NULL DEFAULT 0,
+      province              TEXT,
+      city_municipality     TEXT,
+      male_count            INTEGER NOT NULL DEFAULT 0,
+      female_count          INTEGER NOT NULL DEFAULT 0,
+      created_at            TEXT,
+      updated_at            TEXT,
+      deleted_at            TEXT,
+      FOREIGN KEY (guest_record_id) REFERENCES $tableGuestRecords (id) ON DELETE CASCADE
+    )
+  ''';
+
+  /// Cached attraction data for the logged-in profile.
+  /// Refreshed from Backend on every successful online login.
+  /// attraction_type is stored as a JSON string list.
+  static const String _sqlCreateLocalAttractions = '''
+    CREATE TABLE $tableLocalAttractions (
+      id              TEXT PRIMARY KEY,
+      profile_id      TEXT NOT NULL,
+      attraction_name TEXT,
+      attraction_type TEXT,
+      street          TEXT,
+      barangay        TEXT,
+      status          TEXT,
+      created_at      TEXT,
+      updated_at      TEXT,
+      FOREIGN KEY (profile_id) REFERENCES $tableLocalProfiles (id)
+        ON DELETE CASCADE
+    )
+  ''';
+
+  /// Attraction visit entries with sync tracking.
+  /// sync_status drives the push phase of SyncService.
+  /// All datetimes are stored as ISO 8601 strings (UTC).
+  /// Column order mirrors the backend `visit_entries` table, with sync columns appended.
+  /// male_count/female_count are NULLABLE: a headcount-only log stores no
+  /// gender guess locally — the report estimates it at generation time.
+  /// is_foreign records the "Foreign tourist" flag separately from country,
+  /// so a foreign visitor who names no country keeps their foreign status.
+  static const String _sqlCreateVisitEntries = '''
+    CREATE TABLE $tableVisitEntries (
+      id                TEXT PRIMARY KEY,
+      attraction_id     TEXT NOT NULL,
+      visit_date        TEXT NOT NULL,
+      guest_count       INTEGER NOT NULL,
+      male_count        INTEGER,
+      female_count      INTEGER,
+      is_foreign        INTEGER NOT NULL DEFAULT 0,
+      country           TEXT,
+      province          TEXT,
+      city_municipality TEXT,
+      nationality       TEXT,
+      created_at        TEXT,
+      updated_at        TEXT,
+      sync_status       TEXT NOT NULL DEFAULT '$syncSynced',
+      local_updated_at  TEXT,
+      FOREIGN KEY (attraction_id) REFERENCES $tableLocalAttractions (id)
+        ON DELETE CASCADE
+    )
+  ''';
+
   // ---------------------------------------------------------------------------
   // SQL — indexes
   // ---------------------------------------------------------------------------
@@ -528,5 +701,29 @@ class LocalDatabase {
   static const String _sqlIndexLocalRoomsSyncStatus = '''
     CREATE INDEX idx_local_rooms_sync_status
       ON $tableLocalRooms (sync_status)
+  ''';
+
+  /// Fast look-up of origin breakdowns for a guest record.
+  static const String _sqlIndexGuestOriginBreakdownsRecord = '''
+    CREATE INDEX idx_lgob_guest_record_id
+      ON $tableGuestOriginBreakdowns (guest_record_id)
+  ''';
+
+  /// Fast look-up of all visit entries belonging to an attraction.
+  static const String _sqlIndexVisitEntriesAttraction = '''
+    CREATE INDEX idx_visit_entries_attraction
+      ON $tableVisitEntries (attraction_id)
+  ''';
+
+  /// Fast look-up of all unsynced visit entries during the push phase.
+  static const String _sqlIndexVisitEntriesSync = '''
+    CREATE INDEX idx_visit_entries_sync
+      ON $tableVisitEntries (sync_status)
+  ''';
+
+  /// Fast range filtering of visit entries by date.
+  static const String _sqlIndexVisitEntriesDate = '''
+    CREATE INDEX idx_visit_entries_date
+      ON $tableVisitEntries (visit_date)
   ''';
 }

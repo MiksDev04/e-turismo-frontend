@@ -48,9 +48,12 @@ class DocumentService {
 
     final resolved = _resolveUrl(url);
 
-    // Check cache first
+    // Check cache first. Return a defensive copy so downstream consumers
+    // (e.g. PdfPreview/pdf.js on web, which transfers the underlying
+    // ArrayBuffer to its worker and detaches it) can never corrupt the
+    // shared cache entry.
     final cached = _cache[resolved];
-    if (cached != null) return cached;
+    if (cached != null) return Uint8List.fromList(cached);
 
     final token = SessionService.instance.current?.token;
     final apiKey = kIsWeb

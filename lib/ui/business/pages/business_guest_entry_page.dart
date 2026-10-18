@@ -2,11 +2,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/country_constants.dart';
 import '../../../core/services/offline_service.dart';
 import '../../../core/services/psgc_repository.dart';
 import '../../../core/models/psgc_models.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../../api/business_guest_entry_api.dart';
+import '../../../models/origin_group.dart';
+import '../widgets/origin_groups_editor.dart';
 
 // ─── Light input colours ──────────────────────────────────────────────────────
 
@@ -28,74 +32,6 @@ const _purposeOptions = [
   'Education',
   'Medical',
   'Religious',
-  'Others',
-];
-
-const _countryOptions = [
-  'Philippines',
-  'Argentina',
-  'Australia',
-  'Austria',
-  'Bahrain',
-  'Bangladesh',
-  'Belgium',
-  'Brazil',
-  'Brunei',
-  'Cambodia',
-  'Canada',
-  'China',
-  'Colombia',
-  'CIS',
-  'Denmark',
-  'Egypt',
-  'Finland',
-  'France',
-  'Germany',
-  'Greece',
-  'Guam',
-  'Hong Kong',
-  'India',
-  'Indonesia',
-  'Iran',
-  'Ireland',
-  'Israel',
-  'Italy',
-  'Japan',
-  'Jordan',
-  'Korea',
-  'Kuwait',
-  'Laos',
-  'Luxembourg',
-  'Malaysia',
-  'Mexico',
-  'Myanmar',
-  'Nauru',
-  'Nepal',
-  'Netherlands',
-  'New Zealand',
-  'Nigeria',
-  'Norway',
-  'Pakistan',
-  'Papua NG',
-  'Peru',
-  'Poland',
-  'Portugal',
-  'Russia',
-  'Saudi Arabia',
-  'Singapore',
-  'South Africa',
-  'Spain',
-  'Sri Lanka',
-  'Sweden',
-  'Switzerland',
-  'Taiwan',
-  'Thailand',
-  'Serbia & Montenegro',
-  'UAE',
-  'United Kingdom',
-  'USA',
-  'Venezuela',
-  'Vietnam',
   'Others',
 ];
 
@@ -125,6 +61,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
   final _purposeOtherCtrl = TextEditingController();
   bool _showPurposeOther = false;
   bool _isSaving = false;
+  String? _lastEditedSexField;
 
   // ── Room selection ──────────────────────────────────────────────────────────
   List<RoomInfo> _vacantRooms = [];
@@ -140,6 +77,9 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
   DateTime? _leadBirthdate;
   String? _leadSex;
 
+  // ── Origin groups ───────────────────────────────────────────────────────
+  List<OriginGroup> _originGroups = [];
+
   Map<String, String?> _errors = {};
 
   // ── Connectivity state ────────────────────────────────────────────────────
@@ -151,9 +91,16 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
   @override
   void initState() {
     super.initState();
+    final now = DateTime.now();
+    _checkIn = DateTime(now.year, now.month, now.day);
+    _checkOut = _checkIn;
+    _purpose = 'Leisure';
+    _leadCountry = 'Philippines';
+    _leadNationality = 'Filipino';
     _isOffline = !ConnectivityService.instance.isOnline;
     _subscribeToConnectivity();
     _loadBusinessId();
+    _loadPsgcDefaults();
   }
 
   @override
@@ -215,6 +162,34 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
     }
   }
 
+  // ── Defaults ──────────────────────────────────────────────────────────────
+
+  ({String? provinceCode, String? cityCode}) _defaultOrigin() {
+    final repo = PsgcRepository.instance;
+    final laguna = repo.allProvinces
+        .where((p) => p.name.toLowerCase() == 'laguna')
+        .firstOrNull;
+    final sanPablo = laguna != null
+        ? repo
+            .citiesFor(laguna.code)
+            .where((c) => c.name.toLowerCase() == 'city of san pablo')
+            .firstOrNull
+        : null;
+    return (provinceCode: laguna?.code, cityCode: sanPablo?.code);
+  }
+
+  Future<void> _loadPsgcDefaults() async {
+    if (!PsgcRepository.instance.isLoaded) {
+      await PsgcRepository.instance.load();
+    }
+    if (!mounted) return;
+    final defaults = _defaultOrigin();
+    setState(() {
+      _selectedProvinceCode ??= defaults.provinceCode;
+      _selectedCityCode ??= defaults.cityCode;
+    });
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   int get _nightsCount {
@@ -230,6 +205,10 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
 
   bool get _isPhilippines =>
       !_leadIsOverseas && _leadCountry == 'Philippines';
+
+  bool get _hasOriginGroups => _originGroups.isNotEmpty;
+  int get _groupMaleSum => _originGroups.fold<int>(0, (s, g) => s + g.maleCount);
+  int get _groupFemaleSum => _originGroups.fold<int>(0, (s, g) => s + g.femaleCount);
 
   void _clearFieldError(String key) {
     if (_errors.containsKey(key)) {
@@ -262,48 +241,65 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
     });
   }
 
-  void _recomputeMissingSexCount() {
+  void _recomputeSexCount() {
+    if (_hasOriginGroups) return;
     final total = int.tryParse(_totalGuestsCtrl.text) ?? 0;
     if (total <= 0) return;
+
     final male = int.tryParse(_maleGuestsCtrl.text);
     final female = int.tryParse(_femaleGuestsCtrl.text);
-    if (male != null && female == null) {
+
+    String? source = _lastEditedSexField;
+    if (source == null) {
+      if (male != null && female == null) {
+        source = 'male';
+      } else if (female != null && male == null) {
+        source = 'female';
+      } else {
+        return;
+      }
+    }
+
+    if (source == 'male') {
+      if (male == null) {
+        _lastEditedSexField = null;
+        return;
+      }
       final f = total - male;
-      _femaleGuestsCtrl.text = f >= 0 ? '$f' : _femaleGuestsCtrl.text;
-    } else if (female != null && male == null) {
+      if (f >= 0) _femaleGuestsCtrl.text = '$f';
+    } else {
+      if (female == null) {
+        _lastEditedSexField = null;
+        return;
+      }
       final m = total - female;
-      _maleGuestsCtrl.text = m >= 0 ? '$m' : _maleGuestsCtrl.text;
+      if (m >= 0) _maleGuestsCtrl.text = '$m';
     }
   }
 
-  void _showSnackBar(String message, {Color? color}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: color ?? AppColors.primaryCyan,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
   void _clearForm() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final defaults = _defaultOrigin();
     setState(() {
-      _checkIn = null;
-      _checkOut = null;
+      _checkIn = today;
+      _checkOut = today;
       _totalGuestsCtrl.clear();
       _maleGuestsCtrl.clear();
       _femaleGuestsCtrl.clear();
-      _purpose = null;
+      _purpose = 'Leisure';
       _purposeOtherCtrl.clear();
       _showPurposeOther = false;
       _selectedRoomIds.clear();
-      _leadCountry = null;
-      _leadNationality = null;
+      _leadCountry = 'Philippines';
+      _leadNationality = 'Filipino';
       _leadIsOverseas = false;
-      _selectedProvinceCode = null;
-      _selectedCityCode = null;
+      _selectedProvinceCode = defaults.provinceCode;
+      _selectedCityCode = defaults.cityCode;
       _leadBirthdate = null;
       _leadSex = null;
+      _originGroups = [];
+      _lastEditedSexField = null;
       _errors = {};
     });
   }
@@ -458,26 +454,28 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
       }
     }
 
-    final maleCount = int.tryParse(_maleGuestsCtrl.text);
-    final femaleCount = int.tryParse(_femaleGuestsCtrl.text);
+    final hasGroups = _hasOriginGroups;
+    final maleCount = hasGroups ? _groupMaleSum : int.tryParse(_maleGuestsCtrl.text);
+    final femaleCount = hasGroups ? _groupFemaleSum : int.tryParse(_femaleGuestsCtrl.text);
 
     final result = await _api.saveGuestEntry(
       GuestEntryData(
         businessId: _businessId!,
         checkIn: _checkIn!,
         checkOut: _checkOut!,
-        totalGuests: _totalGuests,
+        totalGuests: hasGroups ? (_groupMaleSum + _groupFemaleSum) : _totalGuests,
         roomIds: _selectedRoomIds.toList(),
         purposeOfVisit: purposeValue,
         maleCount: maleCount,
         femaleCount: femaleCount,
-        leadCountry: !_leadIsOverseas ? _leadCountry : null,
+        leadCountry: _leadCountry,
         leadMunicipality: cityName,
         leadProvince: provinceName,
         leadNationality: _isPhilippines ? _leadNationality : null,
         leadIsOverseas: _leadIsOverseas,
         leadBirthdate: _leadBirthdate,
         leadSex: _leadSex,
+        originGroups: _originGroups,
       ),
     );
 
@@ -487,13 +485,13 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
     if (result.success) {
       _clearForm();
       if (result.syncedToCloud) {
-        _showSnackBar('Guest entry saved successfully!');
+        AppToast.success(context, 'Guest entry saved.');
       } else {
-        _showSnackBar(
+        AppToast.success(
+          context,
           ConnectivityService.instance.isOnline
-              ? 'Entry saved — will sync in the background.'
-              : 'Entry saved offline — will sync when you\'re back online.',
-          color: const Color(0xFFF59E0B),
+              ? 'Saved. Syncing in background.'
+              : 'Saved offline. Will sync when online.',
         );
       }
     }
@@ -627,6 +625,9 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                     selectedRoomIds: _selectedRoomIds,
                     isLoadingRooms: _isLoadingRooms,
                     errors: _errors,
+                    maleFemaleLocked: _hasOriginGroups,
+                    lockedMaleCount: _groupMaleSum,
+                    lockedFemaleCount: _groupFemaleSum,
                     onPickCheckIn: () => _pickDate(context, true),
                     onPickCheckOut: () => _pickDate(context, false),
                     onPurposeChanged: (v) {
@@ -642,17 +643,19 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                       setState(() {});
                       _clearFieldError('totalGuests');
                       _validateRoomCapacity();
-                      _recomputeMissingSexCount();
+                      _recomputeSexCount();
                     },
                     onMaleGuestsChanged: (_) {
                       setState(() {});
                       _clearFieldError('maleGuests');
-                      _recomputeMissingSexCount();
+                      _lastEditedSexField = 'male';
+                      _recomputeSexCount();
                     },
                     onFemaleGuestsChanged: (_) {
                       setState(() {});
                       _clearFieldError('femaleGuests');
-                      _recomputeMissingSexCount();
+                      _lastEditedSexField = 'female';
+                      _recomputeSexCount();
                     },
                     onRoomToggled: (roomId) {
                       setState(() {
@@ -691,6 +694,11 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                           _leadNationality = null;
                           _selectedProvinceCode = null;
                           _selectedCityCode = null;
+                        } else {
+                          final defaults = _defaultOrigin();
+                          _leadNationality = 'Filipino';
+                          _selectedProvinceCode = defaults.provinceCode;
+                          _selectedCityCode = defaults.cityCode;
                         }
                       });
                       _clearFieldError('leadCountry');
@@ -703,6 +711,12 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                           _leadNationality = null;
                           _selectedProvinceCode = null;
                           _selectedCityCode = null;
+                        } else {
+                          final defaults = _defaultOrigin();
+                          _leadCountry = 'Philippines';
+                          _leadNationality = 'Filipino';
+                          _selectedProvinceCode = defaults.provinceCode;
+                          _selectedCityCode = defaults.cityCode;
                         }
                       });
                     },
@@ -727,11 +741,29 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                   ),
                   const SizedBox(height: 20),
 
+                  OriginGroupsEditor(
+                    groups: _originGroups,
+                    onGroupsChanged: (groups) {
+                      setState(() => _originGroups = groups);
+                      if (_hasOriginGroups) {
+                        _maleGuestsCtrl.text = '$_groupMaleSum';
+                        _femaleGuestsCtrl.text = '$_groupFemaleSum';
+                      }
+                    },
+                    totalGuests: _totalGuests,
+                    leadProvinceCode: _selectedProvinceCode,
+                    leadCityCode: _selectedCityCode,
+                    leadCountry: _leadCountry,
+                    maleGuestsCtrl: _maleGuestsCtrl,
+                    femaleGuestsCtrl: _femaleGuestsCtrl,
+                  ),
+                  const SizedBox(height: 20),
+
                   _FormActions(
                     isSaving: _isSaving,
                     onClear: () {
                       _clearForm();
-                      _showSnackBar('Form cleared.');
+                      AppToast.success(context, 'Form cleared.');
                     },
                     onSave: _save,
                   ),
@@ -861,6 +893,9 @@ class _StayInfoCard extends StatelessWidget {
     required this.onFemaleGuestsChanged,
     required this.onRoomToggled,
     required this.onPurposeOtherChanged,
+    this.maleFemaleLocked = false,
+    this.lockedMaleCount = 0,
+    this.lockedFemaleCount = 0,
   });
 
   final DateTime? checkIn;
@@ -884,6 +919,9 @@ class _StayInfoCard extends StatelessWidget {
   final ValueChanged<String> onFemaleGuestsChanged;
   final ValueChanged<String> onRoomToggled;
   final ValueChanged<String> onPurposeOtherChanged;
+  final bool maleFemaleLocked;
+  final int lockedMaleCount;
+  final int lockedFemaleCount;
 
   String _fmt(DateTime? dt) {
     if (dt == null) return '';
@@ -902,39 +940,53 @@ class _StayInfoCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Row 1: Check-in / Check-out ──────────────────────────────
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _FieldCol(
+                  label: 'Check-in Date *',
+                  errorText: errors['checkIn'],
+                  child: _EntryDateField(
+                    value: _fmt(checkIn),
+                    hasError: errors['checkIn'] != null,
+                    onTap: onPickCheckIn,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _FieldCol(
+                  label: 'Check-out Date *',
+                  errorText: errors['checkOut'],
+                  child: _EntryDateField(
+                    value: _fmt(checkOut),
+                    hasError: errors['checkOut'] != null,
+                    onTap: onPickCheckOut,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── Row 2: Length of Stay / Total Guests ────────────────────
           if (isMobile) ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: _FieldCol(
-                    label: 'Check-in Date *',
-                    errorText: errors['checkIn'],
-                    child: _EntryDateField(
-                      value: _fmt(checkIn),
-                      hasError: errors['checkIn'] != null,
-                      onTap: onPickCheckIn,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _FieldCol(
-                    label: 'Check-out Date *',
-                    errorText: errors['checkOut'],
-                    child: _EntryDateField(
-                      value: _fmt(checkOut),
-                      hasError: errors['checkOut'] != null,
-                      onTap: onPickCheckOut,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
             _FieldCol(
               label: 'Length of Stay',
               child: _EntryReadOnlyField(value: nightsLabel),
+            ),
+            const SizedBox(height: 14),
+            _FieldCol(
+              label: 'Total Guests *',
+              errorText: errors['totalGuests'],
+              child: _EntryNumberField(
+                controller: totalGuestsCtrl,
+                hint: 'e.g. 10',
+                hasError: errors['totalGuests'] != null,
+                onChanged: onGuestsChanged,
+              ),
             ),
           ] else ...[
             Row(
@@ -942,32 +994,21 @@ class _StayInfoCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _FieldCol(
-                    label: 'Check-in Date *',
-                    errorText: errors['checkIn'],
-                    child: _EntryDateField(
-                      value: _fmt(checkIn),
-                      hasError: errors['checkIn'] != null,
-                      onTap: onPickCheckIn,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _FieldCol(
-                    label: 'Check-out Date *',
-                    errorText: errors['checkOut'],
-                    child: _EntryDateField(
-                      value: _fmt(checkOut),
-                      hasError: errors['checkOut'] != null,
-                      onTap: onPickCheckOut,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _FieldCol(
                     label: 'Length of Stay',
                     child: _EntryReadOnlyField(value: nightsLabel),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _FieldCol(
+                    label: 'Total Guests *',
+                    errorText: errors['totalGuests'],
+                    child: _EntryNumberField(
+                      controller: totalGuestsCtrl,
+                      hint: 'e.g. 10',
+                      hasError: errors['totalGuests'] != null,
+                      onChanged: onGuestsChanged,
+                    ),
                   ),
                 ),
               ],
@@ -975,33 +1016,20 @@ class _StayInfoCard extends StatelessWidget {
           ],
           const SizedBox(height: 14),
 
-          _FieldCol(
-            label: 'Total Guests *',
-            errorText: errors['totalGuests'],
-            child: _EntryNumberField(
-              controller: totalGuestsCtrl,
-              hint: 'e.g. 10',
-              hasError: errors['totalGuests'] != null,
-              onChanged: onGuestsChanged,
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // ── Room Selection ─────────────────────────────────────────────
-          _FieldCol(
-            label: 'Rooms (optional)',
-            errorText: errors['rooms'],
-            child: _RoomSelector(
-              vacantRooms: vacantRooms,
-              selectedRoomIds: selectedRoomIds,
-              isLoading: isLoadingRooms,
-              hasError: errors['rooms'] != null,
-              onRoomToggled: onRoomToggled,
-            ),
-          ),
-          const SizedBox(height: 14),
-
+          // ── Row 3: Rooms / Purpose of Visit ─────────────────────────
           if (isMobile) ...[
+            _FieldCol(
+              label: 'Rooms (optional)',
+              errorText: errors['rooms'],
+              child: _RoomSelector(
+                vacantRooms: vacantRooms,
+                selectedRoomIds: selectedRoomIds,
+                isLoading: isLoadingRooms,
+                hasError: errors['rooms'] != null,
+                onRoomToggled: onRoomToggled,
+              ),
+            ),
+            const SizedBox(height: 14),
             _FieldCol(
               label: 'Purpose of Visit *',
               errorText: errors['purpose'],
@@ -1026,41 +1054,24 @@ class _StayInfoCard extends StatelessWidget {
                 ),
               ),
             ],
-            const SizedBox(height: 14),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: _FieldCol(
-                    label: 'Male Guests (optional)',
-                    errorText: errors['maleGuests'],
-                    child: _EntryNumberField(
-                      controller: maleGuestsCtrl,
-                      hint: 'e.g. 5',
-                      hasError: errors['maleGuests'] != null,
-                      onChanged: onMaleGuestsChanged,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _FieldCol(
-                    label: 'Female Guests (optional)',
-                    errorText: errors['femaleGuests'],
-                    child: _EntryNumberField(
-                      controller: femaleGuestsCtrl,
-                      hint: 'e.g. 5',
-                      hasError: errors['femaleGuests'] != null,
-                      onChanged: onFemaleGuestsChanged,
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ] else ...[
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Expanded(
+                  child: _FieldCol(
+                    label: 'Rooms (optional)',
+                    errorText: errors['rooms'],
+                    child: _RoomSelector(
+                      vacantRooms: vacantRooms,
+                      selectedRoomIds: selectedRoomIds,
+                      isLoading: isLoadingRooms,
+                      hasError: errors['rooms'] != null,
+                      onRoomToggled: onRoomToggled,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1092,38 +1103,46 @@ class _StayInfoCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _FieldCol(
-                        label: 'Male Guests (optional)',
-                        errorText: errors['maleGuests'],
-                        child: _EntryNumberField(
+              ],
+            ),
+          ],
+          const SizedBox(height: 14),
+
+          // ── Row 4: Male / Female ────────────────────────────────────
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _FieldCol(
+                  label: 'Male Guests (optional)',
+                  errorText: maleFemaleLocked ? null : errors['maleGuests'],
+                  child: maleFemaleLocked
+                      ? _EntryReadOnlyField(value: '$lockedMaleCount')
+                      : _EntryNumberField(
                           controller: maleGuestsCtrl,
                           hint: 'e.g. 5',
                           hasError: errors['maleGuests'] != null,
                           onChanged: onMaleGuestsChanged,
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      _FieldCol(
-                        label: 'Female Guests (optional)',
-                        errorText: errors['femaleGuests'],
-                        child: _EntryNumberField(
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _FieldCol(
+                  label: 'Female Guests (optional)',
+                  errorText: maleFemaleLocked ? null : errors['femaleGuests'],
+                  child: maleFemaleLocked
+                      ? _EntryReadOnlyField(value: '$lockedFemaleCount')
+                      : _EntryNumberField(
                           controller: femaleGuestsCtrl,
                           hint: 'e.g. 5',
                           hasError: errors['femaleGuests'] != null,
                           onChanged: onFemaleGuestsChanged,
                         ),
-                      ),
-                    ],
-                  ),
                 ),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -1462,14 +1481,16 @@ class _LeadGuestCard extends StatelessWidget {
           // ── Country & Nationality ─────────────────────────────────────
           if (isMobile) ...[
             _FieldCol(
-              label: 'Country *',
+              label: leadIsOverseas ? 'Country' : 'Country *',
               errorText: errors['leadCountry'],
               child: _EntryDropdownField(
-                value: leadIsOverseas ? null : leadCountry,
-                items: _countryOptions,
-                hint: leadIsOverseas ? 'N/A (Overseas)' : 'Select country',
+                value: leadCountry,
+                items: leadIsOverseas
+                    ? kCountryOptions.where((c) => c != 'Philippines').toList()
+                    : kCountryOptions,
+                hint: 'Select country',
                 hasError: errors['leadCountry'] != null,
-                onChanged: leadIsOverseas ? null : onCountryChanged,
+                onChanged: onCountryChanged,
               ),
             ),
             if (isPhilippines) ...[
@@ -1491,23 +1512,23 @@ class _LeadGuestCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  flex: 3,
                   child: _FieldCol(
-                    label: 'Country *',
+                    label: leadIsOverseas ? 'Country' : 'Country *',
                     errorText: errors['leadCountry'],
                     child: _EntryDropdownField(
-                      value: leadIsOverseas ? null : leadCountry,
-                      items: _countryOptions,
-                      hint: leadIsOverseas ? 'N/A (Overseas)' : 'Select country',
+                      value: leadCountry,
+                      items: leadIsOverseas
+                          ? kCountryOptions.where((c) => c != 'Philippines').toList()
+                          : kCountryOptions,
+                      hint: 'Select country',
                       hasError: errors['leadCountry'] != null,
-                      onChanged: leadIsOverseas ? null : onCountryChanged,
+                      onChanged: onCountryChanged,
                     ),
                   ),
                 ),
                 if (isPhilippines) ...[
                   const SizedBox(width: 12),
                   Expanded(
-                    flex: 2,
                     child: _FieldCol(
                       label: 'Nationality *',
                       errorText: errors['leadNationality'],

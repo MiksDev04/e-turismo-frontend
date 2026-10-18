@@ -8,6 +8,8 @@ import 'package:app/api/register_api.dart';
 import 'package:app/core/enums/business_enums.dart';
 import 'package:app/router/app_routes.dart';
 import 'package:app/core/constants/app_colors.dart';
+import 'package:app/core/widgets/app_toast.dart';
+import 'package:app/ui/shared/widgets/privacy_consent_dialog.dart';
 
 class RegisterPage extends StatelessWidget {
   const RegisterPage({super.key});
@@ -16,7 +18,7 @@ class RegisterPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Scaffold(body: RegisterScreen());
   }
-}
+} 
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +35,15 @@ class _V {
   static final _usernameRe = RegExp(r'^[a-zA-Z0-9_]{3,20}$');
   static final _emailRe = RegExp(r'^[\w.+\-]+@[\w\-]+\.[a-zA-Z]{2,}$');
   static final _phoneRe = RegExp(r'^09\d{9}$');
+  static const _attractionTypeAllowed = {
+    'ecotourism',
+    'natural_attractions',
+    'cultural',
+    'religious',
+    'historical_heritage_sites',
+    'agri_tourism',
+    'farm_tourism_sites',
+  };
 
   static String? fullName(String v) =>
       v.trim().isEmpty ? 'Full name is required' : null;
@@ -86,6 +97,17 @@ class _V {
   static String? businessName(String v) =>
       v.trim().isEmpty ? 'Business name is required' : null;
 
+  static String? attractionName(String v) =>
+      v.trim().isEmpty ? 'Attraction name is required' : null;
+
+  static String? attractionTypes(List<String> values) {
+    if (values.isEmpty) return 'Select at least one attraction type';
+    if (values.any((value) => !_attractionTypeAllowed.contains(value))) {
+      return 'Invalid attraction type selected';
+    }
+    return null;
+  }
+
   static String? businessLine(List<String> values) {
     if (values.isEmpty) return 'Select at least one business line';
     final allowed = <String>{
@@ -122,11 +144,19 @@ class _V {
   static String? permitNumber(String v) =>
       v.trim().isEmpty ? 'Permit number is required' : null;
 
-  static String? registrationNumber(String v) =>
-      v.trim().isEmpty ? 'Registration number is required' : null;
+  // HIDDEN: registration number not required
+  static String? registrationNumber(String v) => null;
 
-  static String? aeId(String v) =>
-      v.trim().isEmpty ? 'AE ID is required' : null;
+  static final _aeIdSuffixRe = RegExp(r'^\d{9}$');
+
+  static String? aeId(String v) {
+    final digits = v.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return 'AE ID is required';
+    if (!_aeIdSuffixRe.hasMatch(digits)) {
+      return 'AE ID must be 5 digits (serial) + 4 digits (year)';
+    }
+    return null;
+  }
 
   static String? street(String v) =>
       v.trim().isEmpty ? 'Street is required' : null;
@@ -169,11 +199,35 @@ const _businessLineLabels = {
   'others': 'Others',
 };
 
+// ─── Attraction Type display helpers ─────────────────────────────────────────
+
+const _attractionTypeItems = [
+  'ecotourism',
+  'natural_attractions',
+  'cultural',
+  'religious',
+  'historical_heritage_sites',
+  'agri_tourism',
+  'farm_tourism_sites',
+];
+
+const _attractionTypeLabels = {
+  'ecotourism': 'Ecotourism',
+  'natural_attractions': 'Natural Attractions',
+  'cultural': 'Cultural',
+  'religious': 'Religious',
+  'historical_heritage_sites': 'Historical Heritage Sites',
+  'agri_tourism': 'Agri-Tourism',
+  'farm_tourism_sites': 'Farm Tourism Sites',
+};
+
 // ─── Fixed San Pablo location values ──────────────────────────────────────────
 
 const _fixedCityMunicipality = 'San Pablo City';
 const _fixedProvince = 'Laguna';
 const _fixedRegion = 'Region IV-A';
+
+const _aeIdPrefix = 'DOT-R4A-ACC-';
 
 const _sanPabloBarangays = <String>[
   'Atisan',
@@ -278,6 +332,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
+  // ── Role selection (before Step 1) ─────────────────────────────────────────
+  // null (unselected) | 'accommodation' | 'attraction'
+  String? _accountType;
+
+  // Step 2 (attraction path)
+  final _attractionNameCtrl = TextEditingController();
+  List<String> _attractionTypes = [];
+
   // Step 1
   final _fullNameCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
@@ -289,7 +351,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
   // Email confirmation state
   bool _confirmationSent = false;
   bool _emailConfirmed = false;
+  String? _confirmedEmail;
   Timer? _confirmationPollTimer;
+
+  // Email availability validation (checked against the users table)
+  bool _checkingEmail = false;
+  String? _emailFieldError;
+  String? _lastCheckedEmail;
 
   // Step 2
   final _businessNameCtrl = TextEditingController();
@@ -355,6 +423,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _cityCtrl,
       _provinceCtrl,
       _regionCtrl,
+      _attractionNameCtrl,
     ]) {
       c.dispose();
     }
@@ -413,12 +482,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _isLoading = true);
 
+    // Re-check against the users table before sending, in case the email was
+    // taken between the blur check and now.
+    final taken = await _api.isEmailTaken(_emailCtrl.text.trim());
+    if (!mounted) return;
+    if (taken) {
+      setState(() {
+        _isLoading = false;
+        _emailFieldError = 'An account with this email already exists.';
+        _lastCheckedEmail = _emailCtrl.text.trim().toLowerCase();
+      });
+      return;
+    }
+    setState(() {
+      _lastCheckedEmail = _emailCtrl.text.trim().toLowerCase();
+    });
+
     final result = await _api.sendConfirmation(
       fullName: _fullNameCtrl.text.trim(),
       username: _usernameCtrl.text.trim().toLowerCase(),
       email: _emailCtrl.text.trim(),
       phoneNumber: _phoneCtrl.text.trim(),
       password: _passwordCtrl.text,
+      purpose: _accountType == 'attraction'
+          ? 'attraction_registration'
+          : 'business_registration',
     );
 
     if (!mounted) return;
@@ -429,15 +517,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _confirmationSent = true;
         _startConfirmationPolling();
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.message ?? 'Confirmation email sent.'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      AppToast.success(context, result.message ?? 'Confirmation email sent.');
     } else {
       setState(() => _errorMessage = result.error);
     }
+  }
+
+  Future<void> _checkEmailAvailability() async {
+    final email = _emailCtrl.text.trim();
+    if (_V.email(email) != null) return;
+    if (_checkingEmail) return;
+    if (_isLoading) return;
+    if (_lastCheckedEmail == email.toLowerCase()) return;
+
+    setState(() => _checkingEmail = true);
+    final taken = await _api.isEmailTaken(email);
+    if (!mounted) return;
+    setState(() {
+      _checkingEmail = false;
+      _lastCheckedEmail = email.toLowerCase();
+      _emailFieldError = taken
+          ? 'An account with this email already exists.'
+          : null;
+    });
   }
 
   void _startConfirmationPolling() {
@@ -452,23 +554,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final email = _emailCtrl.text.trim();
     if (email.isEmpty) return;
 
-    final confirmed = await _api.checkConfirmationStatus(email);
+    final confirmed = await _api.checkConfirmationStatus(
+      email,
+      purpose: _accountType == 'attraction'
+          ? 'attraction_registration'
+          : 'business_registration',
+    );
     if (!mounted) return;
 
     if (confirmed) {
       _confirmationPollTimer?.cancel();
       setState(() {
         _emailConfirmed = true;
+        _confirmedEmail = email;
         _step = 2;
         _showErrors = false;
         _errorMessage = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Email confirmed successfully.'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      AppToast.success(context, 'Email confirmed. You can sign in now.');
     }
   }
 
@@ -477,12 +580,75 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() {
       _confirmationSent = false;
       _emailConfirmed = false;
+      _confirmedEmail = null;
       _errorMessage = null;
+      _emailFieldError = null;
+      _lastCheckedEmail = null;
+    });
+  }
+
+  void _onEmailChanged(String value) {
+    final email = value.trim();
+    final emailChanged =
+        (_lastCheckedEmail != null && _lastCheckedEmail != email.toLowerCase());
+    if (_emailFieldError != null || emailChanged) {
+      setState(() {
+        _lastCheckedEmail = null;
+        _emailFieldError = null;
+      });
+    }
+    if (_emailConfirmed && _confirmedEmail != null && email != _confirmedEmail) {
+      _confirmationPollTimer?.cancel();
+      setState(() {
+        _confirmationSent = false;
+        _emailConfirmed = false;
+        _confirmedEmail = null;
+        _errorMessage = null;
+      });
+    }
+  }
+
+  Future<void> _selectAccountType(String type) async {
+    final agreed = await showPrivacyConsent(
+      context,
+      accountType: type == 'attraction' ? 'attraction' : 'business',
+    );
+    if (!mounted) return;
+    if (!agreed) {
+      Navigator.pushReplacementNamed(context, AppRoutes.login);
+      return;
+    }
+    _confirmationPollTimer?.cancel();
+    setState(() {
+      _accountType = type;
+      _step = 1;
+      _showErrors = false;
+      _errorMessage = null;
+      _confirmationSent = false;
+      _emailConfirmed = false;
+      _confirmedEmail = null;
+      _emailFieldError = null;
+      _lastCheckedEmail = null;
+    });
+  }
+
+  void _goBackToRoleSelection() {
+    _confirmationPollTimer?.cancel();
+    setState(() {
+      _accountType = null;
+      _step = 1;
+      _showErrors = false;
+      _errorMessage = null;
+      _confirmationSent = false;
+      _emailConfirmed = false;
+      _confirmedEmail = null;
+      _emailFieldError = null;
+      _lastCheckedEmail = null;
     });
   }
 
   void _goBack() => setState(() {
-        _step = _step == 3 ? 2 : 1;
+        _step = _accountType == 'accommodation' && _step == 3 ? 2 : 1;
         _showErrors = false;
         _errorMessage = null;
       });
@@ -493,6 +659,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _errorMessage = null;
     });
     if (!_step2Valid) return;
+    if (_accountType == 'attraction') {
+      _submit();
+      return;
+    }
     _initRooms();
     setState(() {
       _step = 3;
@@ -516,21 +686,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   // ── Step 2 ─────────────────────────────────────────────────────────────────
 
-  bool get _step2Valid =>
-      _V.businessName(_businessNameCtrl.text) == null &&
-      _V.ownerFirstName(_ownerFirstNameCtrl.text) == null &&
-      _V.ownerLastName(_ownerLastNameCtrl.text) == null &&
-      _V.businessLine(_businessLine) == null &&
-      _V.permitNumber(_permitNumberCtrl.text) == null &&
-      _V.registrationNumber(_registrationCtrl.text) == null &&
-      _V.aeId(_aeIdCtrl.text) == null &&
-      _V.street(_streetCtrl.text) == null &&
-      _V.barangay(_barangayCtrl.text) == null &&
-      _V.cityMunicipality(_cityCtrl.text) == null &&
-      _V.province(_provinceCtrl.text) == null &&
-      _V.region(_regionCtrl.text) == null &&
-      _V.file(_permitFile) == null &&
-      _V.file(_validIdFile) == null;
+  bool get _step2Valid {
+    if (_accountType == 'attraction') {
+      return _V.attractionName(_attractionNameCtrl.text) == null &&
+          _V.attractionTypes(_attractionTypes) == null &&
+          _V.street(_streetCtrl.text) == null &&
+          _V.barangay(_barangayCtrl.text) == null &&
+          _V.file(_validIdFile) == null;
+    }
+    return _V.businessName(_businessNameCtrl.text) == null &&
+        _V.ownerFirstName(_ownerFirstNameCtrl.text) == null &&
+        _V.ownerLastName(_ownerLastNameCtrl.text) == null &&
+        _V.businessLine(_businessLine) == null &&
+        _V.permitNumber(_permitNumberCtrl.text) == null &&
+        _V.registrationNumber(_registrationCtrl.text) == null &&
+        _V.aeId(_aeIdCtrl.text) == null &&
+        _V.street(_streetCtrl.text) == null &&
+        _V.barangay(_barangayCtrl.text) == null &&
+        _V.cityMunicipality(_cityCtrl.text) == null &&
+        _V.province(_provinceCtrl.text) == null &&
+        _V.region(_regionCtrl.text) == null &&
+        _V.file(_permitFile) == null &&
+        _V.file(_validIdFile) == null;
+  }
 
   Future<void> _pickPermitFile() async {
     final result = await FilePicker.pickFiles(
@@ -566,50 +744,82 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _showErrors = true;
       _errorMessage = null;
     });
-    if (!_step3Valid) return;
-    if (!_emailConfirmed) {
-      setState(() => _errorMessage = 'Please confirm your email first.');
-      return;
-    }
+    final valid = _accountType == 'attraction' ? _step2Valid : _step3Valid;
+    if (!valid) return;
 
     setState(() => _isLoading = true);
 
-    final result = await _api.register(
-      fullName: _fullNameCtrl.text.trim(),
-      username: _usernameCtrl.text.trim(),
-      email: _emailCtrl.text.trim(),
-      password: _passwordCtrl.text,
-      phoneNumber: _phoneCtrl.text.trim(),
-      businessName: _businessNameCtrl.text.trim(),
-      tradeName: _tradeNameCtrl.text.trim(),
-      businessType: _mapBusinessType(_businessType),
-      businessLine: _businessLine,
-      ownerFirstName: _ownerFirstNameCtrl.text.trim(),
-      ownerMiddleName: _ownerMiddleNameCtrl.text.trim(),
-      ownerLastName: _ownerLastNameCtrl.text.trim(),
-      rooms: _rooms,
-      permitNumber: _permitNumberCtrl.text.trim(),
-      registrationNumber: _registrationCtrl.text.trim(),
-      aeId: _aeIdCtrl.text.trim(),
-      street: _streetCtrl.text.trim(),
-      barangay: _barangayCtrl.text.trim(),
-      cityMunicipality: _fixedCityMunicipality,
-      province: _fixedProvince,
-      region: _fixedRegion,
-      permitFile: _permitFile!,
-      validIdFile: _validIdFile!,
+    // Re-verify against the backend before submitting: the in-memory flag may
+    // be stale (email edited after confirming, confirmation expired, or state
+    // lost on a reload). The backend requires a confirmed, unexpired pending
+    // confirmation row for the current account type's purpose.
+    final purpose = _accountType == 'attraction'
+        ? 'attraction_registration'
+        : 'business_registration';
+    final confirmed = await _api.checkConfirmationStatus(
+      _emailCtrl.text.trim(),
+      purpose: purpose,
     );
+    if (!mounted) return;
+    if (!confirmed) {
+      setState(() {
+        _isLoading = false;
+        _emailConfirmed = false;
+        _confirmedEmail = null;
+        _errorMessage = _accountType == 'attraction'
+            ? 'Please confirm ${_emailCtrl.text.trim()} for your tourist attraction registration before submitting.'
+            : 'Please confirm ${_emailCtrl.text.trim()} for your accommodation registration before submitting.';
+      });
+      return;
+    }
+
+    final RegisterResult result;
+    if (_accountType == 'attraction') {
+      result = await _api.registerAttraction(
+        fullName: _fullNameCtrl.text.trim(),
+        username: _usernameCtrl.text.trim(),
+        email: _emailCtrl.text.trim(),
+        password: _passwordCtrl.text,
+        phoneNumber: _phoneCtrl.text.trim(),
+        attractionName: _attractionNameCtrl.text.trim(),
+        attractionTypes: _attractionTypes,
+        street: _streetCtrl.text.trim(),
+        barangay: _barangayCtrl.text.trim(),
+        validIdFile: _validIdFile!,
+      );
+    } else {
+      result = await _api.register(
+        fullName: _fullNameCtrl.text.trim(),
+        username: _usernameCtrl.text.trim(),
+        email: _emailCtrl.text.trim(),
+        password: _passwordCtrl.text,
+        phoneNumber: _phoneCtrl.text.trim(),
+        businessName: _businessNameCtrl.text.trim(),
+        tradeName: _tradeNameCtrl.text.trim(),
+        businessType: _mapBusinessType(_businessType),
+        businessLine: _businessLine,
+        ownerFirstName: _ownerFirstNameCtrl.text.trim(),
+        ownerMiddleName: _ownerMiddleNameCtrl.text.trim(),
+        ownerLastName: _ownerLastNameCtrl.text.trim(),
+        rooms: _rooms,
+        permitNumber: _permitNumberCtrl.text.trim(),
+        registrationNumber: _registrationCtrl.text.trim(),
+        aeId: '$_aeIdPrefix${_aeIdCtrl.text.trim()}',
+        street: _streetCtrl.text.trim(),
+        barangay: _barangayCtrl.text.trim(),
+        cityMunicipality: _fixedCityMunicipality,
+        province: _fixedProvince,
+        region: _fixedRegion,
+        permitFile: _permitFile!,
+        validIdFile: _validIdFile!,
+      );
+    }
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
     if (result.success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Registration submitted! Awaiting admin approval.'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      AppToast.success(context, 'Registration submitted. Awaiting approval.');
       Navigator.pushReplacementNamed(context, AppRoutes.login);
     } else {
       setState(() => _errorMessage = result.error);
@@ -672,57 +882,72 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   alignment: Alignment.topCenter,
                   child: Column(
                     children: [
-                      const _AppHeader(),
+                      _AppHeader(accountType: _accountType),
                       const SizedBox(height: 28),
                       ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 500),
-                        child: _FormCard(
-                          step: _step,
-                          showErrors: _showErrors,
-                          isLoading: _isLoading,
-                          errorMessage: _errorMessage,
-                          // Step 1
-                          fullNameCtrl: _fullNameCtrl,
-                          usernameCtrl: _usernameCtrl,
-                          emailCtrl: _emailCtrl,
-                          phoneCtrl: _phoneCtrl,
-                          passwordCtrl: _passwordCtrl,
-                          confirmPassCtrl: _confirmPassCtrl,
-                          confirmationSent: _confirmationSent,
-                          emailConfirmed: _emailConfirmed,
-                          onSendConfirmation: _sendConfirmation,
-                           onCancelConfirmation: _cancelConfirmation,
-                           onNextStep1: () => setState(() => _step = 2),
-                           // Step 2
-                          businessNameCtrl: _businessNameCtrl,
-                          tradeNameCtrl: _tradeNameCtrl,
-                          businessType: _businessType,
-                          onBusinessTypeChanged: (v) =>
-                              setState(() => _businessType = v!),
-                          businessLine: _businessLine,
-                          onBusinessLineChanged: (v) =>
-                              setState(() => _businessLine = v),
-                          ownerFirstNameCtrl: _ownerFirstNameCtrl,
-                          ownerMiddleNameCtrl: _ownerMiddleNameCtrl,
-                          ownerLastNameCtrl: _ownerLastNameCtrl,
-                          permitNumberCtrl: _permitNumberCtrl,
-                           registrationCtrl: _registrationCtrl,
-                           aeIdCtrl: _aeIdCtrl,
-                           streetCtrl: _streetCtrl,
-                          barangayCtrl: _barangayCtrl,
-                          cityCtrl: _cityCtrl,
-                          provinceCtrl: _provinceCtrl,
-                          regionCtrl: _regionCtrl,
-                          permitFile: _permitFile,
-                          validIdFile: _validIdFile,
-                          onPickPermitFile: _pickPermitFile,
-                          onPickValidId: _pickValidId,
-                          onNextStep2: _onStep2Next,
-                          onBack: _goBack,
-                          onSubmit: _submit,
-                          rooms: _rooms,
-                          onRoomsChanged: (r) => setState(() => _rooms = r),
-                        ),
+                        child: _accountType == null
+                            ? _RoleSelectionCard(
+                                onSelect: _selectAccountType,
+                              )
+                            : _FormCard(
+                                step: _step,
+                                accountType: _accountType!,
+                                showErrors: _showErrors,
+                                isLoading: _isLoading,
+                                errorMessage: _errorMessage,
+                                onBackToRole: _goBackToRoleSelection,
+                                // Step 1
+                                fullNameCtrl: _fullNameCtrl,
+                                usernameCtrl: _usernameCtrl,
+                                emailCtrl: _emailCtrl,
+                                onEmailChanged: _onEmailChanged,
+                                phoneCtrl: _phoneCtrl,
+                                passwordCtrl: _passwordCtrl,
+                                confirmPassCtrl: _confirmPassCtrl,
+                                confirmationSent: _confirmationSent,
+                                emailConfirmed: _emailConfirmed,
+                                emailError: _emailFieldError,
+                                checkingEmail: _checkingEmail,
+                                onEmailBlur: _checkEmailAvailability,
+                                onSendConfirmation: _sendConfirmation,
+                                 onCancelConfirmation: _cancelConfirmation,
+                                 onNextStep1: () => setState(() => _step = 2),
+                                 // Step 2
+                                businessNameCtrl: _businessNameCtrl,
+                                tradeNameCtrl: _tradeNameCtrl,
+                                businessType: _businessType,
+                                onBusinessTypeChanged: (v) =>
+                                    setState(() => _businessType = v!),
+                                businessLine: _businessLine,
+                                onBusinessLineChanged: (v) =>
+                                    setState(() => _businessLine = v),
+                                ownerFirstNameCtrl: _ownerFirstNameCtrl,
+                                ownerMiddleNameCtrl: _ownerMiddleNameCtrl,
+                                ownerLastNameCtrl: _ownerLastNameCtrl,
+                                permitNumberCtrl: _permitNumberCtrl,
+                                 registrationCtrl: _registrationCtrl,
+                                 aeIdCtrl: _aeIdCtrl,
+                                 streetCtrl: _streetCtrl,
+                                barangayCtrl: _barangayCtrl,
+                                cityCtrl: _cityCtrl,
+                                provinceCtrl: _provinceCtrl,
+                                regionCtrl: _regionCtrl,
+                                permitFile: _permitFile,
+                                validIdFile: _validIdFile,
+                                onPickPermitFile: _pickPermitFile,
+                                onPickValidId: _pickValidId,
+                                onNextStep2: _onStep2Next,
+                                onBack: _goBack,
+                                onSubmit: _submit,
+                                rooms: _rooms,
+                                onRoomsChanged: (r) => setState(() => _rooms = r),
+                                // Attraction (Step 2)
+                                attractionNameCtrl: _attractionNameCtrl,
+                                attractionTypes: _attractionTypes,
+                                onAttractionTypesChanged: (v) => setState(
+                                    () => _attractionTypes = v),
+                              ),
                       ),
                     ],
                   ),
@@ -781,8 +1006,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'An internet connection is required to register your accommodation establishment.',
+                Text(
+                  'An internet connection is required to register your '
+                  '${_accountType == 'attraction' ? 'tourist attraction' : 'accommodation establishment'}.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: AppColors.textGray,
@@ -821,7 +1047,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 // ─── App Header ───────────────────────────────────────────────────────────────
 
 class _AppHeader extends StatelessWidget {
-  const _AppHeader();
+  const _AppHeader({required this.accountType});
+
+  final String? accountType;
 
   @override
   Widget build(BuildContext context) {
@@ -829,9 +1057,13 @@ class _AppHeader extends StatelessWidget {
       children: [
         _AppLogo(),
         const SizedBox(height: 14),
-        const Text(
-          'Register Accommodation',
-          style: TextStyle(
+        Text(
+          accountType == 'attraction'
+              ? 'Register Tourist Attraction'
+              : accountType == 'accommodation'
+                  ? 'Register Accommodation'
+                  : 'Register',
+          style: const TextStyle(
             color: AppColors.textWhite,
             fontSize: 22,
             fontWeight: FontWeight.w700,
@@ -881,23 +1113,226 @@ class _AppLogo extends StatelessWidget {
   }
 }
 
+// ─── Role Selection Card ──────────────────────────────────────────────────────
+
+class _RoleSelectionCard extends StatelessWidget {
+  const _RoleSelectionCard({required this.onSelect});
+
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.cardBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.4),
+            blurRadius: 40,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Select Account Type',
+            style: TextStyle(
+              color: AppColors.textWhite,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Choose the type of account you want to register.',
+            style: TextStyle(color: AppColors.textGray, fontSize: 13),
+          ),
+          const SizedBox(height: 20),
+          _RoleOptionCard(
+            icon: Icons.hotel_rounded,
+            title: 'Accommodation Establishment',
+            subtitle: 'Hotels, resorts, inns, and other lodging businesses',
+            onTap: () => onSelect('accommodation'),
+          ),
+          const SizedBox(height: 12),
+          _RoleOptionCard(
+            icon: Icons.attractions_rounded,
+            title: 'Tourist Attraction',
+            subtitle: 'Parks, plazas, heritage sites, and other public sites',
+            onTap: () => onSelect('attraction'),
+          ),
+          const SizedBox(height: 20),
+          Center(
+            child: GestureDetector(
+              onTap: () =>
+                  Navigator.pushReplacementNamed(context, AppRoutes.login),
+              child: RichText(
+                text: const TextSpan(
+                  text: 'Already registered? ',
+                  style: TextStyle(color: AppColors.textSubtle, fontSize: 13),
+                  children: [
+                    TextSpan(
+                      text: 'Sign in',
+                      style: TextStyle(
+                        color: AppColors.primaryCyan,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoleOptionCard extends StatefulWidget {
+  const _RoleOptionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  State<_RoleOptionCard> createState() => _RoleOptionCardState();
+}
+
+class _RoleOptionCardState extends State<_RoleOptionCard> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) {
+          setState(() => _pressed = false);
+          widget.onTap();
+        },
+        onTapCancel: () => setState(() => _pressed = false),
+        child: AnimatedScale(
+          scale: _pressed ? 0.98 : 1.0,
+          duration: const Duration(milliseconds: 80),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: _hovered
+                  ? AppColors.primaryBlue.withOpacity(0.1)
+                  : AppColors.inputBackground,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _hovered ? AppColors.primaryCyan : AppColors.cardBorder,
+                width: _hovered ? 1.5 : 1,
+              ),
+              boxShadow: _hovered
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primaryBlue.withOpacity(0.3),
+                        blurRadius: 18,
+                        offset: const Offset(0, 6),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryCyan.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    widget.icon,
+                    color: AppColors.primaryCyan,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.title,
+                        style: const TextStyle(
+                          color: AppColors.textWhite,
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        widget.subtitle,
+                        style: const TextStyle(
+                          color: AppColors.textGray,
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: _hovered
+                      ? AppColors.primaryCyan
+                      : AppColors.textSubtle,
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Form Card ────────────────────────────────────────────────────────────────
 
 class _FormCard extends StatelessWidget {
   const _FormCard({
     required this.step,
+    required this.accountType,
     required this.showErrors,
     required this.isLoading,
     this.errorMessage,
+    required this.onBackToRole,
     // Step 1
     required this.fullNameCtrl,
     required this.usernameCtrl,
     required this.emailCtrl,
+    required this.onEmailChanged,
     required this.phoneCtrl,
     required this.passwordCtrl,
     required this.confirmPassCtrl,
     required this.confirmationSent,
     required this.emailConfirmed,
+    required this.emailError,
+    required this.checkingEmail,
+    required this.onEmailBlur,
     required this.onSendConfirmation,
     required this.onCancelConfirmation,
     required this.onNextStep1,
@@ -929,22 +1364,32 @@ class _FormCard extends StatelessWidget {
     // Step 3
     required this.rooms,
     required this.onRoomsChanged,
+    // Attraction (Step 2)
+    required this.attractionNameCtrl,
+    required this.attractionTypes,
+    required this.onAttractionTypesChanged,
   });
 
   final int step;
+  final String accountType;
   final bool showErrors;
   final bool isLoading;
   final String? errorMessage;
+  final VoidCallback onBackToRole;
 
   // Step 1
   final TextEditingController fullNameCtrl;
   final TextEditingController usernameCtrl;
   final TextEditingController emailCtrl;
+  final ValueChanged<String> onEmailChanged;
   final TextEditingController phoneCtrl;
   final TextEditingController passwordCtrl;
   final TextEditingController confirmPassCtrl;
   final bool confirmationSent;
   final bool emailConfirmed;
+  final String? emailError;
+  final bool checkingEmail;
+  final VoidCallback onEmailBlur;
   final VoidCallback onSendConfirmation;
   final VoidCallback onCancelConfirmation;
   final VoidCallback onNextStep1;
@@ -978,6 +1423,11 @@ class _FormCard extends StatelessWidget {
   final List<Map<String, String>> rooms;
   final ValueChanged<List<Map<String, String>>> onRoomsChanged;
 
+  // Attraction (Step 2)
+  final TextEditingController attractionNameCtrl;
+  final List<String> attractionTypes;
+  final ValueChanged<List<String>> onAttractionTypesChanged;
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -997,22 +1447,44 @@ class _FormCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _StepIndicator(currentStep: step),
+          _StepIndicator(currentStep: step, accountType: accountType),
           const SizedBox(height: 24),
           if (step == 1)
             _Step1Form(
+              accountType: accountType,
               fullNameCtrl: fullNameCtrl,
               usernameCtrl: usernameCtrl,
               emailCtrl: emailCtrl,
+              onEmailChanged: onEmailChanged,
               phoneCtrl: phoneCtrl,
               passwordCtrl: passwordCtrl,
               confirmPassCtrl: confirmPassCtrl,
               confirmationSent: confirmationSent,
               emailConfirmed: emailConfirmed,
+              emailError: emailError,
+              checkingEmail: checkingEmail,
+              onEmailBlur: onEmailBlur,
               showErrors: showErrors,
+              errorMessage: errorMessage,
               onSendConfirmation: onSendConfirmation,
               onCancelConfirmation: onCancelConfirmation,
+              onBack: onBackToRole,
               onNext: onNextStep1,
+            )
+          else if (step == 2 && accountType == 'attraction')
+            _AttractionDetailsForm(
+              showErrors: showErrors,
+              errorMessage: errorMessage,
+              isLoading: isLoading,
+              attractionNameCtrl: attractionNameCtrl,
+              attractionTypes: attractionTypes,
+              onAttractionTypesChanged: onAttractionTypesChanged,
+              streetCtrl: streetCtrl,
+              barangayCtrl: barangayCtrl,
+              validIdFile: validIdFile,
+              onPickValidId: onPickValidId,
+              onBack: onBack,
+              onSubmit: onSubmit,
             )
           else if (step == 2)
             _Step2Form(
@@ -1082,11 +1554,40 @@ class _FormCard extends StatelessWidget {
 // ─── Step Indicator ───────────────────────────────────────────────────────────
 
 class _StepIndicator extends StatelessWidget {
-  const _StepIndicator({required this.currentStep});
+  const _StepIndicator({required this.currentStep, required this.accountType});
   final int currentStep;
+  final String accountType;
 
   @override
   Widget build(BuildContext context) {
+    if (accountType == 'attraction') {
+      return Row(
+        children: [
+          _StepBadge(
+            number: 1,
+            label: 'Account Info',
+            isActive: currentStep == 1,
+            isComplete: currentStep > 1,
+          ),
+          Expanded(
+            child: Container(
+              height: 1,
+              margin: const EdgeInsets.symmetric(horizontal: 10),
+              color: currentStep > 1
+                  ? AppColors.primaryCyan
+                  : AppColors.cardBorder,
+            ),
+          ),
+          _StepBadge(
+            number: 2,
+            label: 'Attraction Details',
+            isActive: currentStep == 2,
+            isComplete: false,
+          ),
+        ],
+      );
+    }
+
     return Row(
       children: [
         _StepBadge(
@@ -1196,31 +1697,45 @@ class _StepBadge extends StatelessWidget {
 
 class _Step1Form extends StatefulWidget {
   const _Step1Form({
+    required this.accountType,
     required this.fullNameCtrl,
     required this.usernameCtrl,
     required this.emailCtrl,
+    required this.onEmailChanged,
     required this.phoneCtrl,
     required this.passwordCtrl,
     required this.confirmPassCtrl,
     required this.confirmationSent,
     required this.emailConfirmed,
+    required this.emailError,
+    required this.checkingEmail,
+    required this.onEmailBlur,
     required this.showErrors,
+    this.errorMessage,
     required this.onSendConfirmation,
     required this.onCancelConfirmation,
+    required this.onBack,
     required this.onNext,
   });
 
+  final String accountType;
   final TextEditingController fullNameCtrl;
   final TextEditingController usernameCtrl;
   final TextEditingController emailCtrl;
+  final ValueChanged<String> onEmailChanged;
   final TextEditingController phoneCtrl;
   final TextEditingController passwordCtrl;
   final TextEditingController confirmPassCtrl;
   final bool confirmationSent;
   final bool emailConfirmed;
+  final String? emailError;
+  final bool checkingEmail;
+  final VoidCallback onEmailBlur;
   final bool showErrors;
+  final String? errorMessage;
   final VoidCallback onSendConfirmation;
   final VoidCallback onCancelConfirmation;
+  final VoidCallback onBack;
   final VoidCallback onNext;
 
   @override
@@ -1229,8 +1744,33 @@ class _Step1Form extends StatefulWidget {
 
 class _Step1FormState extends State<_Step1Form> {
   final _touched = <String>{};
+  final _emailFocusNode = FocusNode();
   bool _hidePassword = true;
   bool _hideConfirmPassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailFocusNode.addListener(_onEmailFocusChanged);
+  }
+
+  @override
+  void dispose() {
+    _emailFocusNode.removeListener(_onEmailFocusChanged);
+    _emailFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _onEmailFocusChanged() {
+    if (!_emailFocusNode.hasFocus) {
+      widget.onEmailBlur();
+    }
+  }
+
+  String? _emailError() {
+    if (widget.emailError != null) return widget.emailError;
+    return _show('email') ? _V.email(widget.emailCtrl.text) : null;
+  }
 
   void _touch(String field) => setState(() => _touched.add(field));
   bool _show(String f) => _touched.contains(f) || widget.showErrors;
@@ -1240,6 +1780,11 @@ class _Step1FormState extends State<_Step1Form> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: _BackButton(onPressed: widget.onBack),
+        ),
+        const SizedBox(height: 16),
         _LabeledField(
           label: 'Full Name',
           error: _show('fullName')
@@ -1272,13 +1817,30 @@ class _Step1FormState extends State<_Step1Form> {
         const SizedBox(height: 16),
         _LabeledField(
           label: 'Email Address',
-          error: _show('email') ? _V.email(widget.emailCtrl.text) : null,
+          error: _emailError(),
           child: _Input(
             controller: widget.emailCtrl,
             hint: 'email@example.com',
             keyboardType: TextInputType.emailAddress,
-            hasError: _show('email') && _V.email(widget.emailCtrl.text) != null,
-            onChanged: (_) => _touch('email'),
+            focusNode: _emailFocusNode,
+            hasError: _emailError() != null,
+            onChanged: (v) {
+              _touch('email');
+              widget.onEmailChanged(v);
+            },
+            suffixIcon: widget.checkingEmail
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.primaryCyan,
+                      ),
+                    ),
+                  )
+                : null,
           ),
         ),
         const SizedBox(height: 16),
@@ -1361,6 +1923,38 @@ class _Step1FormState extends State<_Step1Form> {
           ),
         ),
         const SizedBox(height: 22),
+        if (widget.errorMessage != null) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: RegisterColors.textRed.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: RegisterColors.textRed.withOpacity(0.4),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  color: RegisterColors.textRed,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.errorMessage!,
+                    style: const TextStyle(
+                      color: RegisterColors.textRed,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
         if (!widget.confirmationSent) ...[
           _GradientButton(
             label: 'Send Confirmation Email',
@@ -1431,7 +2025,9 @@ class _Step1FormState extends State<_Step1Form> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Email confirmed! Tap "Next: Business Details" to continue.',
+                    widget.accountType == 'attraction'
+                        ? 'Email confirmed! Tap "Next: Attraction Details" to continue.'
+                        : 'Email confirmed! Tap "Next: Business Details" to continue.',
                     style: TextStyle(
                       color: Colors.green[300],
                       fontSize: 13,
@@ -1443,7 +2039,9 @@ class _Step1FormState extends State<_Step1Form> {
           ),
           const SizedBox(height: 16),
           _GradientButton(
-            label: 'Next: Business Details →',
+            label: widget.accountType == 'attraction'
+                ? 'Next: Attraction Details →'
+                : 'Next: Business Details →',
             onPressed: widget.onNext,
           ),
         ],
@@ -1584,7 +2182,7 @@ class _Step2FormState extends State<_Step2Form> {
         // ── Owner First Name + Last Name ───────────────────────────────────
         _ResponsiveFieldPair(
           first: _LabeledField(
-            label: 'Owner First Name',
+            label: 'In-charge First Name',
             error: _show('ownerFirstName')
                 ? _V.ownerFirstName(widget.ownerFirstNameCtrl.text)
                 : null,
@@ -1598,7 +2196,7 @@ class _Step2FormState extends State<_Step2Form> {
             ),
           ),
           second: _LabeledField(
-            label: 'Owner Last Name',
+            label: 'In-charge Last Name',
             error: _show('ownerLastName')
                 ? _V.ownerLastName(widget.ownerLastNameCtrl.text)
                 : null,
@@ -1616,7 +2214,7 @@ class _Step2FormState extends State<_Step2Form> {
 
         // ── Owner Middle Name ───────────────────────────────────────────────
         _LabeledField(
-          label: 'Middle Name (Optional)',
+          label: 'In-charge Middle Name (Optional)',
           child: _Input(
             controller: widget.ownerMiddleNameCtrl,
             hint: 'Middle name',
@@ -1626,34 +2224,49 @@ class _Step2FormState extends State<_Step2Form> {
         const SizedBox(height: 16),
 
         // ── Permit Number + Registration Number ───────────────────────────
-        _ResponsiveFieldPair(
-          first: _LabeledField(
-            label: 'Permit Number',
-            error: _show('permitNumber')
-                ? _V.permitNumber(widget.permitNumberCtrl.text)
-                : null,
-            child: _Input(
-              controller: widget.permitNumberCtrl,
-              hint: 'SP-HTL-2024-XXX',
-              hasError:
-                  _show('permitNumber') &&
-                  _V.permitNumber(widget.permitNumberCtrl.text) != null,
-              onChanged: (_) => _touch('permitNumber'),
-            ),
-          ),
-          second: _LabeledField(
-            label: 'Registration Number',
-            error: _show('registration')
-                ? _V.registrationNumber(widget.registrationCtrl.text)
-                : null,
-            child: _Input(
-              controller: widget.registrationCtrl,
-              hint: 'BIR-2024-XXXXX',
-              hasError:
-                  _show('registration') &&
-                  _V.registrationNumber(widget.registrationCtrl.text) != null,
-              onChanged: (_) => _touch('registration'),
-            ),
+        // HIDDEN: registration number not required
+        // _ResponsiveFieldPair(
+        //   first: _LabeledField(
+        //     label: 'Permit Number',
+        //     error: _show('permitNumber')
+        //         ? _V.permitNumber(widget.permitNumberCtrl.text)
+        //         : null,
+        //     child: _Input(
+        //       controller: widget.permitNumberCtrl,
+        //       hint: 'SP-HTL-2024-XXX',
+        //       hasError:
+        //           _show('permitNumber') &&
+        //           _V.permitNumber(widget.permitNumberCtrl.text) != null,
+        //       onChanged: (_) => _touch('permitNumber'),
+        //     ),
+        //   ),
+        //   second: _LabeledField(
+        //     label: 'Registration Number',
+        //     error: _show('registration')
+        //         ? _V.registrationNumber(widget.registrationCtrl.text)
+        //         : null,
+        //     child: _Input(
+        //       controller: widget.registrationCtrl,
+        //       hint: 'BIR-2024-XXXXX',
+        //       hasError:
+        //           _show('registration') &&
+        //           _V.registrationNumber(widget.registrationCtrl.text) != null,
+        //       onChanged: (_) => _touch('registration'),
+        //     ),
+        //   ),
+        // ),
+        _LabeledField(
+          label: 'Permit Number',
+          error: _show('permitNumber')
+              ? _V.permitNumber(widget.permitNumberCtrl.text)
+              : null,
+          child: _Input(
+            controller: widget.permitNumberCtrl,
+            hint: 'e.g. 1234',
+            hasError:
+                _show('permitNumber') &&
+                _V.permitNumber(widget.permitNumberCtrl.text) != null,
+            onChanged: (_) => _touch('permitNumber'),
           ),
         ),
         const SizedBox(height: 16),
@@ -1662,12 +2275,28 @@ class _Step2FormState extends State<_Step2Form> {
         _LabeledField(
           label: 'AE ID',
           error: _show('aeId') ? _V.aeId(widget.aeIdCtrl.text) : null,
-          child: _Input(
+          child: _PrefixedInput(
+            prefix: _aeIdPrefix,
             controller: widget.aeIdCtrl,
-            hint: 'e.g. 9-902',
-            hasError:
-                _show('aeId') && _V.aeId(widget.aeIdCtrl.text) != null,
+            hint: 'XXXXX-XXXX',
+            hasError: _show('aeId') && _V.aeId(widget.aeIdCtrl.text) != null,
             onChanged: (_) => _touch('aeId'),
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              _AeIdFormatter(),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Example: DOT-R4A-ACC-XXXXX-XXXX — DOT (Department of Tourism, '
+          'accrediting agency) · R4A (Region IV-A / CALABARZON) · ACC '
+          '(accommodation establishment) · XXXXX (serial number) · XXXX (year '
+          'issued).',
+          style: TextStyle(
+            color: AppColors.textSubtle,
+            fontSize: 11,
+            height: 1.4,
           ),
         ),
         const SizedBox(height: 16),
@@ -1762,13 +2391,32 @@ class _Step2FormState extends State<_Step2Form> {
         ),
         const SizedBox(height: 16),
         _LabeledField(
-          label: "Owner's Valid ID",
+          label: "In-charge's Valid ID",
           error: widget.showErrors ? _V.file(widget.validIdFile) : null,
-          child: _FilePicker(
-            label: "Upload Owner's Valid ID (PDF / Image)",
-            file: widget.validIdFile,
-            hasError: widget.showErrors && _V.file(widget.validIdFile) != null,
-            onPick: widget.onPickValidId,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _FilePicker(
+                label: "Upload In-charge's Valid ID (PDF / Image)",
+                file: widget.validIdFile,
+                hasError:
+                    widget.showErrors && _V.file(widget.validIdFile) != null,
+                onPick: widget.onPickValidId,
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Accepted valid IDs (any one): National ID (PhilSys), Passport, '
+                "Driver's License, UMID, Postal ID, or any other valid "
+                'government-issued ID.\n'
+                'Upload a clear photo of the required document/s. Make sure '
+                'it is not expired and all details are readable.',
+                style: TextStyle(
+                  color: AppColors.textGray,
+                  fontSize: 11.5,
+                  height: 1.4,
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 16),
@@ -1783,6 +2431,217 @@ class _Step2FormState extends State<_Step2Form> {
                 label: 'Next: Room Details →',
                 onPressed: widget.onNext,
               ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Attraction Details Form ──────────────────────────────────────────────────
+
+class _AttractionDetailsForm extends StatefulWidget {
+  const _AttractionDetailsForm({
+    required this.showErrors,
+    required this.errorMessage,
+    required this.isLoading,
+    required this.attractionNameCtrl,
+    required this.attractionTypes,
+    required this.onAttractionTypesChanged,
+    required this.streetCtrl,
+    required this.barangayCtrl,
+    required this.validIdFile,
+    required this.onPickValidId,
+    required this.onBack,
+    required this.onSubmit,
+  });
+
+  final bool showErrors;
+  final String? errorMessage;
+  final bool isLoading;
+  final TextEditingController attractionNameCtrl;
+  final List<String> attractionTypes;
+  final ValueChanged<List<String>> onAttractionTypesChanged;
+  final TextEditingController streetCtrl;
+  final TextEditingController barangayCtrl;
+  final PlatformFile? validIdFile;
+  final VoidCallback onPickValidId;
+  final VoidCallback onBack;
+  final VoidCallback onSubmit;
+
+  @override
+  State<_AttractionDetailsForm> createState() => _AttractionDetailsFormState();
+}
+
+class _AttractionDetailsFormState extends State<_AttractionDetailsForm> {
+  final _touched = <String>{};
+
+  void _touch(String field) => setState(() => _touched.add(field));
+  bool _show(String f) => _touched.contains(f) || widget.showErrors;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Attraction Details',
+          style: TextStyle(
+            color: AppColors.textWhite,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Provide the details of the tourist attraction you manage.',
+          style: TextStyle(color: AppColors.textGray, fontSize: 13),
+        ),
+        const SizedBox(height: 16),
+
+        // ── Attraction Name ────────────────────────────────────────────────
+        _LabeledField(
+          label: 'Attraction Name',
+          error: _show('attractionName')
+              ? _V.attractionName(widget.attractionNameCtrl.text)
+              : null,
+          child: _Input(
+            controller: widget.attractionNameCtrl,
+            hint: 'e.g. SampaLoc Lake',
+            hasError:
+                _show('attractionName') &&
+                _V.attractionName(widget.attractionNameCtrl.text) != null,
+            onChanged: (_) => _touch('attractionName'),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // ── Attraction Types ───────────────────────────────────────────────
+        _LabeledField(
+          label: 'Attraction Types',
+          error: _show('attractionTypes')
+              ? _V.attractionTypes(widget.attractionTypes)
+              : null,
+          child: _BusinessLineSelector(
+            selected: widget.attractionTypes,
+            items: _attractionTypeItems,
+            displayLabels: _attractionTypeLabels,
+            showError:
+                _show('attractionTypes') &&
+                _V.attractionTypes(widget.attractionTypes) != null,
+            onChanged: (values) {
+              widget.onAttractionTypesChanged(values);
+              _touch('attractionTypes');
+            },
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // ── Street ────────────────────────────────────────────────────────
+        _LabeledField(
+          label: 'Street',
+          error: _show('street') ? _V.street(widget.streetCtrl.text) : null,
+          child: _Input(
+            controller: widget.streetCtrl,
+            hint: 'House number, street',
+            hasError:
+                _show('street') && _V.street(widget.streetCtrl.text) != null,
+            onChanged: (_) => _touch('street'),
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // ── Barangay ──────────────────────────────────────────────────────
+        _LabeledField(
+          label: 'Barangay',
+          error: _show('barangay')
+              ? _V.barangay(widget.barangayCtrl.text)
+              : null,
+          child: _BarangayAutocomplete(
+            controller: widget.barangayCtrl,
+            hasError:
+                _show('barangay') &&
+                _V.barangay(widget.barangayCtrl.text) != null,
+            onChanged: (_) => _touch('barangay'),
+            onSelected: (_) => _touch('barangay'),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // ── Valid ID Upload ───────────────────────────────────────────────
+        _LabeledField(
+          label: "Representative's Valid ID",
+          error: widget.showErrors ? _V.file(widget.validIdFile) : null,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _FilePicker(
+                label: "Upload Representative's Valid ID (PDF / Image)",
+                file: widget.validIdFile,
+                hasError:
+                    widget.showErrors && _V.file(widget.validIdFile) != null,
+                onPick: widget.onPickValidId,
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Accepted valid IDs (any one): National ID (PhilSys), Passport, '
+                "Driver's License, UMID, Postal ID, or any other valid "
+                'government-issued ID.\n'
+                'Upload a clear photo of the required document/s. Make sure '
+                'it is not expired and all details are readable.',
+                style: TextStyle(
+                  color: AppColors.textGray,
+                  fontSize: 11.5,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        if (widget.errorMessage != null) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: RegisterColors.textRed.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: RegisterColors.textRed.withOpacity(0.4),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline, color: RegisterColors.textRed, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.errorMessage!,
+                    style: const TextStyle(
+                      color: RegisterColors.textRed,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        // ── Back + Submit ─────────────────────────────────────────────────
+        Row(
+          children: [
+            _BackButton(onPressed: widget.onBack),
+            const SizedBox(width: 12),
+            Expanded(
+              child: widget.isLoading
+                  ? const _LoadingButton()
+                  : _GradientButton(
+                      label: 'Submit Registration',
+                      onPressed: widget.onSubmit,
+                    ),
             ),
           ],
         ),
@@ -2300,6 +3159,25 @@ class _PhoneFormatter extends TextInputFormatter {
   }
 }
 
+class _AeIdFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    if (digits.length > 9) return oldValue;
+    final buf = StringBuffer();
+    for (int i = 0; i < digits.length; i++) {
+      if (i == 5) buf.write('-');
+      buf.write(digits[i]);
+    }
+    final formatted = buf.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
 class _Input extends StatelessWidget {
   const _Input({
     required this.controller,
@@ -2308,6 +3186,7 @@ class _Input extends StatelessWidget {
     this.obscure = false,
     this.hasError = false,
     this.enabled = true,
+    this.focusNode,
     this.onChanged,
     this.suffixIcon,
     this.inputFormatters,
@@ -2319,6 +3198,7 @@ class _Input extends StatelessWidget {
   final bool obscure;
   final bool hasError;
   final bool enabled;
+  final FocusNode? focusNode;
   final ValueChanged<String>? onChanged;
   final Widget? suffixIcon;
   final List<TextInputFormatter>? inputFormatters;
@@ -2337,6 +3217,7 @@ class _Input extends StatelessWidget {
       obscureText: obscure,
       keyboardType: keyboardType,
       enabled: enabled,
+      focusNode: focusNode,
       onChanged: onChanged,
       inputFormatters: inputFormatters,
       style: TextStyle(color: textColor, fontSize: 13.5),
@@ -2370,6 +3251,110 @@ class _Input extends StatelessWidget {
           ),
         ),
         suffixIcon: suffixIcon,
+      ),
+    );
+  }
+}
+
+class _PrefixedInput extends StatefulWidget {
+  const _PrefixedInput({
+    required this.prefix,
+    required this.controller,
+    required this.hint,
+    this.hasError = false,
+    this.onChanged,
+    this.inputFormatters,
+  });
+
+  final String prefix;
+  final TextEditingController controller;
+  final String hint;
+  final bool hasError;
+  final ValueChanged<String>? onChanged;
+  final List<TextInputFormatter>? inputFormatters;
+
+  @override
+  State<_PrefixedInput> createState() => _PrefixedInputState();
+}
+
+class _PrefixedInputState extends State<_PrefixedInput> {
+  final _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_onFocusChanged);
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChanged);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChanged() => setState(() {});
+
+  @override
+  Widget build(BuildContext context) {
+    final focused = _focusNode.hasFocus;
+    final borderColor = widget.hasError
+        ? RegisterColors.textRed
+        : focused
+            ? AppColors.primaryCyan
+            : AppColors.inputBorder;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.inputBackground,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: borderColor,
+          width: focused && !widget.hasError ? 1.5 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 14),
+            child: Text(
+              widget.prefix,
+              style: const TextStyle(
+                color: AppColors.textGray,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: TextField(
+              controller: widget.controller,
+              focusNode: _focusNode,
+              onChanged: widget.onChanged,
+              inputFormatters: widget.inputFormatters,
+              style: const TextStyle(
+                color: AppColors.textWhite,
+                fontSize: 13.5,
+              ),
+              decoration: InputDecoration(
+                hintText: widget.hint,
+                hintStyle: const TextStyle(
+                  color: AppColors.textSubtle,
+                  fontSize: 13.5,
+                ),
+                isDense: true,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 4,
+                  vertical: 13,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+        ],
       ),
     );
   }

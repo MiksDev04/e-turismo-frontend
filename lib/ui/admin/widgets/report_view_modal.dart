@@ -1,12 +1,13 @@
-import 'package:flutter/gestures.dart' show PointerScrollEvent;
+import 'package:flutter/gestures.dart'
+    show PointerScrollEvent, PointerScaleEvent;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app/core/constants/app_colors.dart';
 import 'package:app/core/services/connectivity_service.dart';
 import 'package:app/api/admin_report_api.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:syncfusion_flutter_core/theme.dart';
+import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 
 // ─────────────────────────────────────────────────────────────────────────
 // DAE-1B TEMPLATE PALETTE
@@ -51,6 +52,87 @@ class _Var {
   static const double attrCodeWidth = 70;
   static const double dataColWidth = 55;
   static const int kDataRowCount = 41;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VAR 1 (TOURIST ATTRACTION) PALETTE
+// Lifted from same day blank.xlsx: yellow header (#FFFF00), green total
+// (#92D050), Arial Narrow table cells, Arial titles.  Day column = B, a
+// "Week Day" column = C, then 15 data columns (D..R) with per-column widths
+// and a mixed thin/medium border scheme at the group boundaries.
+// ─────────────────────────────────────────────────────────────────────────
+class _Var1 {
+  static const String font = 'Arial';
+  static const String narrow = 'Arial Narrow';
+  static const String dayFont = 'Calibri';
+  static const Color paper = Colors.white;
+  static const Color ink = Colors.black;
+  static const Color gridLine = Colors.black;
+  static const Color headerYellow = Color(0xFFFFFF00);
+  static const Color totalGreen = Color(0xFF92D050);
+  static const Color grandTotalYellow = Color(0xFFFFFF00);
+
+  static const double dataSize = 10.0; // Arial Narrow 10 data cells
+  static const double daySize = 11.0; // Calibri 11 day / weekday cells
+  static const double headerSize = 8.0; // Arial Narrow 8 bold headers
+
+  static const double thin = 0.5;
+  static const double medium = 0.5;
+
+  // Column widths (px) for B..R from the template (52 / 74 / 15 data cols).
+  static const double dayColWidth = 52;
+  static const double weekdayColWidth = 74;
+  static const List<double> dataColWidths = [
+    66, 69, 70, 66, 68, 70, 66, 64, 66, 70, 64, 64, 73, 77, 80,
+  ];
+  static double get dataColWidthSum =>
+      dataColWidths.fold(0, (a, b) => a + b);
+  static double get tableWidth =>
+      dayColWidth + weekdayColWidth + dataColWidthSum;
+
+  // Row heights (px) for the 4-level header and data rows.
+  static const double headerRow1 = 22; // 16.5pt
+  static const double headerRow2 = 20; // 15pt
+  static const double headerRow3 = 38; // 28.5pt
+  static const double headerRow4 = 23; // 17.25pt
+  static const double dataRowHeight = 32; // 24pt
+  static const double lastDataRowHeight = 35; // 26.25pt
+  static const double totalRowHeight = 47; // 35.25pt
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ATTRACTION TYPE LABELS
+// Values stored in tourist_attractions.attraction_type (snake_case) mapped to
+// the display labels used on the VAR 1 form.
+// ─────────────────────────────────────────────────────────────────────────
+const Map<String, String> _kAttractionTypeLabels = {
+  'ecotourism': 'Ecotourism',
+  'natural_attractions': 'Natural Attractions',
+  'cultural': 'Cultural',
+  'religious': 'Religious',
+  'historical_heritage_sites': 'Historical Heritage Sites',
+  'agri_tourism': 'Agri-Tourism',
+  'farm_tourism_sites': 'Farm Tourism Sites',
+};
+
+String _attractionTypeLabel(String value) {
+  final key = value.trim();
+  if (key.isEmpty) return '';
+  final known = _kAttractionTypeLabels[key];
+  if (known != null) return known;
+  return key
+      .split(RegExp(r'[_\s]+'))
+      .where((w) => w.isNotEmpty)
+      .map((w) => w[0].toUpperCase() + w.substring(1).toLowerCase())
+      .join(' ');
+}
+
+// Week Day (Mon-Sun) short names indexed by DateTime.weekday (1=Mon .. 7=Sun).
+const List<String> _kWeekdayShort = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+String _weekdayLabel(int year, int month, int day) {
+  final wd = DateTime(year, month, day).weekday;
+  return _kWeekdayShort[wd - 1];
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1131,8 +1213,436 @@ class _VarReportTable extends StatelessWidget {
   }
 }
 
-// ─── Per-tab establishment view with own scroll controllers ──────────────────
+// ─────────────────────────────────────────────────────────────────────────
+// VAR 1 (TOURIST ATTRACTION) REPORT TABLE
+// Mirrors VAR-REPORT-ATTRACTION_DAILY.xlsx rows 16-51: 4-level yellow
+// header, 31 day rows, green total row.
+// ─────────────────────────────────────────────────────────────────────────
+Container _var1DataCell(
+  String text, {
+  required double width,
+  double height = _Var1.dataRowHeight,
+  bool bold = false,
+  bool isTotal = false,
+  bool isGrandTotal = false,
+  bool day = false,
+  double? fontSize,
+  double? borderLeft,
+  double? borderRight,
+  double? borderTop,
+  double? borderBottom,
+}) {
+  final double l = borderLeft ?? _Var1.thin;
+  final double r = borderRight ?? _Var1.thin;
+  final double t = borderTop ?? _Var1.thin;
+  final double b = borderBottom ?? _Var1.thin;
+  return Container(
+    width: width,
+    height: height,
+    decoration: BoxDecoration(
+      color: isGrandTotal
+          ? _Var1.grandTotalYellow
+          : isTotal
+              ? _Var1.totalGreen
+              : _Var1.paper,
+      border: Border(
+        left: BorderSide(color: _Var1.gridLine, width: l),
+        right: BorderSide(color: _Var1.gridLine, width: r),
+        top: BorderSide(color: _Var1.gridLine, width: t),
+        bottom: BorderSide(color: _Var1.gridLine, width: b),
+      ),
+    ),
+    alignment: Alignment.center,
+    padding: const EdgeInsets.symmetric(horizontal: 2),
+    child: Text(
+      text,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontFamily: day ? _Var1.dayFont : _Var1.narrow,
+        fontSize: fontSize ??
+            (isTotal
+                ? (isGrandTotal ? 12.0 : 11.0)
+                : day
+                    ? _Var1.daySize
+                    : _Var1.dataSize),
+        fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+        color: _Var1.ink,
+      ),
+    ),
+  );
+}
 
+Container _var1HeaderCell(
+  String text, {
+  required double width,
+  bool bold = true,
+  bool wrap = false,
+  double height = _Var1.headerRow1,
+  double? fontSize,
+  double? borderLeft,
+  double? borderRight,
+  double? borderTop,
+  double? borderBottom,
+}) {
+  final double l = borderLeft ?? _Var1.thin;
+  final double r = borderRight ?? _Var1.thin;
+  final double t = borderTop ?? _Var1.thin;
+  final double b = borderBottom ?? _Var1.thin;
+  return Container(
+    width: width,
+    height: height,
+    decoration: BoxDecoration(
+      color: _Var1.headerYellow,
+      border: Border(
+        left: BorderSide(color: _Var1.gridLine, width: l),
+        right: BorderSide(color: _Var1.gridLine, width: r),
+        top: BorderSide(color: _Var1.gridLine, width: t),
+        bottom: BorderSide(color: _Var1.gridLine, width: b),
+      ),
+    ),
+    alignment: Alignment.center,
+    padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+    child: Text(
+      text,
+      textAlign: TextAlign.center,
+      softWrap: wrap,
+      overflow: TextOverflow.clip,
+      style: TextStyle(
+        fontFamily: _Var1.narrow,
+        fontSize: fontSize ?? _Var1.headerSize,
+        fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+        color: _Var1.ink,
+      ),
+    ),
+  );
+}
+
+class _Var1ReportTable extends StatelessWidget {
+  const _Var1ReportTable({
+    required this.establishment,
+    required this.month,
+    required this.year,
+  });
+
+  final EstablishmentReport establishment;
+  final int month;
+  final int year;
+
+  // Column widths (px) for B..R in order.
+  static const List<double> _colW = [
+    _Var1.dayColWidth,
+    _Var1.weekdayColWidth,
+    ..._Var1.dataColWidths,
+  ];
+
+  static const double _dayW = _Var1.dayColWidth;
+  static const double _wdW = _Var1.weekdayColWidth;
+
+  static const double _h1 = _Var1.headerRow1;
+  static const double _h2 = _Var1.headerRow2;
+  static const double _h3 = _Var1.headerRow3;
+  static const double _h4 = _Var1.headerRow4;
+  static const double _headerH = _h1 + _h2 + _h3 + _h4;
+
+  static double get _tableW => _Var1.tableWidth;
+
+  static double _colX(int index) => _colW.take(index).fold(0.0, (a, b) => a + b);
+
+  // Medium vertical separators: outer edges plus the group boundaries
+  // (C|D, F|G, I|J, L|M, O|P) and the Grand Total block (P|Q, Q|R).
+  static bool _mediumLeft(int col) =>
+      col == 0 ||
+      col == 2 ||
+      col == 5 ||
+      col == 8 ||
+      col == 11 ||
+      col == 14 ||
+      col == 15 ||
+      col == 16;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [_buildHeader(), _buildDataSection()],
+    );
+  }
+
+  Widget _buildHeader() {
+    final double xData = _colX(2);
+    const double y0 = 0;
+    const double y1 = _h1;
+    const double y2 = _h1 + _h2;
+    const double y3 = _h1 + _h2 + _h3;
+
+    Widget cell(
+      String text, {
+      required double x,
+      required double y,
+      required double w,
+      required double h,
+      bool wrap = false,
+      double? fontSize,
+      double? borderLeft,
+      double? borderRight,
+      double? borderTop,
+      double? borderBottom,
+    }) {
+      return Positioned(
+        left: x,
+        top: y,
+        width: w,
+        height: h,
+        child: _var1HeaderCell(
+          text,
+          width: w,
+          height: h,
+          wrap: wrap,
+          fontSize: fontSize,
+          borderLeft: borderLeft,
+          borderRight: borderRight,
+          borderTop: borderTop,
+          borderBottom: borderBottom,
+        ),
+      );
+    }
+
+    const labels = ['Male', 'Female', 'Total'];
+
+    return SizedBox(
+      width: _tableW,
+      height: _headerH,
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        children: [
+          // ── Row 1: "Date" (B:C), "*** Place of Residence" (D:O),
+          //    "* Grand Total Number of Visitors" (P:R, 3 rows) ────────
+          cell(
+            'Date',
+            x: 0,
+            y: y0,
+            w: _dayW + _wdW,
+            h: _h1,
+            borderLeft: _Var1.medium,
+            borderTop: _Var1.medium,
+          ),
+          cell(
+            '*** Place of Residence',
+            x: xData,
+            y: y0,
+            w: _colX(14) - xData,
+            h: _h1,
+            borderLeft: _Var1.medium,
+            borderTop: _Var1.medium,
+          ),
+          cell(
+            '* Grand Total Number of Visitors',
+            x: _colX(14),
+            y: y0,
+            w: _colW[14] + _colW[15] + _colW[16],
+            h: _h1 + _h2 + _h3,
+            wrap: true,
+            borderLeft: _Var1.medium,
+            borderRight: _Var1.medium,
+            borderTop: _Var1.medium,
+          ),
+
+          // ── Row 2 ────────────────────────────────────────────────────
+          cell(
+            'Day',
+            x: 0,
+            y: y1,
+            w: _dayW,
+            h: _h2 + _h3 + _h4,
+            wrap: true,
+            borderLeft: _Var1.medium,
+            borderBottom: _Var1.medium,
+          ),
+          cell(
+            'Week Day (Mon-Sun)',
+            x: _dayW,
+            y: y1,
+            w: _wdW,
+            h: _h2 + _h3 + _h4,
+            wrap: true,
+            borderBottom: _Var1.medium,
+          ),
+          cell(
+            'Philippines',
+            x: xData,
+            y: y1,
+            w: _colX(11) - xData,
+            h: _h2,
+            borderLeft: _Var1.medium,
+          ),
+          cell(
+            'Foreign Country Residence',
+            x: _colX(11),
+            y: y1,
+            w: _colX(14) - _colX(11),
+            h: _h2 + _h3,
+            wrap: true,
+            borderLeft: _Var1.medium,
+          ),
+
+          // ── Row 3 ────────────────────────────────────────────────────
+          cell(
+            'This City/Municipality',
+            x: xData,
+            y: y2,
+            w: _colX(5) - xData,
+            h: _h3,
+            wrap: true,
+            borderLeft: _Var1.medium,
+          ),
+          cell(
+            'Other City/Municipality',
+            x: _colX(5),
+            y: y2,
+            w: _colX(8) - _colX(5),
+            h: _h3,
+            wrap: true,
+            borderLeft: _Var1.medium,
+          ),
+          cell(
+            'Other Province',
+            x: _colX(8),
+            y: y2,
+            w: _colX(11) - _colX(8),
+            h: _h3,
+            wrap: true,
+            borderLeft: _Var1.medium,
+          ),
+
+          // ── Row 4: M / F / T for each of the 5 groups ────────────────
+          for (int g = 0; g < 5; g++)
+            for (int j = 0; j < 3; j++) ...[
+              cell(
+                labels[j],
+                x: _colX(2 + g * 3 + j),
+                y: y3,
+                w: _colW[2 + g * 3 + j],
+                h: _h4,
+                borderLeft:
+                    _mediumLeft(2 + g * 3 + j) ? _Var1.medium : null,
+                borderRight: (2 + g * 3 + j) == 16 ? _Var1.medium : null,
+                borderBottom: _Var1.medium,
+              ),
+            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDataSection() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (int day = 1; day <= 31; day++) _buildDayRow(day),
+        _buildTotalRow(),
+      ],
+    );
+  }
+
+  Row _buildDayRow(int day) {
+    final vd = establishment.attractionDaily?['$day'];
+    final m = vd ?? const VarData();
+    final daysInMonth = DateTime(year, month + 1, 0).day;
+    final isInMonth = day <= daysInMonth;
+    final isLast = day == 31;
+    final height =
+        isLast ? _Var1.lastDataRowHeight : _Var1.dataRowHeight;
+
+    String v(int val) => val == 0 ? '' : '$val';
+
+    final values = <String>[
+      isInMonth ? '$day' : '',
+      isInMonth ? _weekdayLabel(year, month, day) : '',
+      v(m.maleThisCity),
+      v(m.femaleThisCity),
+      m.totalThisCity == 0 ? '' : '${m.totalThisCity}',
+      v(m.maleOtherCity),
+      v(m.femaleOtherCity),
+      m.totalOtherCity == 0 ? '' : '${m.totalOtherCity}',
+      v(m.maleOtherProvince),
+      v(m.femaleOtherProvince),
+      m.totalOtherProvince == 0 ? '' : '${m.totalOtherProvince}',
+      v(m.maleForeign),
+      v(m.femaleForeign),
+      m.totalForeign == 0 ? '' : '${m.totalForeign}',
+      v(m.grandMale),
+      v(m.grandFemale),
+      m.grandTotal == 0 ? '' : '${m.grandTotal}',
+    ];
+
+    return Row(
+      children: [
+        for (int col = 0; col < 17; col++)
+          _var1DataCell(
+            values[col],
+            width: _colW[col],
+            height: height,
+            day: col < 2,
+            borderLeft: _mediumLeft(col) ? _Var1.medium : null,
+            borderRight: col == 16 ? _Var1.medium : null,
+          ),
+      ],
+    );
+  }
+
+  Row _buildTotalRow() {
+    final t = establishment.attractionTotals ?? const VarData();
+    String v(int x) => '$x';
+
+    final values = <String>[
+      v(t.maleThisCity),
+      v(t.femaleThisCity),
+      v(t.totalThisCity),
+      v(t.maleOtherCity),
+      v(t.femaleOtherCity),
+      v(t.totalOtherCity),
+      v(t.maleOtherProvince),
+      v(t.femaleOtherProvince),
+      v(t.totalOtherProvince),
+      v(t.maleForeign),
+      v(t.femaleForeign),
+      v(t.totalForeign),
+      v(t.grandMale),
+      v(t.grandFemale),
+      v(t.grandTotal),
+    ];
+
+    return Row(
+      children: [
+        _var1DataCell(
+          'Total of this Month ****',
+          width: _dayW + _wdW,
+          height: _Var1.totalRowHeight,
+          bold: true,
+          fontSize: 10,
+          isTotal: true,
+          borderLeft: _Var1.medium,
+          borderBottom: _Var1.medium,
+        ),
+        for (int i = 0; i < 15; i++)
+          _var1DataCell(
+            values[i],
+            width: _Var1.dataColWidths[i],
+            height: _Var1.totalRowHeight,
+            bold: true,
+            isTotal: i < 14,
+            isGrandTotal: i == 14,
+            borderLeft: _Var1.medium,
+            borderRight: i == 14 ? _Var1.medium : null,
+            borderBottom: _Var1.medium,
+          ),
+      ],
+    );
+  }
+}
+
+// ─── Per-tab establishment view with own scroll controllers ──────────────────
 class _EstablishmentView extends StatefulWidget {
   const _EstablishmentView({
     required this.content,
@@ -1320,38 +1830,25 @@ class ReportViewerModal extends StatefulWidget {
   const ReportViewerModal({
     super.key,
     required this.batch,
-    required this.onDownload,
   });
 
   final ReportBatch batch;
-  final void Function(String format) onDownload;
 
   @override
   State<ReportViewerModal> createState() => _ReportViewerModalState();
 }
 
-class _ReportViewerModalState extends State<ReportViewerModal>
-    with SingleTickerProviderStateMixin {
+class _ReportViewerModalState extends State<ReportViewerModal> {
   bool _loading = true;
   String? _error;
+  Uint8List? _pdfBytes;
+
   ReportViewResponse? _viewData;
-
-  bool _downloading = false;
-  bool _printing = false;
   TabController? _tabController;
-
   double _zoomLevel = 1.0;
-  static const double _zoomStep = 0.1;
-  static const double _zoomMin = 1.0;
-  static const double _zoomMax = 2.0;
-
-  void _zoomIn() => setState(
-    () => _zoomLevel = (_zoomLevel + _zoomStep).clamp(_zoomMin, _zoomMax),
-  );
-  void _zoomOut() => setState(
-    () => _zoomLevel = (_zoomLevel - _zoomStep).clamp(_zoomMin, _zoomMax),
-  );
-  void _resetZoom() => setState(() => _zoomLevel = 1.0);
+  final PdfViewerController _pdfController = PdfViewerController();
+  int _pdfZoomPercent = 100;
+  Offset _pdfAnchorOffset = Offset.zero;
 
   final _reportService = ReportService();
 
@@ -1363,32 +1860,28 @@ class _ReportViewerModalState extends State<ReportViewerModal>
 
   @override
   void dispose() {
-    _tabController?.dispose();
+    _pdfController.dispose();
     super.dispose();
   }
 
   Future<void> _loadReport() async {
     try {
-      final params = ViewReportParams(
-        reportType: widget.batch.reportType,
-        reportVariant: widget.batch.reportVariant,
-        periodYear: widget.batch.periodYear,
-        periodMonths: widget.batch.periodMonths,
+      final bytes = await _reportService.downloadReport(
+        DownloadReportParams(
+          reportType: widget.batch.reportType,
+          reportVariant: widget.batch.reportVariant,
+          periodYear: widget.batch.periodYear,
+          periodMonths: widget.batch.periodMonths,
+          format: 'pdf',
+        ),
+        timeout: const Duration(seconds: 120),
       );
-      final data = await _reportService.viewReport(params);
       if (!mounted) return;
 
       setState(() {
-        _viewData = data;
+        _pdfBytes = bytes;
         _loading = false;
       });
-
-      if (data.establishments.length > 1) {
-        _tabController = TabController(
-          length: data.establishments.length,
-          vsync: this,
-        );
-      }
     } catch (e) {
       debugPrint('❌ Report view error: $e');
       if (!mounted) return;
@@ -1407,40 +1900,67 @@ class _ReportViewerModalState extends State<ReportViewerModal>
     }
   }
 
-  Future<void> _handleDownload(String format) async {
-    setState(() => _downloading = true);
-    try {
-      widget.onDownload(format);
-    } finally {
-      if (mounted) setState(() => _downloading = false);
-    }
+  Future<void> _handlePrint() async {
+    final bytes = _pdfBytes;
+    if (bytes == null) return;
+    await Printing.layoutPdf(onLayout: (_) async => bytes);
   }
 
-  Future<void> _handlePrint() async {
-    setState(() => _printing = true);
-    try {
-      await Printing.layoutPdf(
-        name: '${widget.batch.reportType == "var" ? "VAR" : "DAE"}_Report',
-        onLayout: (format) async {
-          final pdfBytes = await _reportService.downloadReport(
-            DownloadReportParams(
-              reportType: widget.batch.reportType,
-              reportVariant: widget.batch.reportVariant,
-              periodYear: widget.batch.periodYear,
-              periodMonths: widget.batch.periodMonths,
-              format: 'pdf',
-              pageWidth: format.width,
-              pageHeight: format.height,
-            ),
-          );
-          return pdfBytes;
-        },
-      );
-    } catch (e) {
-      debugPrint('Print error: $e');
-    } finally {
-      if (mounted) setState(() => _printing = false);
+  Future<void> _handleReload() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _pdfBytes = null;
+    });
+    await _loadReport();
+  }
+
+  void _zoomPdfBy(double delta) {
+    _pdfController.zoomLevel =
+        (_pdfController.zoomLevel + delta).clamp(1.0, 4.0);
+  }
+
+  /// Zooms the PDF around the cursor position on Ctrl+scroll.
+  ///
+  /// SfPdfViewer scrolls the document by [PointerScrollEvent.scrollDelta] on
+  /// every wheel event before this handler runs (its internal Listener fires
+  /// first), so the scroll shift is cancelled by jumping to the offset that
+  /// was current before the event. [_pdfAnchorOffset] is tracked from pointer
+  /// moves, plain scrolls and previous zoom steps, so it is always the exact
+  /// pre-event offset (no delta arithmetic, and immune to Syncfusion's offset
+  /// clamping at the document edges). The point under the cursor stays fixed
+  /// while the zoom level changes; at the zoom limits the scroll shift is
+  /// cancelled so Ctrl+scroll never moves the document.
+  void _zoomPdfToCursor(PointerScrollEvent event) {
+    final oldZoom = _pdfController.zoomLevel;
+    final dy = event.scrollDelta.dy;
+    if (dy == 0) return;
+
+    final target = (oldZoom + (dy > 0 ? -0.1 : 0.1)).clamp(1.0, 4.0);
+    final preScroll = _pdfAnchorOffset;
+
+    if (target == oldZoom) {
+      _pdfController.jumpTo(xOffset: preScroll.dx, yOffset: preScroll.dy);
+      return;
     }
+
+    final mouse = event.localPosition;
+    final factor = 1 / oldZoom - 1 / target;
+    final targetOffset = Offset(
+      preScroll.dx + mouse.dx * factor,
+      preScroll.dy + mouse.dy * factor,
+    );
+
+    _pdfController.zoomLevel = target;
+    _pdfController.jumpTo(
+      xOffset: targetOffset.dx,
+      yOffset: targetOffset.dy,
+    );
+    _pdfAnchorOffset = targetOffset;
+  }
+
+  void _onPdfZoomChanged(PdfZoomDetails details) {
+    setState(() => _pdfZoomPercent = (details.newZoomLevel * 100).round());
   }
 
   @override
@@ -1476,17 +1996,11 @@ class _ReportViewerModalState extends State<ReportViewerModal>
             _ModalHeader(
               batch: widget.batch,
               onClose: () => Navigator.pop(context),
-              onDownloadExcel: _downloading
-                  ? null
-                  : () => _handleDownload('xlsx'),
-              onDownloadPdf: _downloading ? null : () => _handleDownload('pdf'),
-              onPrint: (_viewData == null || _printing) ? null : _handlePrint,
-              downloading: _downloading,
-              printing: _printing,
-              zoomLevel: _zoomLevel,
-              onZoomIn: _zoomIn,
-              onZoomOut: _zoomOut,
-              onZoomReset: _resetZoom,
+              onPrint: _pdfBytes == null ? null : _handlePrint,
+              onReload: _handleReload,
+              onZoomIn: () => _zoomPdfBy(0.25),
+              onZoomOut: () => _zoomPdfBy(-0.25),
+              zoomPercent: _pdfZoomPercent,
             ),
             const Divider(color: AppColors.cardBorder, height: 1),
             Expanded(
@@ -1512,10 +2026,8 @@ class _ReportViewerModalState extends State<ReportViewerModal>
   }
 
   Widget _buildContent() {
-    final data = _viewData!;
-    final establishments = data.establishments;
-
-    if (establishments.isEmpty) {
+    final bytes = _pdfBytes;
+    if (bytes == null) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
@@ -1527,53 +2039,37 @@ class _ReportViewerModalState extends State<ReportViewerModal>
       );
     }
 
-    // VAR: single table with all establishments
-    if (widget.batch.reportType == 'var') {
-      return _buildVarContent();
-    }
-
-    // DAE: single establishment or tabs
-    if (establishments.length == 1) {
-      return _buildEstablishmentView(establishments.first);
-    }
-
-    // Multiple establishments: tab bar
-    return Column(
-      children: [
-        SizedBox(
-          height: 34,
-          child: Material(
-            color: AppColors.backgroundDark,
-            child: TabBar(
-              controller: _tabController,
-              isScrollable: true,
-              labelColor: AppColors.primaryCyan,
-              unselectedLabelColor: AppColors.textGray,
-              indicatorColor: AppColors.primaryCyan,
-              indicatorSize: TabBarIndicatorSize.label,
-              labelPadding: const EdgeInsets.symmetric(horizontal: 12),
-              labelStyle: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-              unselectedLabelStyle: const TextStyle(fontSize: 11),
-              tabAlignment: TabAlignment.start,
-              tabs: establishments
-                  .map((e) => Tab(text: e.businessName))
-                  .toList(),
-            ),
-          ),
+    return SfPdfViewerTheme(
+      data: const SfPdfViewerThemeData(
+        backgroundColor: Color(0xFFDDE3EA),
+      ),
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerMove: (_) => _pdfAnchorOffset = _pdfController.scrollOffset,
+        onPointerSignal: (event) {
+          if (event is PointerScrollEvent &&
+              HardwareKeyboard.instance.isControlPressed) {
+            _zoomPdfToCursor(event);
+          } else if (event is PointerScrollEvent) {
+            _pdfAnchorOffset = _pdfController.scrollOffset;
+          } else if (event is PointerScaleEvent) {
+            final oldZoom = _pdfController.zoomLevel;
+            final target = (oldZoom * event.scale).clamp(1.0, 4.0);
+            if (target == oldZoom) return;
+            _pdfController.zoomLevel = target;
+          }
+        },
+        child: SfPdfViewer.memory(
+          bytes,
+          controller: _pdfController,
+          enableDoubleTapZooming: true,
+          canShowScrollHead: true,
+          canShowScrollStatus: true,
+          pageLayoutMode: PdfPageLayoutMode.continuous,
+          maxZoomLevel: 4.0,
+          onZoomLevelChanged: _onPdfZoomChanged,
         ),
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            physics: const NeverScrollableScrollPhysics(),
-            children: establishments
-                .map((e) => _buildEstablishmentView(e))
-                .toList(),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -1762,6 +2258,346 @@ class _ReportViewerModalState extends State<ReportViewerModal>
 
   double _varTableWidth() {
     return _Var.nameColWidth + _Var.attrCodeWidth + 15 * _Var.dataColWidth;
+  }
+
+  // ── VAR 1 (Tourist Attraction) Report Content ──────────────────────────────
+
+  Widget _buildVar1View(EstablishmentReport est) {
+    final tableWidth = _var1TableWidth();
+
+    return _EstablishmentView(
+      tableWidth: tableWidth,
+      zoomLevel: _zoomLevel,
+      onZoomChanged: (z) => setState(() => _zoomLevel = z),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildVar1FormHeader(est),
+          _Var1ReportTable(
+            establishment: est,
+            month: widget.batch.periodMonths.isNotEmpty
+                ? widget.batch.periodMonths.first
+                : 1,
+            year: widget.batch.periodYear,
+          ),
+          _buildVar1Footer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVar1Tabs(List<EstablishmentReport> establishments) {
+    return Column(
+      children: [
+        SizedBox(
+          height: 34,
+          child: Material(
+            color: AppColors.backgroundDark,
+            child: TabBar(
+              controller: _tabController,
+              isScrollable: true,
+              labelColor: AppColors.primaryCyan,
+              unselectedLabelColor: AppColors.textGray,
+              indicatorColor: AppColors.primaryCyan,
+              indicatorSize: TabBarIndicatorSize.label,
+              labelPadding: const EdgeInsets.symmetric(horizontal: 12),
+              labelStyle: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+              unselectedLabelStyle: const TextStyle(fontSize: 11),
+              tabAlignment: TabAlignment.start,
+              tabs: establishments
+                  .map((e) => Tab(text: e.businessName))
+                  .toList(),
+            ),
+          ),
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            physics: const NeverScrollableScrollPhysics(),
+            children: establishments
+                .map((e) => _buildVar1View(e))
+                .toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  double _var1TableWidth() {
+    return _Var1.tableWidth;
+  }
+
+  // ── VAR 1 Form Header (rows 1-14 of VAR-REPORT-ATTRACTION_DAILY.xlsx) ─────
+
+  Widget _buildVar1FormHeader(EstablishmentReport est) {
+    final ts = const TextStyle(
+      fontFamily: _Var1.font,
+      fontSize: 12,
+      color: _Var1.ink,
+    );
+    final tsNarrow = const TextStyle(
+      fontFamily: _Var1.narrow,
+      fontSize: 11,
+      color: _Var1.ink,
+    );
+
+    final month = widget.batch.periodMonths.isNotEmpty
+        ? widget.batch.periodMonths.first
+        : 1;
+    const monthNames = [
+      '',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    final period = '${monthNames[month]}, ${widget.batch.periodYear}';
+    final types = (est.attractionType ?? [])
+        .map(_attractionTypeLabel)
+        .where((t) => t.isNotEmpty)
+        .join(', ');
+
+    return Container(
+      color: _Var1.paper,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      width: _var1TableWidth(),
+      child: Stack(
+        children: [
+          // Logo at top-LEFT, per same day blank.xlsx anchor (col C..E / rows 3-7).
+          Positioned(
+            top: 14,
+            left: 93,
+            child: Image.asset(
+              'assets/images/tourism_office_logo.jpg',
+              width: 143,
+              height: 86,
+              fit: BoxFit.contain,
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Text(
+                  'Republic of the Philippines',
+                  style: ts.copyWith(fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              Center(
+                child: Text(
+                  'City Government of San Pablo',
+                  style: ts.copyWith(fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              ...[
+                'Tourism Information Center, Doña Leonila Park',
+                'City Hall Compound, San Pablo City',
+              ].map(
+                (line) => Center(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text(
+                      line,
+                      style: ts,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ).toList(),
+              const SizedBox(height: 8),
+              Center(
+                child: Text(
+                  'OFFICE OF CITY TOURISM',
+                  style: ts.copyWith(fontSize: 14, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 10),
+              // Title + (VAR 1) at far right (matches VAR 2's spaceBetween row)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Tourism Attraction Visitor Record',
+                    style: ts.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  Text('(VAR 1)', style: ts),
+                ],
+              ),
+              const SizedBox(height: 4),
+              // Subtitle (matches VAR 2's left-aligned note)
+              Text(
+                '( This recording form can be used instead of just counting the visitors )',
+                style: tsNarrow,
+              ),
+              const SizedBox(height: 12),
+              _var1Field('Month/Year:', period, underline: true),
+              const SizedBox(height: 3),
+              _var1Field('Name of City/Municipality:', 'SAN PABLO CITY', boxed: true),
+              const SizedBox(height: 3),
+              _var1Field('Name of attraction/ Spot:', est.businessName, underline: true),
+              const SizedBox(height: 6),
+              _var1Field(
+                'Type of Tourism Attraction:',
+                types.isEmpty ? '—' : types,
+                boxed: true,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _var1Field(
+    String label,
+    String value, {
+    bool underline = false,
+    bool boxed = false,
+  }) {
+    final tsNarrow = const TextStyle(
+      fontFamily: _Var1.narrow,
+      fontSize: 11,
+      color: _Var1.ink,
+    );
+    Widget valueWidget = Text(value, style: tsNarrow);
+    if (underline) {
+      valueWidget = Container(
+        margin: const EdgeInsets.only(bottom: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        decoration: const BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: Colors.black, width: 1.2),
+          ),
+        ),
+        child: valueWidget,
+      );
+    } else if (boxed) {
+      valueWidget = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        decoration: const BoxDecoration(
+          border: Border(
+            top: BorderSide(color: Colors.black, width: 1.2),
+            bottom: BorderSide(color: Colors.black, width: 1.2),
+          ),
+        ),
+        child: valueWidget,
+      );
+    }
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(label, style: tsNarrow),
+        const SizedBox(width: 20),
+        SizedBox(
+          width: 650,
+          child: valueWidget,
+        ),
+      ],
+    );
+  }
+
+  // ── VAR 1 Report Footer (rows 51-58) ───────────────────────────────────────
+
+  Widget _buildVar1Footer() {
+    final ts = const TextStyle(
+      fontFamily: _Var1.font,
+      fontSize: 12,
+      color: _Var1.ink,
+    );
+    final tsNarrow = const TextStyle(
+      fontFamily: _Var1.narrow,
+      fontSize: 9,
+      color: _Var1.ink,
+    );
+
+    return Container(
+      color: _Var1.paper,
+      width: _var1TableWidth(),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Note: *Total number must be recorded,  ** Sex & ***Residence entries are optional.   Total number of this month must be reported.',
+            style: tsNarrow,
+          ),
+          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    Text('Prepared by:', style: ts),
+                    const SizedBox(height: 30),
+                    Text('________________________', style: ts),
+                    const SizedBox(height: 2),
+                    Text(
+                      'ROMINA I. ALIDIO',
+                      style: ts.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      'Admin Aide I',
+                      style: ts.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    Text('Received and checked by:', style: ts),
+                    const SizedBox(height: 30),
+                    Text('________________________', style: ts),
+                    const SizedBox(height: 2),
+                    Text(
+                      'REINA KRISTINE S. OLIVA',
+                      style: ts.copyWith(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      'Admin Aide VI',
+                      style: ts.copyWith(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          // QR code below signatures (same day blank.xlsx rows 62-64, col B..F).
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.only(left: 43),
+            child: Image.asset(
+              'assets/images/qr-pic.png',
+              width: 210,
+              height: 58,
+              fit: BoxFit.contain,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'QFM-OCT-002 Rev 0 2022.02.16',
+            style: ts.copyWith(fontSize: 8),
+          ),
+        ],
+      ),
+    );
   }
 
   // ── VAR Form Header (rows 1-11 of VAR-REPORT.xlsx) ────────────────────────
@@ -2218,41 +3054,29 @@ class _ModalHeader extends StatelessWidget {
   const _ModalHeader({
     required this.batch,
     required this.onClose,
-    required this.onDownloadExcel,
-    required this.onDownloadPdf,
     required this.onPrint,
-    required this.downloading,
-    required this.printing,
-    required this.zoomLevel,
+    required this.onReload,
     required this.onZoomIn,
     required this.onZoomOut,
-    required this.onZoomReset,
+    required this.zoomPercent,
   });
 
   final ReportBatch batch;
   final VoidCallback onClose;
-  final VoidCallback? onDownloadExcel;
-  final VoidCallback? onDownloadPdf;
   final VoidCallback? onPrint;
-  final bool downloading;
-  final bool printing;
-  final double zoomLevel;
+  final VoidCallback onReload;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
-  final VoidCallback onZoomReset;
+  final int zoomPercent;
 
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 900;
 
-    final iconSize = isMobile ? 28.0 : 36.0;
-    final iconInnerSize = isMobile ? 14.0 : 18.0;
     final titleFontSize = isMobile ? 13.0 : 15.0;
     final badgeFontSize = isMobile ? 10.0 : 11.0;
-    final subtitleFontSize = isMobile ? 10.0 : 11.5;
     final btnSize = isMobile ? 28.0 : 32.0;
     final btnIconSize = isMobile ? 14.0 : 16.0;
-    final zoomTextSize = isMobile ? 10.0 : 11.0;
     final horizontalPad = isMobile ? 10.0 : 20.0;
     final verticalPad = isMobile ? 8.0 : 16.0;
 
@@ -2266,7 +3090,7 @@ class _ModalHeader extends StatelessWidget {
           runSpacing: 4,
           children: [
             Text(
-              '${batch.reportType == "var" ? "VAR" : "DAE"} \u2014 ${batch.variantLabel}',
+              '${batch.reportType == "var1" ? "VAR 1" : batch.reportType == "var2" ? "VAR 2" : "DAE"} \u2014 ${batch.variantLabel}',
               style: TextStyle(
                 color: AppColors.textWhite,
                 fontSize: titleFontSize,
@@ -2296,112 +3120,29 @@ class _ModalHeader extends StatelessWidget {
             ),
           ],
         ),
-        SizedBox(height: isMobile ? 1 : 2),
-        Text(
-          'Live data \u2014 Batch: ${batch.shortId}',
-          style: TextStyle(
+      ],
+    );
+
+    final printButton = GestureDetector(
+      onTap: onPrint,
+      child: AnimatedOpacity(
+        opacity: onPrint != null ? 1.0 : 0.4,
+        duration: const Duration(milliseconds: 150),
+        child: Container(
+          width: btnSize,
+          height: btnSize,
+          decoration: BoxDecoration(
+            color: AppColors.backgroundDark,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.cardBorder),
+          ),
+          child: Icon(
+            Icons.print_rounded,
             color: AppColors.textGray,
-            fontSize: subtitleFontSize,
-            fontFamily: 'monospace',
+            size: btnIconSize,
           ),
         ),
-      ],
-    );
-
-    final zoomControls = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        GestureDetector(
-          onTap: onZoomOut,
-          child: Container(
-            width: btnSize,
-            height: btnSize,
-            decoration: BoxDecoration(
-              color: AppColors.backgroundDark,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.cardBorder),
-            ),
-            child: Icon(
-              Icons.remove,
-              color: AppColors.textGray,
-              size: btnIconSize,
-            ),
-          ),
-        ),
-        SizedBox(width: isMobile ? 2 : 4),
-        GestureDetector(
-          onTap: onZoomReset,
-          child: Container(
-            height: btnSize,
-            padding: EdgeInsets.symmetric(horizontal: isMobile ? 6 : 8),
-            decoration: BoxDecoration(
-              color: AppColors.backgroundDark,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.cardBorder),
-            ),
-            child: Center(
-              child: Text(
-                '${(zoomLevel * 100).round()}%',
-                style: TextStyle(
-                  color: AppColors.textGray,
-                  fontSize: zoomTextSize,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-        ),
-        SizedBox(width: isMobile ? 2 : 4),
-        GestureDetector(
-          onTap: onZoomIn,
-          child: Container(
-            width: btnSize,
-            height: btnSize,
-            decoration: BoxDecoration(
-              color: AppColors.backgroundDark,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.cardBorder),
-            ),
-            child: Icon(
-              Icons.add,
-              color: AppColors.textGray,
-              size: btnIconSize,
-            ),
-          ),
-        ),
-      ],
-    );
-
-    final downloadButtons = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _DownloadButton(
-          icon: Icons.table_rows_rounded,
-          label: 'Excel',
-          color: const Color(0xFF1D6F42),
-          isLoading: downloading,
-          onTap: onDownloadExcel,
-          compact: isMobile,
-        ),
-        SizedBox(width: isMobile ? 6 : 8),
-        _DownloadButton(
-          icon: Icons.picture_as_pdf_rounded,
-          label: 'PDF',
-          color: const Color(0xFFD32F2F),
-          isLoading: downloading,
-          onTap: onDownloadPdf,
-          compact: isMobile,
-        ),
-        SizedBox(width: isMobile ? 6 : 8),
-        _DownloadButton(
-          icon: Icons.print_rounded,
-          label: 'Print',
-          color: const Color(0xFF1565C0),
-          isLoading: printing,
-          onTap: onPrint,
-          compact: isMobile,
-        ),
-      ],
+      ),
     );
 
     final closeButton = GestureDetector(
@@ -2422,6 +3163,80 @@ class _ModalHeader extends StatelessWidget {
       ),
     );
 
+    final reloadButton = GestureDetector(
+      onTap: onReload,
+      child: Container(
+        width: btnSize,
+        height: btnSize,
+        decoration: BoxDecoration(
+          color: AppColors.primaryCyan.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: AppColors.primaryCyan.withOpacity(0.35),
+          ),
+        ),
+        child: Icon(
+          Icons.refresh_rounded,
+          color: AppColors.primaryCyan,
+          size: btnIconSize,
+        ),
+      ),
+    );
+
+    Widget zoomButton({
+      required VoidCallback onTap,
+      required IconData icon,
+    }) {
+      return GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: btnSize,
+          height: btnSize,
+          decoration: BoxDecoration(
+            color: AppColors.backgroundDark,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.cardBorder),
+          ),
+          child: Icon(
+            icon,
+            color: AppColors.textGray,
+            size: btnIconSize,
+          ),
+        ),
+      );
+    }
+
+    final zoomPercentLabel = Container(
+      height: btnSize,
+      constraints: const BoxConstraints(minWidth: 44),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: AppColors.backgroundDark,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.cardBorder),
+      ),
+      child: Text(
+        '$zoomPercent%',
+        style: const TextStyle(
+          color: AppColors.textGray,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+
+    final zoomControls = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        zoomButton(onTap: onZoomOut, icon: Icons.remove_rounded),
+        const SizedBox(width: 3),
+        zoomPercentLabel,
+        const SizedBox(width: 3),
+        zoomButton(onTap: onZoomIn, icon: Icons.add_rounded),
+      ],
+    );
+
     if (isMobile) {
       return Padding(
         padding: EdgeInsets.fromLTRB(
@@ -2435,27 +3250,17 @@ class _ModalHeader extends StatelessWidget {
           children: [
             Row(
               children: [
-                Container(
-                  width: iconSize,
-                  height: iconSize,
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryCyan.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.table_chart_rounded,
-                    color: AppColors.primaryCyan,
-                    size: iconInnerSize,
-                  ),
-                ),
-                const SizedBox(width: 8),
                 Expanded(child: titleSection),
                 const SizedBox(width: 8),
+                reloadButton,
+                const SizedBox(width: 6),
+                zoomControls,
+                const SizedBox(width: 6),
+                printButton,
+                const SizedBox(width: 6),
                 closeButton,
               ],
             ),
-            const SizedBox(height: 8),
-            Row(children: [downloadButtons, const Spacer(), zoomControls]),
           ],
         ),
       );
@@ -2470,101 +3275,20 @@ class _ModalHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: iconSize,
-            height: iconSize,
-            decoration: BoxDecoration(
-              color: AppColors.primaryCyan.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              Icons.table_chart_rounded,
-              color: AppColors.primaryCyan,
-              size: iconInnerSize,
-            ),
-          ),
-          const SizedBox(width: 12),
           Expanded(child: titleSection),
           const SizedBox(width: 12),
-          downloadButtons,
-          const SizedBox(width: 12),
+          reloadButton,
+          const SizedBox(width: 8),
           zoomControls,
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
+          printButton,
+          const SizedBox(width: 8),
           closeButton,
         ],
       ),
     );
   }
 }
-
-class _DownloadButton extends StatelessWidget {
-  const _DownloadButton({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-    this.isLoading = false,
-    this.compact = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback? onTap;
-  final bool isLoading;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = onTap != null && !isLoading;
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: AnimatedOpacity(
-        opacity: enabled ? 1.0 : 0.5,
-        duration: const Duration(milliseconds: 150),
-        child: Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? 8 : 14,
-            vertical: compact ? 5 : 8,
-          ),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withOpacity(0.35)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (isLoading)
-                SizedBox(
-                  width: compact ? 11 : 13,
-                  height: compact ? 11 : 13,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: color,
-                  ),
-                )
-              else
-                Icon(icon, color: color, size: compact ? 12 : 14),
-              if (!compact) ...[
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ── Loading & Error Views ─────────────────────────────────────────────────────
 
 class _LoadingView extends StatelessWidget {

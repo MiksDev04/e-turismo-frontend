@@ -1,9 +1,12 @@
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:app/core/database/local_database.dart';
 import 'package:app/core/services/offline_service.dart';
 import 'package:app/core/services/session_service.dart';
 import 'package:app/core/utils/datetime_utils.dart';
+import 'package:app/models/origin_group.dart';
 import 'package:app/ui/business/pages/business_guest_records_page.dart';
 import 'base_api.dart';
 
@@ -149,6 +152,7 @@ class BusinessGuestRecordApi extends BaseApi {
     List<String>? roomIds,
     required String purposeOfVisit,
     required List<GuestBreakdownEntry> breakdowns,
+    List<OriginGroup>? originGroups,
     int? maleCount,
     int? femaleCount,
     String? leadCountry,
@@ -171,6 +175,7 @@ class BusinessGuestRecordApi extends BaseApi {
           roomIds:                roomIds,
           purposeOfVisit:         purposeOfVisit,
           breakdowns:             breakdowns,
+          originGroups:           originGroups,
           maleCount:              maleCount,
           femaleCount:            femaleCount,
           leadCountry:            leadCountry,
@@ -193,6 +198,7 @@ class BusinessGuestRecordApi extends BaseApi {
             roomIds:                roomIds,
             purposeOfVisit:         purposeOfVisit,
             breakdowns:             breakdowns,
+            originGroups:           originGroups,
             maleCount:              maleCount,
             femaleCount:            femaleCount,
             leadCountry:            leadCountry,
@@ -218,6 +224,7 @@ class BusinessGuestRecordApi extends BaseApi {
       roomIds:                roomIds,
       purposeOfVisit:         purposeOfVisit,
       breakdowns:             breakdowns,
+      originGroups:           originGroups,
       maleCount:              maleCount,
       femaleCount:            femaleCount,
       leadCountry:            leadCountry,
@@ -348,6 +355,7 @@ class BusinessGuestRecordApi extends BaseApi {
 
         final roomDetails = await _fetchLocalRoomDetails(db, recordId);
         final roomIds = roomDetails.map((r) => r.id).toList();
+        final originGroups = await _fetchLocalOriginGroups(db, recordId);
 
         records.add(GuestRecord(
           id:           recordId,
@@ -374,6 +382,7 @@ class BusinessGuestRecordApi extends BaseApi {
           leadIsOverseas:         (row['lead_is_overseas'] as int?) == 1,
           leadBirthdate:          row['lead_birthdate'] as String?,
           leadSex:                _normaliseSex(row['lead_sex'] as String?),
+          originGroups:     originGroups,
         ));
       }
       return records;
@@ -458,6 +467,7 @@ class BusinessGuestRecordApi extends BaseApi {
 
         final roomDetails = await _fetchLocalRoomDetails(db, recordId);
         final roomIds = roomDetails.map((r) => r.id).toList();
+        final originGroups = await _fetchLocalOriginGroups(db, recordId);
 
         records.add(GuestRecord(
           id:           recordId,
@@ -484,6 +494,7 @@ class BusinessGuestRecordApi extends BaseApi {
           leadIsOverseas:         (row['lead_is_overseas'] as int?) == 1,
           leadBirthdate:          row['lead_birthdate'] as String?,
           leadSex:                _normaliseSex(row['lead_sex'] as String?),
+          originGroups:     originGroups,
         ));
       }
 
@@ -506,6 +517,7 @@ class BusinessGuestRecordApi extends BaseApi {
     List<String>? roomIds,
     required String purposeOfVisit,
     required List<GuestBreakdownEntry> breakdowns,
+    List<OriginGroup>? originGroups,
     int? maleCount,
     int? femaleCount,
     String? leadCountry,
@@ -521,17 +533,26 @@ class BusinessGuestRecordApi extends BaseApi {
     try {
       final businessId = SessionService.instance.current?.businessId;
 
-      // Male/female counts: optional. Derive the missing one from the other;
-      // if both are blank, fall back to the PSA 47.1%/52.9% split.
+      // Drop incomplete rows (no guest counts or no origin) so the backend
+      // never rejects the update with
+      // "Each origin group must have at least one guest".
+      final groups = originGroups?.where((g) => g.isComplete).toList();
+
       var maleCountInt = maleCount ?? 0;
       var femaleCountInt = femaleCount ?? 0;
-      if (maleCountInt == 0 && femaleCountInt == 0) {
-        maleCountInt = (totalGuests * 0.471).round();
-        femaleCountInt = totalGuests - maleCountInt;
+      var totalGuestsInt = totalGuests;
+
+      if (groups != null && groups.isNotEmpty) {
+        maleCountInt = groups.fold<int>(0, (sum, g) => sum + g.maleCount);
+        femaleCountInt = groups.fold<int>(0, (sum, g) => sum + g.femaleCount);
+        totalGuestsInt = maleCountInt + femaleCountInt;
+      } else if (maleCountInt == 0 && femaleCountInt == 0) {
+        maleCountInt = (totalGuestsInt * 0.471).round();
+        femaleCountInt = totalGuestsInt - maleCountInt;
       } else if (maleCountInt == 0) {
-        maleCountInt = totalGuests - femaleCountInt;
+        maleCountInt = totalGuestsInt - femaleCountInt;
       } else if (femaleCountInt == 0) {
-        femaleCountInt = totalGuests - maleCountInt;
+        femaleCountInt = totalGuestsInt - maleCountInt;
       }
 
       final payload = <String, dynamic>{
@@ -540,7 +561,7 @@ class BusinessGuestRecordApi extends BaseApi {
         'checkOut':              checkOut,
         'actualCheckOut':        actualCheckOut,
         'status':                status,
-        'totalGuests':           totalGuests,
+        'totalGuests':           totalGuestsInt,
         'maleCount':             maleCountInt,
         'femaleCount':           femaleCountInt,
         'purposeOfVisit':        purposeOfVisit,
@@ -553,6 +574,9 @@ class BusinessGuestRecordApi extends BaseApi {
         'leadBirthdate':         leadBirthdate,
         'breakdowns':            breakdowns.map((b) => _breakdownEntryToPayload(b)).toList(),
       };
+      if (groups != null) {
+        payload['originGroups'] = groups.map((g) => g.toJson()).toList();
+      }
       if (roomIds != null) {
         payload['roomIds'] = roomIds;
       }
@@ -580,7 +604,7 @@ class BusinessGuestRecordApi extends BaseApi {
           'check_in':                checkIn,
           'check_out':               checkOut,
           'actual_checkout':         actualCheckOut,
-          'total_guests':            totalGuests,
+          'total_guests':            totalGuestsInt,
           'male_count':              maleCountInt,
           'female_count':            femaleCountInt,
           'purpose_of_visit':        purposeOfVisit,
@@ -610,6 +634,14 @@ class BusinessGuestRecordApi extends BaseApi {
         if (roomIds != null && actualCheckOut == null) {
           await _updateLocalRoomAssignments(db, recordId, businessId ?? '', roomIds);
         }
+        // Update origin groups locally
+        await _writeOriginGroups(
+          db,
+          recordId,
+          groups,
+          createdAt: localUpdate['updated_at'] as String?,
+          localUpdatedAt: localUpdate['local_updated_at'] as String?,
+        );
       }
 
       return const ApiResult.success(null);
@@ -630,6 +662,7 @@ class BusinessGuestRecordApi extends BaseApi {
     List<String>? roomIds,
     required String purposeOfVisit,
     required List<GuestBreakdownEntry> breakdowns,
+    List<OriginGroup>? originGroups,
     int? maleCount,
     int? femaleCount,
     String? leadCountry,
@@ -646,10 +679,6 @@ class BusinessGuestRecordApi extends BaseApi {
       final now = DateTime.now().toUtc().toIso8601String();
       final db  = await LocalDatabase.instance.database;
 
-      // Preserve pending_create so the initial POST (with room associations)
-      // is pushed first. Overwriting to pending_update would skip the create
-      // and the subsequent PUT checkout would upsert the record without
-      // junction rows, losing room data.
       final currentState = await db.query(
         LocalDatabase.tableGuestRecords,
         columns: ['sync_status'],
@@ -660,24 +689,32 @@ class BusinessGuestRecordApi extends BaseApi {
       final preserveCreate = currentState.isNotEmpty &&
           currentState.first['sync_status'] == LocalDatabase.syncPendingCreate;
 
-      // Male/female counts: optional. Derive the missing one from the other;
-      // if both are blank, fall back to the PSA 47.1%/52.9% split.
+      // Drop incomplete rows (no guest counts or no origin) so the sync push
+      // is never rejected by the backend.
+      final groups = originGroups?.where((g) => g.isComplete).toList();
+
       var maleCountInt = maleCount ?? 0;
       var femaleCountInt = femaleCount ?? 0;
-      if (maleCountInt == 0 && femaleCountInt == 0) {
-        maleCountInt = (totalGuests * 0.471).round();
-        femaleCountInt = totalGuests - maleCountInt;
+      var totalGuestsInt = totalGuests;
+
+      if (groups != null && groups.isNotEmpty) {
+        maleCountInt = groups.fold<int>(0, (sum, g) => sum + g.maleCount);
+        femaleCountInt = groups.fold<int>(0, (sum, g) => sum + g.femaleCount);
+        totalGuestsInt = maleCountInt + femaleCountInt;
+      } else if (maleCountInt == 0 && femaleCountInt == 0) {
+        maleCountInt = (totalGuestsInt * 0.471).round();
+        femaleCountInt = totalGuestsInt - maleCountInt;
       } else if (maleCountInt == 0) {
-        maleCountInt = totalGuests - femaleCountInt;
+        maleCountInt = totalGuestsInt - femaleCountInt;
       } else if (femaleCountInt == 0) {
-        femaleCountInt = totalGuests - maleCountInt;
+        femaleCountInt = totalGuestsInt - maleCountInt;
       }
 
       final localUpdate = <String, dynamic>{
         'check_in':                checkIn,
         'check_out':               checkOut,
         'actual_checkout':         actualCheckOut,
-        'total_guests':            totalGuests,
+        'total_guests':            totalGuestsInt,
         'male_count':              maleCountInt,
         'female_count':            femaleCountInt,
         'purpose_of_visit':        purposeOfVisit,
@@ -709,6 +746,15 @@ class BusinessGuestRecordApi extends BaseApi {
         final businessId = SessionService.instance.current?.businessId ?? '';
         await _updateLocalRoomAssignments(db, recordId, businessId, roomIds);
       }
+
+      // Update origin groups locally
+      await _writeOriginGroups(
+        db,
+        recordId,
+        groups,
+        createdAt: now,
+        localUpdatedAt: now,
+      );
 
       return const ApiResult.success(null);
     } catch (e) {
@@ -747,6 +793,27 @@ class BusinessGuestRecordApi extends BaseApi {
     } catch (e) {
       debugPrint('⚠️ _fetchLocalRoomDetails error: $e');
       return [];
+    }
+  }
+
+  Future<List<OriginGroup>> _fetchLocalOriginGroups(dynamic db, String recordId) async {
+    try {
+      final rows = await db.query(
+        LocalDatabase.tableGuestOriginBreakdowns,
+        where: 'guest_record_id = ? AND deleted_at IS NULL',
+        whereArgs: [recordId],
+      ) as List<Map<String, Object?>>;
+
+      // Build imperatively with an explicitly-typed list — avoids any
+      // implicit List<dynamic> → List<OriginGroup> downcast at runtime.
+      final groups = <OriginGroup>[];
+      for (final r in rows) {
+        groups.add(OriginGroup.fromJson(Map<String, dynamic>.from(r)));
+      }
+      return groups;
+    } catch (e) {
+      debugPrint('⚠️ _fetchLocalOriginGroups error: $e');
+      return <OriginGroup>[];
     }
   }
 
@@ -1003,6 +1070,7 @@ class BusinessGuestRecordApi extends BaseApi {
         LocalDatabase.tableLocalRooms,
         {
           'room_status':      'occupied',
+          'updated_at':       now,
           'sync_status':      roomSyncStatus,
           'local_updated_at': now,
         },
@@ -1026,6 +1094,7 @@ class BusinessGuestRecordApi extends BaseApi {
           LocalDatabase.tableLocalRooms,
           {
             'room_status':      'vacant',
+            'updated_at':       now,
             'sync_status':      roomSyncStatus,
             'local_updated_at': now,
           },
@@ -1062,6 +1131,10 @@ class BusinessGuestRecordApi extends BaseApi {
   List<GuestRecord> _parseNodeRows(List rows) {
     return rows.map((row) {
       final breakdowns = (row['guest_breakdowns'] as List?) ?? [];
+      final originGroups = breakdowns
+          .map((b) => OriginGroup.fromJson(
+              b is Map<String, dynamic> ? b : Map<String, dynamic>.from(b as Map)))
+          .toList();
       final checkIn    = row['check_in']  as String;
       final checkOut   = row['check_out'] as String;
       final statusStr  = row['status']    as String? ?? 'active';
@@ -1102,6 +1175,7 @@ class BusinessGuestRecordApi extends BaseApi {
         leadIsOverseas:         (row['lead_is_overseas'] == true || row['lead_is_overseas'] == 1),
         leadBirthdate:          row['lead_birthdate'] as String?,
         leadSex:                _normaliseSex(row['lead_sex'] as String?),
+        originGroups: originGroups,
       );
     }).toList();
   }
@@ -1317,6 +1391,54 @@ class BusinessGuestRecordApi extends BaseApi {
       case 'prefer_not_to_say':
       case 'prefer not to say': return 'prefer_not_to_say';
       default:                  return 'prefer_not_to_say';
+    }
+  }
+
+  String _generateId() {
+    final rand = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rand.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20)}';
+  }
+
+  Future<void> _writeOriginGroups(
+    dynamic db,
+    String recordId,
+    List<OriginGroup>? originGroups, {
+    required String? createdAt,
+    required String? localUpdatedAt,
+  }) async {
+    if (originGroups == null) return;
+
+    await db.delete(
+      LocalDatabase.tableGuestOriginBreakdowns,
+      where: 'guest_record_id = ?',
+      whereArgs: [recordId],
+    );
+
+    for (final group in originGroups) {
+      await db.insert(
+        LocalDatabase.tableGuestOriginBreakdowns,
+        {
+          'id':                  _generateId(),
+          'guest_record_id':     recordId,
+          'country':             group.country,
+          'nationality':         group.nationality,
+          'is_overseas':         group.isOverseas ? 1 : 0,
+          'province':            group.province,
+          'city_municipality':   group.cityMunicipality,
+          'male_count':          group.maleCount,
+          'female_count':        group.femaleCount,
+          'created_at':          createdAt,
+          'updated_at':          localUpdatedAt,
+          'deleted_at':          null,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
     }
   }
 }

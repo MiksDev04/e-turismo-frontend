@@ -14,6 +14,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:path/path.dart' as p;
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/offline_service.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../../api/business_dashboard_api.dart';
 import '../../../core/services/session_service.dart';
@@ -86,13 +87,14 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
   String? _dashError;
 
   // ── Connectivity state ────────────────────────────────────────────────────
-  // _isOffline drives the offline strip shown at the top.
-  // When connectivity returns we silently reload data — no manual banner needed.
+  // _isOffline drives the offline strip shown at the top. Connectivity only
+  // toggles the strip — actual data refresh happens after sync completes so
+  // the shown stats always include the records just pushed/refreshed.
 
   bool _isOffline = false;
   StreamSubscription<bool>? _connectivitySub;
-  Timer? _connectivityDebounce;
   bool _isReconnectReloading = false;
+  StreamSubscription<SyncState>? _syncSub;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -101,14 +103,15 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
     super.initState();
     _isOffline = !ConnectivityService.instance.isOnline;
     _subscribeToConnectivity();
+    _subscribeToSync();
 
     _initBusinessFromSession();
   }
 
   @override
   void dispose() {
+    _syncSub?.cancel();
     _connectivitySub?.cancel();
-    _connectivityDebounce?.cancel();
     super.dispose();
   }
 
@@ -120,20 +123,10 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
       if (!mounted) return;
 
       if (isOnline && _isOffline) {
-        // Just came back online — debounce to avoid cascading reloads
-        // from rapid connectivity flapping.
         setState(() {
           _isOffline = false;
         });
-        _connectivityDebounce?.cancel();
-        _connectivityDebounce = Timer(const Duration(seconds: 2), () {
-          if (mounted) {
-            _reloadAll(preferOnline: true, refreshBusinessContext: true);
-          }
-        });
       } else if (!isOnline && !_isOffline) {
-        // Just went offline — show the strip.
-        _connectivityDebounce?.cancel();
         setState(() {
           _isOffline = true;
         });
@@ -141,13 +134,34 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
     });
   }
 
+  // ── Sync completion subscription ─────────────────────────────────────────
+  // After a background sync finishes, silently reload so the shown stats
+  // include the records that were just pushed/refreshed. This is the single
+  // refresh point — no separate reload on connectivity return.
+
+  void _subscribeToSync() {
+    _syncSub = SyncService.instance.syncStateStream.listen((state) {
+      if (!mounted) return;
+      if (state.status == SyncStatus.synced) {
+        _reloadAll(
+          preferOnline: true,
+          refreshBusinessContext: true,
+          silent: true,
+        );
+      }
+    });
+  }
+
   // ── Silent reload after reconnect ─────────────────────────────────────────
   // Re-fetches dashboard + trend concurrently. Business details are only
   // re-fetched if _businessId was never resolved (page opened while offline).
+  // When `silent` is true, refreshing skips the loading spinner so a
+  // background sync-completion refresh doesn't flash the screen.
 
   Future<void> _reloadAll({
     bool preferOnline = false,
     bool refreshBusinessContext = false,
+    bool silent = false,
   }) async {
     if (!mounted) return;
 
@@ -168,8 +182,8 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
 
       // Otherwise just refresh the two data sections in parallel.
       await Future.wait([
-        _loadDashboard(preferOnline: preferOnline),
-        _loadTrend(preferOnline: preferOnline),
+        _loadDashboard(preferOnline: preferOnline, silent: silent),
+        _loadTrend(preferOnline: preferOnline, silent: silent),
       ]);
     } finally {
       if (mounted) {
@@ -230,12 +244,17 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
     }
   }
 
-  Future<void> _loadDashboard({bool preferOnline = false}) async {
+  Future<void> _loadDashboard({
+    bool preferOnline = false,
+    bool silent = false,
+  }) async {
     if (!mounted) return;
-    setState(() {
-      _loadingDash = true;
-      _dashError   = null;
-    });
+    if (!silent) {
+      setState(() {
+        _loadingDash = true;
+        _dashError   = null;
+      });
+    }
     try {
       if (_businessId == null) throw Exception('Business account not found.');
       final data = await _api.fetchDashboardData(
@@ -255,9 +274,12 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
     }
   }
 
-  Future<void> _loadTrend({bool preferOnline = false}) async {
+  Future<void> _loadTrend({
+    bool preferOnline = false,
+    bool silent = false,
+  }) async {
     if (!mounted) return;
-    setState(() => _loadingTrend = true);
+    if (!silent) setState(() => _loadingTrend = true);
     try {
       if (_businessId == null) throw Exception('Business account not found.');
       final data = await _api.fetchYearlyComparison(
@@ -371,6 +393,13 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
       }
       buf.writeln();
 
+      buf.writeln('TOP CITY/MUNICIPALITIES');
+      buf.writeln('City/Municipality,Guests');
+      for (final cm in d.cityMunicipalities) {
+        buf.writeln('${_csvCell(cm.cityMunicipality)},${cm.count}');
+      }
+      buf.writeln();
+
       // ── Purpose of Visit ───────────────────────────────────────────────────
       buf.writeln('PURPOSE OF VISIT');
       buf.writeln('Purpose,Guests');
@@ -401,7 +430,11 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
       if (kIsWeb) {
         await saveFileToDownloads(fileName, bytes);
         if (!mounted) return;
-        _showSnack('CSV downloaded: $fileName');
+        AppToast.success(context, 'Downloaded $fileName');
+      } else if (Platform.isAndroid || Platform.isIOS) {
+        final saved = await saveFileToDownloads(fileName, bytes);
+        if (!mounted) return;
+        if (saved != null) AppToast.success(context, 'Saved $fileName');
       } else {
         final dir = await _exportDirectory();
         final file = File(p.join(dir.path, fileName));
@@ -410,13 +443,13 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
         final result = await OpenFile.open(file.path);
         if (!mounted) return;
         if (result.type != ResultType.done) {
-          _showSnack('CSV saved to ${file.path}. ${result.message}');
+          AppToast.success(context, 'Saved $fileName');
         } else {
-          _showSnack('CSV exported to ${file.path}');
+          AppToast.success(context, 'Downloaded $fileName');
         }
       }
     } catch (e) {
-      _showSnack('Export failed: $e');
+      if (mounted) AppToast.warning(context, 'Export failed: $e');
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -592,6 +625,27 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
             ),
             pw.SizedBox(height: 16),
 
+            pw.Text(
+              'Top City/Municipality',
+              style: pw.TextStyle(
+                fontSize: 14,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 8),
+            pw.Table.fromTextArray(
+              headers: ['City/Municipality', 'Guests'],
+              data: d.cityMunicipalities
+                  .map((c) => [c.cityMunicipality, '${c.count}'])
+                  .toList(),
+              cellStyle: const pw.TextStyle(fontSize: 10),
+              headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 10,
+              ),
+            ),
+            pw.SizedBox(height: 16),
+
             // ── Purpose of Visit ──────────────────────────────────────────────
             pw.Text(
               'Purpose of Visit',
@@ -651,7 +705,11 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
       if (kIsWeb) {
         await saveFileToDownloads(fileName, pdfBytes);
         if (!mounted) return;
-        _showSnack('PDF downloaded: $fileName');
+        AppToast.success(context, 'Downloaded $fileName');
+      } else if (Platform.isAndroid || Platform.isIOS) {
+        final saved = await saveFileToDownloads(fileName, pdfBytes);
+        if (!mounted) return;
+        if (saved != null) AppToast.success(context, 'Saved $fileName');
       } else {
         final dir = await _exportDirectory();
         final file = File(p.join(dir.path, fileName));
@@ -659,13 +717,13 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
         final result = await OpenFile.open(file.path);
         if (!mounted) return;
         if (result.type != ResultType.done) {
-          _showSnack('PDF saved to ${file.path}. ${result.message}');
+          AppToast.success(context, 'Saved $fileName');
         } else {
-          _showSnack('PDF exported to ${file.path}');
+          AppToast.success(context, 'Downloaded $fileName');
         }
       }
     } catch (e) {
-      _showSnack('PDF export failed: $e');
+      if (mounted) AppToast.warning(context, 'PDF export failed: $e');
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -781,13 +839,6 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
     );
   }
 
-  void _showSnack(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: AppColors.accentGreen),
-    );
-  }
-
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -822,6 +873,7 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
                               name:          _businessName,
                               businessLines: _businessLine,
                               address:       _address,
+                              onReload: () => _reloadAll(preferOnline: true),
                             ),
                             const SizedBox(height: 16),
                             _FilterRow(
@@ -840,13 +892,15 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
                             ),
                           ] else ...[
                             Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(
                                   child: _HotelHeader(
                                     name:          _businessName,
                                     businessLines: _businessLine,
                                     address:       _address,
+                                    onReload: () =>
+                                        _reloadAll(preferOnline: true),
                                   ),
                                 ),
                                 const SizedBox(width: 16),
@@ -884,6 +938,8 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
                               ageGroups: _dashData!.ageGroups,
                               topCountries: _dashData!.topCountries,
                               provinces: _dashData!.provinces,
+                              cityMunicipalities:
+                                  _dashData!.cityMunicipalities,
                               purposeOfVisit: _dashData!.purposeOfVisit,
                             ),
                           ],
@@ -1058,64 +1114,93 @@ class _HotelHeader extends StatelessWidget {
     required this.name,
     required this.businessLines,
     required this.address,
+    this.onReload,
   });
 
   final String name;
   final List<String> businessLines;
   final String address;
+  final VoidCallback? onReload;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          name,
-          style: const TextStyle(
-            color: AppColors.textWhite,
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                style: const TextStyle(
+                  color: AppColors.textWhite,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: businessLines.isNotEmpty
+                        ? Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: businessLines.map((line) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primaryCyan.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: AppColors.primaryCyan.withOpacity(0.25),
+                                  ),
+                                ),
+                                child: Text(
+                                  _displayBusinessLineLabel(line),
+                                  style: const TextStyle(
+                                    color: AppColors.primaryCyan,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          )
+                        : const Text(
+                            'Business line unavailable',
+                            style: TextStyle(
+                              color: AppColors.textGray,
+                              fontSize: 13,
+                            ),
+                          ),
+                  ),
+                  if (address.trim().isNotEmpty) ...[
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Text(
+                        address,
+                        style: const TextStyle(
+                          color: AppColors.textGray,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 8),
-        if (businessLines.isNotEmpty)
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: businessLines.map((line) {
-              return Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryCyan.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: AppColors.primaryCyan.withOpacity(0.25),
-                  ),
-                ),
-                child: Text(
-                  _displayBusinessLineLabel(line),
-                  style: const TextStyle(
-                    color: AppColors.primaryCyan,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              );
-            }).toList(),
-          )
-        else
-          const Text(
-            'Business line unavailable',
-            style: TextStyle(color: AppColors.textGray, fontSize: 13),
-          ),
-        const SizedBox(height: 6),
-        Text(
-          '$address',
-          style: const TextStyle(color: AppColors.textGray, fontSize: 13),
-        ),
+        if (onReload != null) ...[
+          const SizedBox(width: 12),
+          _ReloadButton(onReload: onReload!),
+        ],
       ],
     );
   }
@@ -1164,31 +1249,54 @@ class _FilterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isNarrow = MediaQuery.of(context).size.width < 600;
-    return Wrap(
-      spacing: isNarrow ? 6 : 10,
-      runSpacing: isNarrow ? 6 : 10,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        SizedBox(
-          width: isNarrow ? 140 : 170,
-          child: _FilterDropdown<int>(
-            value: selectedMonth,
-            items: _months.map((m) => (m.$1, m.$2)).toList(),
-            onChanged: onMonthChanged,
-            icon: Icons.calendar_month_rounded,
-          ),
+    final dropdowns = [
+      SizedBox(
+        width: isNarrow ? 140 : 170,
+        child: _FilterDropdown<int>(
+          value: selectedMonth,
+          items: _months.map((m) => (m.$1, m.$2)).toList(),
+          onChanged: onMonthChanged,
+          icon: Icons.calendar_month_rounded,
         ),
-        SizedBox(
-          width: isNarrow ? 90 : 110,
-          child: _FilterDropdown<int>(
-            value: selectedYear,
-            items: _years.map((y) => (y, '$y')).toList(),
-            onChanged: onYearChanged,
-            icon: Icons.event_rounded,
-          ),
+      ),
+      SizedBox(
+        width: isNarrow ? 90 : 110,
+        child: _FilterDropdown<int>(
+          value: selectedYear,
+          items: _years.map((y) => (y, '$y')).toList(),
+          onChanged: onYearChanged,
+          icon: Icons.event_rounded,
         ),
-        _ExportButton(onTap: onExport, isLoading: isExporting),
-      ],
+      ),
+    ];
+    final export = _ExportButton(onTap: onExport, isLoading: isExporting);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedWidth) {
+          return Wrap(
+            spacing: isNarrow ? 6 : 10,
+            runSpacing: isNarrow ? 6 : 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [...dropdowns, export],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Wrap(
+                spacing: isNarrow ? 6 : 10,
+                runSpacing: isNarrow ? 6 : 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: dropdowns,
+              ),
+            ),
+            const SizedBox(width: 10),
+            export,
+          ],
+        );
+      },
     );
   }
 }
@@ -1298,6 +1406,36 @@ class _ExportButton extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReloadButton extends StatelessWidget {
+  const _ReloadButton({required this.onReload});
+
+  final VoidCallback? onReload;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Reload',
+      child: GestureDetector(
+        onTap: onReload,
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: AppColors.cardBackground,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.cardBorder),
+          ),
+          child: const Icon(
+            Icons.refresh_rounded,
+            size: 16,
+            color: AppColors.textWhite,
+          ),
         ),
       ),
     );
@@ -1516,6 +1654,7 @@ class _DonutChartsRow extends StatelessWidget {
     required this.ageGroups,
     required this.topCountries,
     required this.provinces,
+    required this.cityMunicipalities,
     required this.purposeOfVisit,
   });
 
@@ -1523,6 +1662,7 @@ class _DonutChartsRow extends StatelessWidget {
   final List<AgeGroupCount> ageGroups;
   final List<CountryCount> topCountries;
   final List<ProvinceCount> provinces;
+  final List<CityMunicipalityCount> cityMunicipalities;
   final List<PurposeCount> purposeOfVisit;
 
   @override
@@ -1542,6 +1682,7 @@ class _DonutChartsRow extends StatelessWidget {
         );
         final purposeCard = _PurposeOfVisitCard(
           purposeOfVisit: purposeOfVisit,
+          cityMunicipalities: cityMunicipalities,
         );
 
         if (isNarrow) {
@@ -1651,7 +1792,7 @@ class _ToggleCardTitle extends StatelessWidget {
   }
 }
 
-// ─── Gender / Age Group Card ──────────────────────────────────────────────────
+// ─── Sex / Age Group Card ──────────────────────────────────────────────────
 
 class _GenderAgeCard extends StatefulWidget {
   const _GenderAgeCard({required this.sexDist, required this.ageGroups});
@@ -1664,7 +1805,7 @@ class _GenderAgeCard extends StatefulWidget {
 }
 
 class _GenderAgeCardState extends State<_GenderAgeCard> {
-  int _tab = 0; // 0 = Gender, 1 = Age Group
+  int _tab = 0; // 0 = Sex, 1 = Age Group
 
   static const _ageColors = [
     AppColors.chartBlue,
@@ -1679,7 +1820,7 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
     if (_tab == 0) {
       final d = widget.sexDist;
       final isEmpty = d.total == 0;
-      return [
+      final segments = <_Segment>[
         _Segment(
           value: isEmpty ? 0.5 : d.maleRatio,
           color: AppColors.chartCyan,
@@ -1695,6 +1836,17 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
           isEmpty: isEmpty,
         ),
       ];
+      if (d.other > 0) {
+        segments.add(
+          _Segment(
+            value: d.otherRatio,
+            color: AppColors.chartGray,
+            label: 'Unspecified',
+            count: d.other,
+          ),
+        );
+      }
+      return segments;
     } else {
       if (widget.ageGroups.isEmpty) {
         return List.generate(
@@ -1723,10 +1875,15 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
 
   List<_LegendItem> get _legend {
     if (_tab == 0) {
-      return const [
-        _LegendItem(label: 'Male', color: AppColors.chartCyan),
-        _LegendItem(label: 'Female', color: AppColors.chartPurple),
+      final d = widget.sexDist;
+      final items = <_LegendItem>[
+        const _LegendItem(label: 'Male', color: AppColors.chartCyan),
+        const _LegendItem(label: 'Female', color: AppColors.chartPurple),
       ];
+      if (d.other > 0) {
+        items.add(const _LegendItem(label: 'Unspecified', color: AppColors.chartGray));
+      }
+      return items;
     }
     return widget.ageGroups
         .asMap()
@@ -1754,7 +1911,7 @@ class _GenderAgeCardState extends State<_GenderAgeCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _ToggleCardTitle(
-            options: const ['Gender', 'Age Group'],
+            options: const ['Sex', 'Age Group'],
             selectedIndex: _tab,
             onChanged: (i) => setState(() => _tab = i),
           ),
@@ -1890,14 +2047,25 @@ class _CountriesCardState extends State<_CountriesCard> {
   }
 }
 
-// ─── Purpose of Visit Card ────────────────────────────────────────────────────
+// ─── Purpose / City-Municipality Card ────────────────────────────────────────
 
-class _PurposeOfVisitCard extends StatelessWidget {
-  const _PurposeOfVisitCard({required this.purposeOfVisit});
+class _PurposeOfVisitCard extends StatefulWidget {
+  const _PurposeOfVisitCard({
+    required this.purposeOfVisit,
+    required this.cityMunicipalities,
+  });
 
   final List<PurposeCount> purposeOfVisit;
+  final List<CityMunicipalityCount> cityMunicipalities;
 
-  static const _colors = [
+  @override
+  State<_PurposeOfVisitCard> createState() => _PurposeOfVisitCardState();
+}
+
+class _PurposeOfVisitCardState extends State<_PurposeOfVisitCard> {
+  int _tab = 0; // 0 = Purpose, 1 = City / Municipality
+
+  static const _purposeColors = [
     AppColors.chartPurple,
     AppColors.chartOrange,
     AppColors.chartBlue,
@@ -1906,57 +2074,85 @@ class _PurposeOfVisitCard extends StatelessWidget {
     AppColors.chartGray,
   ];
 
+  static const _cityColors = [
+    AppColors.chartBlue,
+    AppColors.chartGreen,
+    AppColors.chartOrange,
+    AppColors.chartPurple,
+    AppColors.chartCyan,
+    AppColors.chartGray,
+  ];
+
+  List<({String label, int count})> get _list => _tab == 0
+      ? widget.purposeOfVisit
+          .map((p) => (label: p.purpose, count: p.count))
+          .toList()
+      : widget.cityMunicipalities
+          .map((c) => (label: c.cityMunicipality, count: c.count))
+          .toList();
+
+  List<Color> get _colors => _tab == 0 ? _purposeColors : _cityColors;
+
+  List<_Segment> get _segments {
+    final list = _list;
+    if (list.isEmpty) {
+      return List.generate(
+        5,
+        (i) => _Segment(
+          value: 0.2,
+          color: _colors[i % _colors.length],
+          isEmpty: true,
+        ),
+      );
+    }
+    final total = list.fold<int>(0, (s, n) => s + n.count);
+    return list.asMap().entries.map((e) {
+      final ratio = total == 0 ? 1 / list.length : e.value.count / total;
+      return _Segment(
+        value: ratio,
+        color: _colors[e.key % _colors.length],
+        label: e.value.label,
+        count: e.value.count,
+      );
+    }).toList();
+  }
+
+  List<_LegendItem> get _legend => _list
+      .asMap()
+      .entries
+      .map(
+        (e) => _LegendItem(
+          label: e.value.label,
+          color: _colors[e.key % _colors.length],
+        ),
+      )
+      .toList();
+
+  String? get _emptyHint => _list.isEmpty ? 'No data for this period' : null;
+
   @override
   Widget build(BuildContext context) {
-    final isEmpty = purposeOfVisit.isEmpty;
-    final total = purposeOfVisit.fold<int>(0, (s, p) => s + p.count);
-
-    final segments = isEmpty
-        ? List.generate(
-            5,
-            (i) => _Segment(
-              value: 0.2,
-              color: _colors[i % _colors.length],
-              isEmpty: true,
-            ),
-          )
-        : purposeOfVisit.asMap().entries.map((e) {
-            final ratio = total == 0 ? 1 / purposeOfVisit.length : e.value.count / total;
-            return _Segment(
-              value: ratio,
-              color: _colors[e.key % _colors.length],
-              label: e.value.purpose,
-              count: e.value.count,
-            );
-          }).toList();
-
-    final legend = purposeOfVisit
-        .asMap()
-        .entries
-        .map(
-          (e) => _LegendItem(
-            label: e.value.purpose,
-            color: _colors[e.key % _colors.length],
-          ),
-        )
-        .toList();
-
     return _DashCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _CardTitle(title: 'Purpose of Visit'),
-          if (isEmpty) ...[
+          _ToggleCardTitle(
+            options: const ['Purpose', 'City / Municipality'],
+            selectedIndex: _tab,
+            onChanged: (i) => setState(() => _tab = i),
+          ),
+          if (_emptyHint != null) ...[
             const SizedBox(height: 6),
-            const Text(
-              'No data for this period',
-              style: TextStyle(color: AppColors.textSubtle, fontSize: 11),
+            Text(
+              _emptyHint!,
+              style: const TextStyle(color: AppColors.textSubtle, fontSize: 11),
             ),
           ],
           const SizedBox(height: 16),
           _DonutContent(
-            segments: segments,
-            legend: legend,
+            key: ValueKey(_tab),
+            segments: _segments,
+            legend: _legend,
           ),
         ],
       ),
@@ -2193,19 +2389,29 @@ class _ComparisonBarChartState extends State<_ComparisonBarChart>
             }
           },
           onExit: (_) => setState(() => _hoveredMonth = -1),
-          child: AnimatedBuilder(
-            animation: _ctrl,
-            builder: (_, __) => CustomPaint(
-              painter: _ComparisonBarPainter(
-                year1:          widget.year1,
-                year2:          widget.year2,
-                year1Data:      widget.year1Data,
-                year2Data:      widget.year2Data,
-                animValue:      _ctrl.value,
-                hoveredMonth:   _hoveredMonth,
-                hoveredIsYear2: _hoveredIsYear2,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (details) {
+              _detectHover(
+                details.localPosition,
+                constraints.biggest,
+                fromTouch: true,
+              );
+            },
+            child: AnimatedBuilder(
+              animation: _ctrl,
+              builder: (_, __) => CustomPaint(
+                painter: _ComparisonBarPainter(
+                  year1:          widget.year1,
+                  year2:          widget.year2,
+                  year1Data:      widget.year1Data,
+                  year2Data:      widget.year2Data,
+                  animValue:      _ctrl.value,
+                  hoveredMonth:   _hoveredMonth,
+                  hoveredIsYear2: _hoveredIsYear2,
+                ),
+                size: constraints.biggest,
               ),
-              size: constraints.biggest,
             ),
           ),
         );
@@ -2213,7 +2419,7 @@ class _ComparisonBarChartState extends State<_ComparisonBarChart>
     );
   }
 
-  void _detectHover(Offset pos, Size size) {
+  void _detectHover(Offset pos, Size size, {bool fromTouch = false}) {
     const leftPad   = 42.0;
     const bottomPad = 36.0;
     final chartW    = size.width - leftPad;
@@ -2259,6 +2465,23 @@ class _ComparisonBarChartState extends State<_ComparisonBarChart>
           setState(() {
             _hoveredMonth   = i;
             _hoveredIsYear2 = true;
+          });
+        }
+        return;
+      }
+    }
+
+    if (fromTouch && pos.dx >= leftPad && pos.dx < size.width) {
+      final monthIdx = ((pos.dx - leftPad) / groupW).floor();
+      if (monthIdx >= 0 && monthIdx < 12) {
+        final groupX = leftPad + monthIdx * groupW + groupW / 2 - barW - gap / 2;
+        final dist1 = (pos.dx - (groupX + barW / 2)).abs();
+        final dist2 = (pos.dx - (groupX + barW + gap + barW / 2)).abs();
+        final selectYear1 = dist1 <= dist2;
+        if (_hoveredMonth != monthIdx || _hoveredIsYear2 != !selectYear1) {
+          setState(() {
+            _hoveredMonth = monthIdx;
+            _hoveredIsYear2 = !selectYear1;
           });
         }
         return;
@@ -2643,12 +2866,32 @@ class _DonutChartState extends State<_DonutChart>
     )..forward();
   }
 
+  static bool _segmentsEqual(List<_Segment> a, List<_Segment> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final x = a[i];
+      final y = b[i];
+      if (x.value != y.value ||
+          x.color != y.color ||
+          x.label != y.label ||
+          x.percentage != y.percentage ||
+          x.count != y.count ||
+          x.isEmpty != y.isEmpty) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   @override
   void didUpdateWidget(_DonutChart old) {
     super.didUpdateWidget(old);
-    _ctrl
-      ..reset()
-      ..forward();
+    if (!_segmentsEqual(old.segments, widget.segments)) {
+      _ctrl
+        ..reset()
+        ..forward();
+    }
   }
 
   @override
@@ -2701,31 +2944,40 @@ class _DonutChartState extends State<_DonutChart>
         }
       },
       onExit: (_) => setState(() => _hoveredIdx = -1),
-      child: AnimatedBuilder(
-        animation: _ctrl,
-        builder: (_, __) => Opacity(
-          opacity: _ctrl.value,
-          child: Transform.scale(
-            scale: 0.95 + _ctrl.value * 0.05,
-            child: SizedBox(
-              width:  widget.size,
-              height: widget.size,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  CustomPaint(
-                    painter: _DonutPainter(
-                      segments:   widget.segments,
-                      animValue:  _ctrl.value,
-                      hoveredIdx: _hoveredIdx,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (details) {
+          _checkHover(
+            details.localPosition,
+            Size(widget.size, widget.size),
+          );
+        },
+        child: AnimatedBuilder(
+          animation: _ctrl,
+          builder: (_, __) => Opacity(
+            opacity: _ctrl.value,
+            child: Transform.scale(
+              scale: 0.95 + _ctrl.value * 0.05,
+              child: SizedBox(
+                width: widget.size,
+                height: widget.size,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CustomPaint(
+                      painter: _DonutPainter(
+                        segments: widget.segments,
+                        animValue: _ctrl.value,
+                        hoveredIdx: _hoveredIdx,
+                      ),
+                      size: Size(widget.size, widget.size),
                     ),
-                    size: Size(widget.size, widget.size),
-                  ),
-                  if (_hoveredIdx != -1 &&
-                      widget.segments[_hoveredIdx].label != null &&
-                      !widget.segments[_hoveredIdx].isEmpty)
-                    _DonutTooltip(segment: widget.segments[_hoveredIdx]),
-                ],
+                    if (_hoveredIdx != -1 &&
+                        widget.segments[_hoveredIdx].label != null &&
+                        !widget.segments[_hoveredIdx].isEmpty)
+                      _DonutTooltip(segment: widget.segments[_hoveredIdx]),
+                  ],
+                ),
               ),
             ),
           ),

@@ -7,8 +7,11 @@ import 'package:flutter/services.dart';
 import 'package:app/core/services/connectivity_service.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/app_toast.dart';
+import '../../../core/utils/password_validator.dart';
 import '../../../core/services/session_service.dart';
 import '../../shared/layouts/admin_layout.dart';
+import '../../shared/widgets/admin_nav_items.dart';
 import '../../../api/admin_profile_api.dart';
 
 // ─── Admin Profile Page ───────────────────────────────────────────────────────
@@ -94,18 +97,6 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
     }
   }
 
-  // ── Snackbar ─────────────────────────────────────────────────────────────────
-
-  void _showSnackbar(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red : Colors.green,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
   // ── Save account info ─────────────────────────────────────────────────────────
 
   Future<void> _saveAccountInfo() async {
@@ -140,10 +131,10 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
       final updated = await _api.fetchProfile();
       if (!mounted) return;
       setState(() => _profile = updated);
-      _showSnackbar('Account information saved successfully!');
+      AppToast.success(context, 'Account details saved.');
     } on ProfileApiException catch (e) {
       if (!mounted) return;
-      _showSnackbar(e.message, isError: true);
+      AppToast.warning(context, e.message);
     } finally {
       if (mounted) setState(() => _savingInfo = false);
     }
@@ -178,7 +169,7 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
         otp: otp,
         onSuccess: () {
           Navigator.of(context).pop();
-          _showSnackbar('Password updated successfully!');
+          AppToast.success(context, 'Password updated.');
         },
       ),
     );
@@ -225,7 +216,7 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
   Widget build(BuildContext context) {
     return AdminLayout(
       title: 'Profile',
-      selectedIndex: 5,
+      selectedIndex: AdminNavItems.profileIndex,
       onNavSelected: (_) {},
       child: _fetchError != null
           ? ErrorPage(statusCode: _errorCode ?? 500, onRetry: _loadProfile)
@@ -816,7 +807,19 @@ class _ChangePasswordModalState extends State<_ChangePasswordModal> {
   bool _obscureNew = true;
   bool _obscureConfirm = true;
   bool _loading = false;
+  bool _triedSubmit = false;
   String? _errorMsg;
+
+  String? get _newPassError => _triedSubmit
+      ? PasswordValidator.validate(_newPassCtrl.text)
+      : null;
+
+  String? get _confirmPassError => _triedSubmit
+      ? PasswordValidator.validateConfirm(
+          _confirmPassCtrl.text,
+          _newPassCtrl.text,
+        )
+      : null;
 
   @override
   void dispose() {
@@ -826,6 +829,8 @@ class _ChangePasswordModalState extends State<_ChangePasswordModal> {
   }
 
   Future<void> _submit() async {
+    setState(() => _triedSubmit = true);
+    if (_newPassError != null || _confirmPassError != null) return;
     setState(() {
       _loading = true;
       _errorMsg = null;
@@ -883,6 +888,8 @@ class _ChangePasswordModalState extends State<_ChangePasswordModal> {
                       controller: _newPassCtrl,
                       obscure: _obscureNew,
                       hint: 'Min. 8 chars, 1 uppercase, 1 number, 1 special',
+                      errorText: _newPassError,
+                      onChanged: (_) => setState(() {}),
                       onToggle: () =>
                           setState(() => _obscureNew = !_obscureNew),
                     ),
@@ -895,6 +902,8 @@ class _ChangePasswordModalState extends State<_ChangePasswordModal> {
                       controller: _confirmPassCtrl,
                       obscure: _obscureConfirm,
                       hint: 'Re-enter your new password',
+                      errorText: _confirmPassError,
+                      onChanged: (_) => setState(() {}),
                       onToggle: () =>
                           setState(() => _obscureConfirm = !_obscureConfirm),
                     ),
@@ -1375,21 +1384,28 @@ class _PasswordField extends StatelessWidget {
     required this.obscure,
     required this.onToggle,
     this.hint,
+    this.errorText,
+    this.onChanged,
   });
   final TextEditingController controller;
   final bool obscure;
   final VoidCallback onToggle;
   final String? hint;
+  final String? errorText;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       obscureText: obscure,
+      onChanged: onChanged,
       style: const TextStyle(color: AppColors.textWhite, fontSize: 13.5),
       decoration: _inputDecoration().copyWith(
         hintText: hint,
         hintStyle: const TextStyle(color: AppColors.textSubtle, fontSize: 12.5),
+        errorText: errorText,
+        errorStyle: const TextStyle(color: Color(0xFFF87171), fontSize: 11),
         suffixIcon: IconButton(
           icon: Icon(
             obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,

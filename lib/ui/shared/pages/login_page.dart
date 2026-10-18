@@ -7,6 +7,8 @@ import 'package:app/api/login_api.dart';
 import 'package:app/core/services/connectivity_service.dart';
 import '../../../router/app_routes.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/password_validator.dart';
+import '../../../core/widgets/app_toast.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Login Page
@@ -201,6 +203,8 @@ class _LoginCardState extends State<_LoginCard> {
     if (result.success) {
       if (result.role == Role.admin) {
         Navigator.pushReplacementNamed(context, AppRoutes.adminDashboard);
+      } else if (result.role == Role.attraction) {
+        Navigator.pushReplacementNamed(context, AppRoutes.attractionDashboard);
       } else {
         Navigator.pushReplacementNamed(context, AppRoutes.businessDashboard);
       }
@@ -254,13 +258,7 @@ class _LoginCardState extends State<_LoginCard> {
         otp: otp,
         onSuccess: () {
           Navigator.of(context).pop();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Password reset successfully! Please sign in.'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 3),
-            ),
-          );
+          AppToast.success(context, 'Password reset. Please sign in.');
         },
       ),
     );
@@ -369,18 +367,42 @@ class _LoginCardState extends State<_LoginCard> {
               ? const _LoadingButton()
               : _SignInButton(onPressed: _handleSignIn),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
 
-          Center(
-            child: GestureDetector(
-              onTap: () =>
+          const Text(
+            'Don\'t have an account?',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.textSubtle,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: OutlinedButton.icon(
+              onPressed: () =>
                   Navigator.pushReplacementNamed(context, AppRoutes.register),
-              child: const Text(
-                'Register your accommodation establishment →',
+              icon: const Icon(
+                Icons.person_add_alt_1_outlined,
+                size: 18,
+                color: AppColors.primaryCyan,
+              ),
+              label: const Text(
+                'Create an account →',
                 style: TextStyle(
                   color: AppColors.primaryCyan,
                   fontSize: 13.5,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primaryCyan,
+                side: const BorderSide(color: AppColors.primaryCyan, width: 1),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
                 ),
               ),
             ),
@@ -1076,7 +1098,19 @@ class _ResetPasswordModalState extends State<_ResetPasswordModal> {
   bool _obscureNew = true;
   bool _obscureConfirm = true;
   bool _loading = false;
+  bool _triedSubmit = false;
   String? _errorMsg;
+
+  String? get _newPassError => _triedSubmit
+      ? PasswordValidator.validate(_newPassCtrl.text)
+      : null;
+
+  String? get _confirmPassError => _triedSubmit
+      ? PasswordValidator.validateConfirm(
+          _confirmPassCtrl.text,
+          _newPassCtrl.text,
+        )
+      : null;
 
   @override
   void dispose() {
@@ -1086,6 +1120,8 @@ class _ResetPasswordModalState extends State<_ResetPasswordModal> {
   }
 
   Future<void> _submit() async {
+    setState(() => _triedSubmit = true);
+    if (_newPassError != null || _confirmPassError != null) return;
     setState(() {
       _loading = true;
       _errorMsg = null;
@@ -1137,6 +1173,8 @@ class _ResetPasswordModalState extends State<_ResetPasswordModal> {
                 controller: _newPassCtrl,
                 obscure: _obscureNew,
                 hint: 'Min. 8 chars, 1 uppercase, 1 number, 1 special',
+                errorText: _newPassError,
+                onChanged: (_) => setState(() {}),
                 onToggle: () => setState(() => _obscureNew = !_obscureNew),
               ),
             ),
@@ -1149,6 +1187,8 @@ class _ResetPasswordModalState extends State<_ResetPasswordModal> {
                 controller: _confirmPassCtrl,
                 obscure: _obscureConfirm,
                 hint: 'Re-enter your new password',
+                errorText: _confirmPassError,
+                onChanged: (_) => setState(() {}),
                 onToggle: () =>
                     setState(() => _obscureConfirm = !_obscureConfirm),
               ),
@@ -1334,21 +1374,28 @@ class _FpPasswordField extends StatelessWidget {
     required this.obscure,
     required this.onToggle,
     this.hint,
+    this.errorText,
+    this.onChanged,
   });
   final TextEditingController controller;
   final bool obscure;
   final VoidCallback onToggle;
   final String? hint;
+  final String? errorText;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       obscureText: obscure,
+      onChanged: onChanged,
       style: const TextStyle(color: AppColors.textWhite, fontSize: 13.5),
       decoration: _fpInputDecoration().copyWith(
         hintText: hint,
         hintStyle: const TextStyle(color: AppColors.textSubtle, fontSize: 12.5),
+        errorText: errorText,
+        errorStyle: const TextStyle(color: Color(0xFFF87171), fontSize: 11),
         suffixIcon: IconButton(
           icon: Icon(
             obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,

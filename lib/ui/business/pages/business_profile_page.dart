@@ -8,9 +8,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import '../widgets/business_document_preview_modal.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/password_validator.dart';
 import '../../../core/services/session_service.dart';
 import '../../../core/services/connectivity_service.dart';
 import '../../../core/services/document_service.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../widgets/offline_state.dart';
 import '../../../api/business_profile_api.dart';
@@ -361,9 +363,9 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
         username: _usernameCtrl.text.trim(),
         phone:    phone,
       );
-      _showSnack('Account information updated.', isError: false);
+      AppToast.success(context, 'Account details updated.');
     } on ProfileApiException catch (e) {
-      _showSnack(e.message);
+      AppToast.warning(context, e.message);
     } finally {
       if (mounted) setState(() => _isSavingAccount = false);
     }
@@ -371,7 +373,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
 
   Future<void> _saveBusinessInfo() async {
     if (_business == null) {
-      _showSnack('No business record found.');
+      AppToast.warning(context, 'No business record found.');
       return;
     }
     setState(() => _isSavingBusiness = true);
@@ -393,9 +395,9 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
         permitNumber:       _permitNumberCtrl.text,
         registrationNumber: _registrationCtrl.text,
       );
-      _showSnack('Business information updated.', isError: false);
+      AppToast.success(context, 'Business information updated.');
     } on ProfileApiException catch (e) {
-      _showSnack(e.message);
+      AppToast.warning(context, e.message);
     } finally {
       if (mounted) setState(() => _isSavingBusiness = false);
     }
@@ -425,7 +427,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
 
   void _viewFile(BuildContext context, String title, String url) {
     if (url.isEmpty) {
-      _showSnack('Document URL not available.');
+      AppToast.warning(context, 'Document URL not available.');
       return;
     }
     DocumentService.instance.prefetch(url);
@@ -434,7 +436,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
 
   Future<void> _uploadDocuments() async {
     if (_selectedPermitFile == null && _selectedValidIdFile == null) {
-      _showSnack('Select at least one file to upload.');
+      AppToast.warning(context, 'Select a file to upload.');
       return;
     }
     setState(() => _isSavingDocuments = true);
@@ -475,9 +477,9 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
         _selectedPermitFile = null;
         _selectedValidIdFile = null;
       });
-      _showSnack('Documents uploaded successfully.', isError: false);
+      AppToast.success(context, 'Documents uploaded.');
     } on ProfileApiException catch (e) {
-      _showSnack(e.message);
+      AppToast.warning(context, e.message);
     } finally {
       if (mounted) setState(() => _isSavingDocuments = false);
     }
@@ -501,19 +503,6 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
         api:          _api,
         currentEmail: _profile?.email ?? '',
         onSuccess: (_) {},
-      ),
-    );
-  }
-
-  // ── Snackbar helper ───────────────────────────────────────────────────────
-
-  void _showSnack(String msg, {bool isError = true}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor:
-            isError ? const Color(0xFFB91C1C) : const Color(0xFF065F46),
       ),
     );
   }
@@ -1133,16 +1122,18 @@ class _BusinessInfoCard extends StatelessWidget {
           if (isNarrow) ...[
             _LabeledField(label: 'Permit Number',
                 child: _InputField(controller: permitNumberCtrl)),
-            const SizedBox(height: 14),
-            _LabeledField(label: 'Registration Number',
-                child: _InputField(controller: registrationCtrl)),
+            // HIDDEN: registration number not required
+            // const SizedBox(height: 14),
+            // _LabeledField(label: 'Registration Number',
+            //     child: _InputField(controller: registrationCtrl)),
           ] else
             Row(children: [
               Expanded(child: _LabeledField(label: 'Permit Number',
                   child: _InputField(controller: permitNumberCtrl))),
-              const SizedBox(width: 14),
-              Expanded(child: _LabeledField(label: 'Registration Number',
-                  child: _InputField(controller: registrationCtrl))),
+              // HIDDEN: registration number not required
+              // const SizedBox(width: 14),
+              // Expanded(child: _LabeledField(label: 'Registration Number',
+              //     child: _InputField(controller: registrationCtrl))),
             ]),
           const SizedBox(height: 22),
 
@@ -1475,6 +1466,18 @@ class _PasswordChangeDialogState extends State<_PasswordChangeDialog> {
   final _confPassCtrl = TextEditingController();
   bool _obscureNew  = true;
   bool _obscureConf = true;
+  bool _triedSubmit = false;
+
+  String? get _newPassError => _triedSubmit
+      ? PasswordValidator.validate(_newPassCtrl.text)
+      : null;
+
+  String? get _confPassError => _triedSubmit
+      ? PasswordValidator.validateConfirm(
+          _confPassCtrl.text,
+          _newPassCtrl.text,
+        )
+      : null;
 
   @override
   void dispose() {
@@ -1525,6 +1528,8 @@ class _PasswordChangeDialogState extends State<_PasswordChangeDialog> {
 
   Future<void> _submitPassword() async {
     if (_verifiedOtp == null) return;
+    setState(() { _triedSubmit = true; });
+    if (_newPassError != null || _confPassError != null) return;
     setState(() { _loading = true; _error = null; });
     try {
       await widget.api.updatePassword(
@@ -1533,13 +1538,9 @@ class _PasswordChangeDialogState extends State<_PasswordChangeDialog> {
         confirmPassword: _confPassCtrl.text,
       );
       if (mounted) {
+        final anchor = AppToast.capture(context);
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Password changed successfully.'),
-            backgroundColor: Color(0xFF065F46),
-          ),
-        );
+        AppToast.successOn(anchor, 'Password changed.');
       }
     } on ProfileApiException catch (e) {
       if (!mounted) return;
@@ -1578,6 +1579,10 @@ class _PasswordChangeDialogState extends State<_PasswordChangeDialog> {
           confPassCtrl: _confPassCtrl,
           obscureNew:   _obscureNew,
           obscureConf:  _obscureConf,
+          newPassError: _newPassError,
+          confPassError: _confPassError,
+          onChangedNew:  () => setState(() {}),
+          onChangedConf: () => setState(() {}),
           onToggleNew:  () => setState(() => _obscureNew  = !_obscureNew),
           onToggleConf: () => setState(() => _obscureConf = !_obscureConf),
           loading:  _loading,
@@ -2021,6 +2026,10 @@ class _StepNewPassword extends StatelessWidget {
     required this.confPassCtrl,
     required this.obscureNew,
     required this.obscureConf,
+    required this.newPassError,
+    required this.confPassError,
+    required this.onChangedNew,
+    required this.onChangedConf,
     required this.onToggleNew,
     required this.onToggleConf,
     required this.loading,
@@ -2030,6 +2039,8 @@ class _StepNewPassword extends StatelessWidget {
 
   final TextEditingController newPassCtrl, confPassCtrl;
   final bool obscureNew, obscureConf, loading;
+  final String? newPassError, confPassError;
+  final VoidCallback onChangedNew, onChangedConf;
   final VoidCallback onToggleNew, onToggleConf, onSubmit;
   final String? error;
 
@@ -2040,18 +2051,27 @@ class _StepNewPassword extends StatelessWidget {
       children: [
         _LabeledField(
           label: 'New Password',
+          error: newPassError,
           child: _PasswordField(
               controller: newPassCtrl,
               obscure: obscureNew,
+              onChanged: (_) => onChangedNew(),
               onToggle: onToggleNew),
         ),
         const SizedBox(height: 14),
         _LabeledField(
           label: 'Confirm New Password',
+          error: confPassError,
           child: _PasswordField(
               controller: confPassCtrl,
               obscure: obscureConf,
+              onChanged: (_) => onChangedConf(),
               onToggle: onToggleConf),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Min. 8 characters · 1 uppercase · 1 number · 1 special character',
+          style: TextStyle(color: AppColors.textSubtle, fontSize: 10.5),
         ),
         if (error != null) ...[
           const SizedBox(height: 12),
@@ -2355,17 +2375,20 @@ class _PasswordField extends StatelessWidget {
     required this.controller,
     required this.obscure,
     required this.onToggle,
+    this.onChanged,
   });
 
   final TextEditingController controller;
   final bool obscure;
   final VoidCallback onToggle;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       obscureText: obscure,
+      onChanged: onChanged,
       style: const TextStyle(color: AppColors.textWhite, fontSize: 13.5),
       decoration: _inputDeco().copyWith(
         suffixIcon: IconButton(

@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'base_api.dart';
+import '../core/services/session_service.dart';
 import '../core/utils/datetime_utils.dart';
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 enum MessageType {
   compliance,
-  announcement,
-  general;
+  announcement;
 
   /// Matches the enum value in the `messages` table.
   String get dbValue => name;
@@ -16,13 +16,11 @@ enum MessageType {
   String get label => switch (this) {
     MessageType.compliance => 'Compliance',
     MessageType.announcement => 'Announcement',
-    MessageType.general => 'General',
   };
 
   String get icon => switch (this) {
     MessageType.compliance => '⚠️',
     MessageType.announcement => '📣',
-    MessageType.general => '💬',
   };
 }
 
@@ -35,8 +33,12 @@ enum RecipientStatus {
   String get dbValue => name;
 }
 
+/// Whether the letter's recipient is an accommodation establishment
+/// or a tourist attraction. Controls the salutation used in the letter.
+enum MessageRecipientKind { business, attraction }
+
 /// Builds the official tourism-office letter format used by compose message
-/// and by automated accommodation decisions.
+/// and by automated accommodation/attraction decisions.
 String buildOfficialMessageLetter({
   required String recipient,
   required String subject,
@@ -45,6 +47,7 @@ String buildOfficialMessageLetter({
   required String senderEmail,
   required String senderPhone,
   required MessageType messageType,
+  required MessageRecipientKind recipientKind,
   DateTime? now,
 }) {
   final current = now ?? DateTime.now();
@@ -67,8 +70,10 @@ String buildOfficialMessageLetter({
   final typeLabel = switch (messageType) {
     MessageType.compliance => 'COMPLIANCE NOTICE',
     MessageType.announcement => 'ANNOUNCEMENT',
-    MessageType.general => 'GENERAL NOTICE',
   };
+  final salutation = recipientKind == MessageRecipientKind.attraction
+      ? 'Dear Attraction Representative,'
+      : 'Dear Establishment Representative,';
   return '''REPUBLIC OF THE PHILIPPINES
 CITY OF SAN PABLO
 OFFICE OF TOURISM
@@ -80,7 +85,7 @@ Re: ${subject.isEmpty ? '(no subject)' : subject}
 
 $typeLabel
 
-Dear Establishment Representative,
+$salutation
 
 ${messageContent.isEmpty ? '(no content)' : messageContent}
 
@@ -98,7 +103,7 @@ San Pablo City Tourism Office
 This is an official communication from the San Pablo City Tourism Office.''';
 }
 
-/// Shared unread-count cache for business navigation badges.
+/// Shared unread-count cache for business/attraction navigation badges.
 class MessageBadgeController {
   MessageBadgeController._();
 
@@ -111,7 +116,10 @@ class MessageBadgeController {
     if (_isRefreshing) return;
     _isRefreshing = true;
     try {
-      final count = await MessagesApi().fetchUnreadCount('');
+      final role = SessionService.instance.current?.role;
+      final count = role == 'attraction'
+          ? await MessagesApi().fetchAttractionUnreadCount()
+          : await MessagesApi().fetchUnreadCount('');
       unreadCount.value = count;
     } catch (_) {
       unreadCount.value = 0;
@@ -146,6 +154,29 @@ class BusinessSummary {
       );
 }
 
+/// Lightweight attraction representation used in the compose dropdown.
+/// Only approved + warning attractions are eligible as message recipients.
+class AttractionSummary {
+  const AttractionSummary({
+    required this.id,
+    required this.name,
+    required this.status,
+  });
+
+  final String id;
+  final String name;
+  final String status;
+
+  bool get isEligible => status == 'approved' || status == 'warning';
+
+  factory AttractionSummary.fromJson(Map<String, dynamic> json) =>
+      AttractionSummary(
+        id: json['id'] as String,
+        name: json['attraction_name'] as String,
+        status: json['status'] as String,
+      );
+}
+
 /// Represents a row from `messages` joined with its sender profile.
 /// Used on the admin outbox side.
 class Message {
@@ -158,6 +189,7 @@ class Message {
     required this.isBroadcast,
     required this.createdAt,
     this.senderName,
+    this.recipientKind = MessageRecipientKind.business,
   });
 
   final String id;
@@ -169,12 +201,15 @@ class Message {
   final DateTime createdAt;
   final String? senderName;
 
+  /// Whether this message was addressed to establishments or attractions.
+  final MessageRecipientKind recipientKind;
+
   factory Message.fromJson(Map<String, dynamic> json) => Message(
     id: json['id'] as String,
     senderId: json['sender_id'] as String,
     messageType: MessageType.values.firstWhere(
       (e) => e.dbValue == json['message_type'],
-      orElse: () => MessageType.general,
+      orElse: () => MessageType.compliance,
     ),
     subject: json['subject'] as String,
     content: json['content'] as String,
@@ -182,16 +217,20 @@ class Message {
     createdAt: parseDbDateTime(json['created_at'] as String),
     senderName:
         (json['sender'] as Map<String, dynamic>?)?['full_name'] as String?,
+    recipientKind: json['recipient_kind'] == 'attraction'
+        ? MessageRecipientKind.attraction
+        : MessageRecipientKind.business,
   );
 }
 
 /// Represents a row from `message_recipients` joined with its parent message.
-/// Used on the business inbox side.
+/// Used on the business/attraction inbox side.
 class InboxMessage {
   const InboxMessage({
     required this.recipientId,
     required this.messageId,
-    required this.businessId,
+    this.businessId,
+    this.attractionId,
     required this.status,
     required this.isRead,
     required this.createdAt,
@@ -207,7 +246,8 @@ class InboxMessage {
 
   final String recipientId;
   final String messageId;
-  final String businessId;
+  final String? businessId;
+  final String? attractionId;
   final RecipientStatus status;
   final bool isRead;
   final DateTime createdAt;
@@ -225,7 +265,8 @@ class InboxMessage {
     return InboxMessage(
       recipientId: json['id'] as String,
       messageId: json['message_id'] as String,
-      businessId: json['business_id'] as String,
+      businessId: json['business_id'] as String?,
+      attractionId: json['attraction_id'] as String?,
       status: RecipientStatus.values.firstWhere(
         (e) => e.dbValue == json['status'],
         orElse: () => RecipientStatus.unread,
@@ -237,7 +278,7 @@ class InboxMessage {
           : null,
       messageType: MessageType.values.firstWhere(
         (e) => e.dbValue == msg['message_type'],
-        orElse: () => MessageType.general,
+        orElse: () => MessageType.compliance,
       ),
       subject: msg['subject'] as String,
       content: msg['content'] as String,
@@ -260,6 +301,7 @@ class DeliveryReceipt {
     required this.status,
     required this.isRead,
     this.readAt,
+    this.recipientKind = MessageRecipientKind.business,
   });
 
   final String recipientId;
@@ -269,6 +311,11 @@ class DeliveryReceipt {
   final RecipientStatus status;
   final bool isRead;
   final DateTime? readAt;
+
+  /// Whether the recipient is an attraction rather than a business.
+  final MessageRecipientKind recipientKind;
+
+  bool get isAttraction => recipientKind == MessageRecipientKind.attraction;
 
   factory DeliveryReceipt.fromJson(Map<String, dynamic> json) {
     final biz = json['business'] as Map<String, dynamic>;
@@ -285,6 +332,9 @@ class DeliveryReceipt {
       readAt: json['read_at'] != null
           ? parseDbDateTime(json['read_at'] as String)
           : null,
+      recipientKind: json['recipient_kind'] == 'attraction'
+          ? MessageRecipientKind.attraction
+          : MessageRecipientKind.business,
     );
   }
 }
@@ -309,17 +359,28 @@ class MessagesApi extends BaseApi {
         .toList();
   }
 
+  Future<List<AttractionSummary>> fetchEligibleAttractions() async {
+    final response = await get('/api/messages/eligible-attractions');
+    final data = handleResponse(response) as List<dynamic>;
+    return data
+        .map((a) => AttractionSummary.fromJson(a as Map<String, dynamic>))
+        .toList();
+  }
+
   // ── Send ───────────────────────────────────────────────────────────────────
 
   Future<String> sendToSelected({
     required String senderId,
     required List<String> businessIds,
+    List<String>? attractionIds,
     required MessageType messageType,
     required String subject,
     required String content,
   }) async {
     final response = await post('/api/messages/send-selected', {
       'businessIds': businessIds,
+      if (attractionIds != null && attractionIds.isNotEmpty)
+        'attractionIds': attractionIds,
       'messageType': messageType.dbValue,
       'subject': subject,
       'content': content,
@@ -330,11 +391,13 @@ class MessagesApi extends BaseApi {
 
   Future<({String messageId, int recipientCount})> sendToAll({
     required String senderId,
+    MessageRecipientKind recipientKind = MessageRecipientKind.business,
     required MessageType messageType,
     required String subject,
     required String content,
   }) async {
     final response = await post('/api/messages/send-all', {
+      'recipientKind': recipientKind.name,
       'messageType': messageType.dbValue,
       'subject': subject,
       'content': content,
@@ -355,6 +418,7 @@ class MessagesApi extends BaseApi {
     String? searchQuery,
     String? type,
     String? scope,
+    String? audience,
   }) async {
     final queryParams = <String, String>{
       'page': page.toString(),
@@ -363,6 +427,7 @@ class MessagesApi extends BaseApi {
     if (searchQuery != null && searchQuery.isNotEmpty) queryParams['searchQuery'] = searchQuery;
     if (type != null && type != 'All Types') queryParams['type'] = type;
     if (scope != null && scope != 'All') queryParams['scope'] = scope;
+    if (audience != null && audience != 'All') queryParams['audience'] = audience;
 
     final uri = Uri.parse('/api/messages/admin/outbox').replace(queryParameters: queryParams);
     final response = await get(uri.toString());
@@ -416,6 +481,42 @@ class MessagesApi extends BaseApi {
 
   Future<int> fetchUnreadCount(String businessId) async {
     final response = await get('/api/messages/business/unread-count');
+    return handleResponse(response) as int;
+  }
+
+  // ── Attraction: Inbox ────────────────────────────────────────────────────
+
+  Future<({List<InboxMessage> data, int totalCount, int pageCount})>
+      fetchAttractionInbox(
+    String attractionId, {
+    bool includeArchived = false,
+    int page = 1,
+    int pageSize = 10,
+    String? searchQuery,
+    String? type,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'pageSize': pageSize.toString(),
+      'includeArchived': includeArchived.toString(),
+    };
+    if (searchQuery != null && searchQuery.isNotEmpty) queryParams['searchQuery'] = searchQuery;
+    if (type != null && type != 'All') queryParams['type'] = type;
+
+    final uri = Uri.parse('/api/messages/attraction/inbox').replace(queryParameters: queryParams);
+    final response = await get(uri.toString());
+    final body = handleResponse(response) as Map<String, dynamic>;
+    final list = body['data'] as List<dynamic>;
+    final totalCount = (body['totalCount'] as num?)?.toInt() ?? 0;
+    final pageCount = (body['pageCount'] as num?)?.toInt() ?? 0;
+    final data = list
+        .map((r) => InboxMessage.fromJson(r as Map<String, dynamic>))
+        .toList();
+    return (data: data, totalCount: totalCount, pageCount: pageCount);
+  }
+
+  Future<int> fetchAttractionUnreadCount() async {
+    final response = await get('/api/messages/attraction/unread-count');
     return handleResponse(response) as int;
   }
 

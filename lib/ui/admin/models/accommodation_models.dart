@@ -1,6 +1,9 @@
 // lib/ui/admin/models/accommodation_models.dart
 
 import 'package:app/core/enums/business_enums.dart';
+import 'package:app/core/utils/datetime_utils.dart';
+
+import 'activity_models.dart';
 
 enum AccommodationStatus { approved, pending, rejected, warning }
 
@@ -31,6 +34,8 @@ class Accommodation {
     required this.validIdUrl,
     this.remarks,
     this.createdAt,
+    this.lastActivity,
+    this.activityStatus = ActivityStatus.noActivity,
   });
 
   final String id;
@@ -59,6 +64,10 @@ class Accommodation {
   final String validIdUrl;
   final String? remarks;
   final String? createdAt;
+  /// Last day a guest was present (derived from stay dates:
+  /// actual_check_out, or today while the guest is still checked in).
+  final DateTime? lastActivity;
+  final ActivityStatus activityStatus;
 
   static AccommodationStatus _parseStatus(String s) {
     switch (s) {
@@ -159,10 +168,17 @@ class Accommodation {
       validIdUrl: map['valid_id_url'] as String? ?? '',
       remarks: map['remarks'] as String?,
       createdAt: map['created_at'] as String?,
+      lastActivity: tryParseDbDateTime(map['last_activity'] as String?),
+      activityStatus: parseActivityStatus(map['activity_status'] as String?),
     );
   }
 
-  Accommodation copyWith({AccommodationStatus? status, String? remarks}) {
+  Accommodation copyWith({
+    AccommodationStatus? status,
+    String? remarks,
+    DateTime? lastActivity,
+    ActivityStatus? activityStatus,
+  }) {
     return Accommodation(
       id: id,
       profileId: profileId,
@@ -189,6 +205,8 @@ class Accommodation {
       validIdUrl: validIdUrl,
       remarks: remarks ?? this.remarks,
       createdAt: createdAt,
+      lastActivity: lastActivity ?? this.lastActivity,
+      activityStatus: activityStatus ?? this.activityStatus,
     );
   }
 

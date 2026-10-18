@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/session_service.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../api/login_api.dart';
 
 class CloudConnectNotice extends StatefulWidget {
@@ -32,22 +33,12 @@ class _CloudConnectNoticeState extends State<CloudConnectNotice> {
         password: _passCtrl.text,
       );
 
-      if (result.success && mounted) {
+        if (result.success && mounted) {
         widget.onConnected();
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Connected to Cloud! Syncing data...'),
-            backgroundColor: Color(0xFF065F46),
-          ),
-        );
+        AppToast.success(context, 'Connected to cloud. Syncing…');
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.error ?? 'Connection failed.'),
-            backgroundColor: const Color(0xFFB91C1C),
-          ),
-        );
+        AppToast.warning(context, result.error ?? 'Connection failed.');
       }
     } finally {
       if (mounted) setState(() => _loading = false);

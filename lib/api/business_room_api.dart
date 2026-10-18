@@ -567,6 +567,7 @@ class BusinessRoomApi extends BaseApi {
       {
         'room_number':      roomNumber,
         'capacity':         capacity,
+        'updated_at':       localUpdatedAt,
         'sync_status':      syncStatus,
         'local_updated_at': localUpdatedAt,
       },
@@ -586,6 +587,7 @@ class BusinessRoomApi extends BaseApi {
       LocalDatabase.tableLocalRooms,
       {
         'room_status':      roomStatus,
+        'updated_at':       localUpdatedAt,
         'sync_status':      syncStatus,
         'local_updated_at': localUpdatedAt,
       },

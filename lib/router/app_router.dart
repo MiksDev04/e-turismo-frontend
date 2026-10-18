@@ -11,9 +11,9 @@ import 'package:app/ui/shared/pages/admin_setup_page.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import 'package:app/ui/admin/pages/admin_dashboard_page.dart';
 import 'package:app/ui/admin/pages/admin_accommodations_page.dart';
+import 'package:app/ui/admin/pages/admin_attractions_page.dart';
 import 'package:app/ui/admin/pages/admin_reports_page.dart';
 import 'package:app/ui/admin/pages/admin_messages_page.dart';
-import 'package:app/ui/admin/pages/admin_compliance_page.dart';
 import 'package:app/ui/admin/pages/admin_profile_page.dart';
 import 'package:app/ui/business/pages/business_dashboard_page.dart';
 import 'package:app/ui/business/pages/business_guest_entry_page.dart';
@@ -22,12 +22,19 @@ import 'package:app/ui/business/pages/business_rooms_page.dart';
 import 'package:app/ui/business/pages/business_messages_page.dart';
 import 'package:app/ui/business/pages/business_profile_page.dart';
 
+import 'package:app/ui/attraction/pages/attraction_dashboard_page.dart';
+import 'package:app/ui/attraction/pages/attraction_visit_entry_page.dart';
+import 'package:app/ui/attraction/pages/attraction_visit_records_page.dart';
+import 'package:app/ui/attraction/pages/attraction_messages_page.dart';
+import 'package:app/ui/attraction/pages/attraction_profile_page.dart';
+
 import 'package:app/ui/shared/layouts/admin_layout.dart';
 import 'package:app/ui/shared/layouts/business_layout.dart';
+import 'package:app/ui/shared/layouts/attraction_layout.dart';
 
 // ─── Offline-allowed routes ───────────────────────────────────────────────────
 //
-// Business users in offline mode may only visit these routes.
+// Business and attraction users in offline mode may only visit these routes.
 // Everything else shows OfflineRestrictedPage.
 
 const _offlineAllowedRoutes = {
@@ -35,6 +42,9 @@ const _offlineAllowedRoutes = {
   AppRoutes.businessGuestEntry,
   AppRoutes.businessGuestRecord,
   AppRoutes.businessRooms,
+  AppRoutes.attractionDashboard,
+  AppRoutes.attractionVisitEntry,
+  AppRoutes.attractionVisitRecord,
 };
 
 // ─── Route Metadata ───────────────────────────────────────────────────────────
@@ -48,9 +58,9 @@ class _RouteMeta {
 const _adminRouteMeta = {
   AppRoutes.adminDashboard: _RouteMeta('Dashboard', 0),
   AppRoutes.adminAccommodations: _RouteMeta('Accommodations', 1),
-  AppRoutes.adminReports: _RouteMeta('Reports', 2),
-  AppRoutes.adminMessages: _RouteMeta('Messages', 3),
-  AppRoutes.adminCompliance: _RouteMeta('Compliance', 4),
+  AppRoutes.adminAttractions: _RouteMeta('Attractions', 2),
+  AppRoutes.adminReports: _RouteMeta('Reports', 3),
+  AppRoutes.adminMessages: _RouteMeta('Messages', 4),
   AppRoutes.adminProfile: _RouteMeta('Profile', 5),
 };
 
@@ -63,6 +73,14 @@ const _businessRouteMeta = {
   AppRoutes.businessProfile: _RouteMeta('Profile', 6),
 };
 
+const _attractionRouteMeta = {
+  AppRoutes.attractionDashboard: _RouteMeta('Dashboard', 0),
+  AppRoutes.attractionVisitEntry: _RouteMeta('Visit Entry', 1),
+  AppRoutes.attractionVisitRecord: _RouteMeta('Visit Records', 2),
+  AppRoutes.attractionMessages: _RouteMeta('Messages', 3),
+  AppRoutes.attractionProfile: _RouteMeta('Profile', 4),
+};
+
 // ─── Route Permissions ────────────────────────────────────────────────────────
 
 abstract final class _RoutePermissions {
@@ -72,9 +90,9 @@ abstract final class _RoutePermissions {
     AppRoutes.adminSetup: {},
     AppRoutes.adminDashboard: {'admin'},
     AppRoutes.adminAccommodations: {'admin'},
+    AppRoutes.adminAttractions: {'admin'},
     AppRoutes.adminMessages: {'admin'},
     AppRoutes.adminReports: {'admin'},
-    AppRoutes.adminCompliance: {'admin'},
     AppRoutes.adminProfile: {'admin'},
     AppRoutes.businessDashboard: {'business'},
     AppRoutes.businessGuestEntry: {'business'},
@@ -82,6 +100,11 @@ abstract final class _RoutePermissions {
     AppRoutes.businessRooms: {'business'},
     AppRoutes.businessMessages: {'business'},
     AppRoutes.businessProfile: {'business'},
+    AppRoutes.attractionDashboard: {'attraction'},
+    AppRoutes.attractionVisitEntry: {'attraction'},
+    AppRoutes.attractionVisitRecord: {'attraction'},
+    AppRoutes.attractionMessages: {'attraction'},
+    AppRoutes.attractionProfile: {'attraction'},
   };
 
   /// Returns null if allowed, or a sentinel string if blocked.
@@ -120,15 +143,19 @@ abstract final class AppRouter {
     if (routeName == AppRoutes.login || routeName == AppRoutes.register) {
       final session = SessionService.instance.current;
       if (session != null) {
-        final route = session.role == 'admin'
-            ? AppRoutes.adminDashboard
-            : AppRoutes.businessDashboard;
-        return _fade(
-          session.role == 'admin'
-              ? const AdminDashboardPage()
-              : const BusinessDashboardPage(),
-          RouteSettings(name: route),
-        );
+        final String route;
+        final Widget page;
+        if (session.role == 'admin') {
+          route = AppRoutes.adminDashboard;
+          page = const AdminDashboardPage();
+        } else if (session.role == 'attraction') {
+          route = AppRoutes.attractionDashboard;
+          page = const AttractionDashboardPage();
+        } else {
+          route = AppRoutes.businessDashboard;
+          page = const BusinessDashboardPage();
+        }
+        return _fade(page, RouteSettings(name: route));
       }
     }
 
@@ -175,10 +202,13 @@ abstract final class AppRouter {
         const AdminAccommodationsPage(),
         settings,
       ),
+      AppRoutes.adminAttractions => _fade(
+        const AdminAttractionsPage(),
+        settings,
+      ),
       AppRoutes.adminMessages => _fade(const AdminMessagesPage(), settings),
       AppRoutes.adminReports => _fade(const AdminReportsPage(), settings),
       AppRoutes.adminProfile => _fade(const AdminProfilePage(), settings),
-      AppRoutes.adminCompliance => _fade(const AdminCompliancePage(), settings),
       AppRoutes.businessDashboard => _fade(
         const BusinessDashboardPage(),
         settings,
@@ -200,6 +230,26 @@ abstract final class AppRouter {
         settings,
       ),
       AppRoutes.businessProfile => _fade(const BusinessProfilePage(), settings),
+      AppRoutes.attractionDashboard => _fade(
+        const AttractionDashboardPage(),
+        settings,
+      ),
+      AppRoutes.attractionVisitEntry => _fade(
+        const AttractionVisitEntryPage(),
+        settings,
+      ),
+      AppRoutes.attractionVisitRecord => _fade(
+        const AttractionVisitRecordsPage(),
+        settings,
+      ),
+      AppRoutes.attractionMessages => _fade(
+        const AttractionMessagesPage(),
+        settings,
+      ),
+      AppRoutes.attractionProfile => _fade(
+        const AttractionProfilePage(),
+        settings,
+      ),
       _ => _fade(const _RedirectToInitialWidget(), settings),
     };
   }
@@ -221,6 +271,15 @@ abstract final class AppRouter {
     if (session.role == 'admin') {
       final meta = _adminRouteMeta[routeName] ?? const _RouteMeta('Error', -1);
       return AdminLayout(
+        title: meta.title,
+        selectedIndex: meta.index,
+        onNavSelected: (_) {},
+        child: errorPage,
+      );
+    } else if (session.role == 'attraction') {
+      final meta =
+          _attractionRouteMeta[routeName] ?? const _RouteMeta('Error', -1);
+      return AttractionLayout(
         title: meta.title,
         selectedIndex: meta.index,
         onNavSelected: (_) {},
@@ -334,9 +393,14 @@ class _InitialRouterState extends State<_InitialRouter> {
   void _routeBasedOnSession(session) {
     if (!mounted) return;
     if (session != null) {
-      final route = session.role == 'admin'
-          ? AppRoutes.adminDashboard
-          : AppRoutes.businessDashboard;
+      final String route;
+      if (session.role == 'admin') {
+        route = AppRoutes.adminDashboard;
+      } else if (session.role == 'attraction') {
+        route = AppRoutes.attractionDashboard;
+      } else {
+        route = AppRoutes.businessDashboard;
+      }
       _go(route);
     } else {
       _go(AppRoutes.login);
@@ -474,11 +538,16 @@ class _RedirectToInitialWidgetState extends State<_RedirectToInitialWidget> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final session = SessionService.instance.current;
-      final route = session == null
-          ? AppRoutes.login
-          : session.role == 'admin'
-          ? AppRoutes.adminDashboard
-          : AppRoutes.businessDashboard;
+      final String route;
+      if (session == null) {
+        route = AppRoutes.login;
+      } else if (session.role == 'admin') {
+        route = AppRoutes.adminDashboard;
+      } else if (session.role == 'attraction') {
+        route = AppRoutes.attractionDashboard;
+      } else {
+        route = AppRoutes.businessDashboard;
+      }
       Navigator.of(context).pushNamedAndRemoveUntil(route, (route) => false);
     });
   }

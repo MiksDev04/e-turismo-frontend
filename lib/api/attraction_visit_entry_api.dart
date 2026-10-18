@@ -1,0 +1,308 @@
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:app/core/database/local_database.dart';
+import 'package:app/core/services/offline_service.dart';
+import 'package:app/core/services/session_service.dart';
+import 'base_api.dart';
+
+class VisitEntryResult {
+  final bool success;
+  final String? error;
+  final bool syncedToCloud;
+
+  const VisitEntryResult._({
+    required this.success,
+    this.error,
+    this.syncedToCloud = false,
+  });
+
+  factory VisitEntryResult.ok({bool syncedToCloud = false}) =>
+      VisitEntryResult._(success: true, syncedToCloud: syncedToCloud);
+
+  factory VisitEntryResult.err(String error) =>
+      VisitEntryResult._(success: false, error: error);
+}
+
+class VisitEntryData {
+  const VisitEntryData({
+    required this.visitDate,
+    required this.guestCount,
+    required this.isForeign,
+    this.country,
+    this.province,
+    this.cityMunicipality,
+    this.maleCount,
+    this.femaleCount,
+  });
+
+  final DateTime visitDate;
+  final int guestCount;
+  final bool isForeign;
+  final String? country;
+  final String? province;
+  final String? cityMunicipality;
+  final int? maleCount;
+  final int? femaleCount;
+
+  Map<String, dynamic> toJson() {
+    final visitDateStr =
+        "${visitDate.year.toString().padLeft(4, '0')}-"
+        "${visitDate.month.toString().padLeft(2, '0')}-"
+        "${visitDate.day.toString().padLeft(2, '0')}";
+
+    // Gender counts are optional. If exactly one side is missing it is simply
+    // completed from the other (male + female = guestCount). When BOTH are
+    // blank they stay null so a headcount-only log stores no guess — origin
+    // and gender are estimated at report-generation time instead.
+    final int? male;
+    final int? female;
+    if (maleCount == null && femaleCount == null) {
+      male = null;
+      female = null;
+    } else if (maleCount == null) {
+      female = femaleCount;
+      male = guestCount - female!;
+    } else if (femaleCount == null) {
+      male = maleCount;
+      female = guestCount - male!;
+    } else {
+      male = maleCount;
+      female = femaleCount;
+    }
+
+    return {
+      'visitDate': visitDateStr,
+      'guestCount': guestCount,
+      'isForeign': isForeign,
+      'country': country,
+      'province': province,
+      'cityMunicipality': cityMunicipality,
+      'maleCount': male,
+      'femaleCount': female,
+    };
+  }
+}
+
+class AttractionVisitEntryApi extends BaseApi {
+  AttractionVisitEntryApi();
+
+  Future<String?> resolveAttractionId() async {
+    final session =
+        SessionService.instance.current ??
+        await SessionService.instance.loadAndCache();
+    return session?.attractionId;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Online → POST to cloud first, then cache locally as synced.
+  // Offline (or cloud failure) → save locally as pending_create for SyncService.
+  // ---------------------------------------------------------------------------
+  Future<VisitEntryResult> saveVisitEntry(VisitEntryData data) async {
+    final online = ConnectivityService.instance.isOnline && hasToken;
+
+    final attractionId = await resolveAttractionId();
+    if (attractionId == null || attractionId.isEmpty) {
+      return VisitEntryResult.err(
+        'No attraction account associated with this user.',
+      );
+    }
+
+    final entryId = _generateId();
+    final payload = data.toJson()..['attractionId'] = attractionId;
+    final now = DateTime.now().toUtc().toIso8601String();
+    payload['createdAt'] = now;
+
+    // ── ONLINE: push to cloud first, then cache locally as synced ──────────
+    if (online) {
+      try {
+        final response = await post(
+          '/api/attraction/visit-entry/visit-entries',
+          payload..['id'] = entryId,
+        );
+
+        if (response.statusCode == 409) {
+          debugPrint('⚠️ saveVisitEntry: 409 — already landed on server');
+          if (!kIsWeb) {
+            await _insertLocalEntry(
+              entryId: entryId,
+              attractionId: attractionId,
+              payload: payload,
+              now: now,
+              syncStatus: LocalDatabase.syncSynced,
+            );
+          }
+          return VisitEntryResult.ok(syncedToCloud: true);
+        }
+
+        handleResponse(response);
+
+        if (!kIsWeb) {
+          await _insertLocalEntry(
+            entryId: entryId,
+            attractionId: attractionId,
+            payload: payload,
+            now: now,
+            syncStatus: LocalDatabase.syncSynced,
+          );
+          // Remap local ID if the backend generated a different one.
+          await _markSynced(entryId, responseBody: response.body);
+        }
+
+        debugPrint('✅ saveVisitEntry: online — entry $entryId saved to cloud');
+        return VisitEntryResult.ok(syncedToCloud: true);
+      } catch (e) {
+        debugPrint(
+          '⚠️ saveVisitEntry: cloud push failed — saving locally as pending ($e)',
+        );
+      }
+    }
+
+    // ── OFFLINE (or cloud failure): save locally as pending_create ──────────
+    if (!kIsWeb) {
+      try {
+        await _insertLocalEntry(
+          entryId: entryId,
+          attractionId: attractionId,
+          payload: payload,
+          now: now,
+          syncStatus: LocalDatabase.syncPendingCreate,
+        );
+      } catch (e) {
+        debugPrint('❌ saveVisitEntry: local write failed — $e');
+        return VisitEntryResult.err(
+          'Failed to save visit entry. Please try again.',
+        );
+      }
+    }
+
+    debugPrint('💾 saveVisitEntry: offline — entry $entryId queued for sync');
+    return VisitEntryResult.ok();
+  }
+
+  // ---------------------------------------------------------------------------
+  // SQLite helpers
+  // ---------------------------------------------------------------------------
+
+  Future<void> _insertLocalEntry({
+    required String entryId,
+    required String attractionId,
+    required Map<String, dynamic> payload,
+    required String now,
+    String syncStatus = LocalDatabase.syncPendingCreate,
+  }) async {
+    final db = await LocalDatabase.instance.database;
+    final session = SessionService.instance.current;
+
+    // Ensure the parent rows exist so the foreign keys are satisfied.
+    if (session != null) {
+      await db.insert(
+        LocalDatabase.tableLocalProfiles,
+        {
+          'id': session.userId,
+          'username': session.username ?? session.email,
+          'full_name': session.fullName,
+          'email': session.email,
+          'phone': session.phone,
+          'role': session.role,
+          'password_hash': 'temp_hash',
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+
+      await db.insert(
+        LocalDatabase.tableLocalAttractions,
+        {
+          'id': attractionId,
+          'profile_id': session.userId,
+          'attraction_name': session.attractionName,
+          'attraction_type': session.attractionType != null
+              ? jsonEncode(session.attractionType)
+              : null,
+          'street': session.street,
+          'barangay': session.barangay,
+          'status': session.status,
+          'created_at': now,
+          'updated_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
+
+    await db.insert(
+      LocalDatabase.tableVisitEntries,
+      {
+        'id':                entryId,
+        'attraction_id':     attractionId,
+        'visit_date':        payload['visitDate'],
+        'guest_count':       payload['guestCount'],
+        'male_count':        payload['maleCount'],
+        'female_count':      payload['femaleCount'],
+        'is_foreign':        payload['isForeign'] == true ? 1 : 0,
+        'country':           payload['country'],
+        'province':          payload['province'],
+        'city_municipality': payload['cityMunicipality'],
+        'nationality':       null,
+        'created_at':        now,
+        'updated_at':        now,
+        'sync_status':       syncStatus,
+        'local_updated_at':  now,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+
+    debugPrint(
+      '💾 SQLite: saved visit entry $entryId ($syncStatus)',
+    );
+  }
+
+  Future<void> _markSynced(String localId, {String? responseBody}) async {
+    final db = await LocalDatabase.instance.database;
+    var id = localId;
+
+    // The backend generates its own UUID — remap the local primary key
+    // when the server kept a different one.
+    if (responseBody != null && responseBody.isNotEmpty) {
+      try {
+        final body = jsonDecode(responseBody);
+        final serverId =
+            body is Map ? body['visitEntryId'] as String? : null;
+        if (serverId != null && serverId.isNotEmpty && serverId != localId) {
+          await db.update(
+            LocalDatabase.tableVisitEntries,
+            {'id': serverId},
+            where: 'id = ?',
+            whereArgs: [localId],
+          );
+          id = serverId;
+        }
+      } catch (_) {}
+    }
+
+    await db.update(
+      LocalDatabase.tableVisitEntries,
+      {
+        'sync_status':      LocalDatabase.syncSynced,
+        'local_updated_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      where:     'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // UUID generator
+  // ---------------------------------------------------------------------------
+  String _generateId() {
+    final rand = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rand.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20)}';
+  }
+}

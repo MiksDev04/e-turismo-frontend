@@ -38,6 +38,7 @@ class SexDistribution {
   int get total => male + female + other;
   double get maleRatio => total == 0 ? 0 : male / total;
   double get femaleRatio => total == 0 ? 0 : female / total;
+  double get otherRatio => total == 0 ? 0 : other / total;
 }
 
 class CountryCount {
@@ -51,6 +52,16 @@ class ProvinceCount {
   const ProvinceCount({required this.province, required this.count});
 
   final String province;
+  final int count;
+}
+
+class CityMunicipalityCount {
+  const CityMunicipalityCount({
+    required this.cityMunicipality,
+    required this.count,
+  });
+
+  final String cityMunicipality;
   final int count;
 }
 
@@ -81,6 +92,7 @@ class DashboardData {
     required this.sexDistribution,
     required this.topCountries,
     required this.provinces,
+    required this.cityMunicipalities,
     required this.ageGroups,
     required this.purposeOfVisit,
   });
@@ -89,6 +101,7 @@ class DashboardData {
   final SexDistribution sexDistribution;
   final List<CountryCount> topCountries;
   final List<ProvinceCount> provinces;
+  final List<CityMunicipalityCount> cityMunicipalities;
   final List<AgeGroupCount> ageGroups;
   final List<PurposeCount> purposeOfVisit;
 }
@@ -237,7 +250,7 @@ class BusinessDashboardApi extends BaseApi {
       return BusinessDetails(
         address: street,
         barangay: barangay,
-        totalRooms: (data['total_rooms'] as int?) ?? 0,
+        totalRooms: _intValue(data, 'total_rooms') ?? 0,
         businessLine: businessLine,
       );
     } catch (_) {
@@ -254,6 +267,7 @@ class BusinessDashboardApi extends BaseApi {
     String businessId,
   ) async {
     final db = await LocalDatabase.instance.database;
+    final totalRooms = await _localRoomCount(businessId);
     final rows = await db.query(
       LocalDatabase.tableLocalBusinesses,
       where: 'id = ?',
@@ -262,11 +276,11 @@ class BusinessDashboardApi extends BaseApi {
     );
 
     if (rows.isEmpty) {
-      return const BusinessDetails(
+      return BusinessDetails(
         address: '',
         barangay: '',
-        totalRooms: 0,
-        businessLine: [],
+        totalRooms: totalRooms,
+        businessLine: const [],
       );
     }
 
@@ -291,9 +305,23 @@ class BusinessDashboardApi extends BaseApi {
     return BusinessDetails(
       address: street,
       barangay: barangay,
-      totalRooms: (row['total_rooms'] as int?) ?? 0,
+      totalRooms: totalRooms,
       businessLine: businessLine,
     );
+  }
+
+  /// Total rooms for a business, counted from the cached `local_rooms` table.
+  /// `local_businesses.total_rooms` was dropped in DB v9 — the count is now
+  /// always derived from the rooms table, same as the backend's
+  /// `/api/dashboard/details` (COUNT(*) FROM rooms).
+  Future<int> _localRoomCount(String businessId) async {
+    final db = await LocalDatabase.instance.database;
+    final rows = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM ${LocalDatabase.tableLocalRooms} '
+      'WHERE business_id = ?',
+      [businessId],
+    );
+    return (rows.first['count'] as int?) ?? 0;
   }
 
   // ===========================================================================
@@ -516,15 +544,24 @@ class BusinessDashboardApi extends BaseApi {
 
     final placeholders = recordIds.map((_) => '?').join(', ');
     final rows = await db.rawQuery(
-      'SELECT id as guest_record_id, '
-      '  lead_country as country, '
-      '  lead_province as province, '
-      '  lead_sex as sex, '
-      '  lead_is_overseas as is_overseas, '
-      '  lead_birthdate, '
-      '  check_in '
-      'FROM ${LocalDatabase.tableGuestRecords} '
-      'WHERE id IN ($placeholders)',
+      'SELECT gr.id as guest_record_id, '
+      '  gr.lead_country as country, '
+      '  COALESCE(NULLIF(TRIM(gr.lead_province), \'\'), '
+      '    (SELECT g.province FROM ${LocalDatabase.tableGuestOriginBreakdowns} g '
+      '     WHERE g.guest_record_id = gr.id AND g.deleted_at IS NULL '
+      '       AND g.province IS NOT NULL AND TRIM(g.province) <> \'\' '
+      '     LIMIT 1)) as province, '
+      '  COALESCE(NULLIF(TRIM(gr.lead_city_municipality), \'\'), '
+      '    (SELECT g.city_municipality FROM ${LocalDatabase.tableGuestOriginBreakdowns} g '
+      '     WHERE g.guest_record_id = gr.id AND g.deleted_at IS NULL '
+      '       AND g.city_municipality IS NOT NULL AND TRIM(g.city_municipality) <> \'\' '
+      '     LIMIT 1)) as city_municipality, '
+      '  gr.lead_sex as sex, '
+      '  gr.lead_is_overseas as is_overseas, '
+      '  gr.lead_birthdate, '
+      '  gr.check_in '
+      'FROM ${LocalDatabase.tableGuestRecords} gr '
+      'WHERE gr.id IN ($placeholders)',
       recordIds,
     );
 
@@ -561,6 +598,7 @@ class BusinessDashboardApi extends BaseApi {
         'guest_record_id':     r['guest_record_id'],
         'country':             country,
         'province':            r['province'],
+        'city_municipality':   r['city_municipality'],
         'sex':                 sex,
         'age_group':           ageGroup,
         'count':               1,
@@ -693,7 +731,7 @@ class BusinessDashboardApi extends BaseApi {
     // Top 5 countries
     final countryMap = <String, int>{};
     for (final b in breakdowns) {
-      final country = _stringValue(b, 'country') ?? 'Unknown';
+      final country = _countryLabel(b);
       final recordId = _stringValue(b, 'guest_record_id') ?? '';
       final guestDays = recordGuestDays[recordId] ?? 1;
       countryMap[country] = (countryMap[country] ?? 0) + guestDays;
@@ -718,6 +756,29 @@ class BusinessDashboardApi extends BaseApi {
     final provinces =
         (provinceMap.entries
                 .map((e) => ProvinceCount(province: e.key, count: e.value))
+                .toList()
+              ..sort((a, b) => b.count.compareTo(a.count)))
+            .take(5)
+            .toList();
+
+    // Top 5 city/municipalities (domestic leads only — lead_city_municipality
+    // is null for foreign leads).
+    final cityMunicipalityMap = <String, int>{};
+    for (final b in breakdowns) {
+      final cityMunicipality =
+          _stringValue(b, 'city_municipality')?.trim() ?? '';
+      if (cityMunicipality.isEmpty) continue;
+      final recordId = _stringValue(b, 'guest_record_id') ?? '';
+      final guestDays = recordGuestDays[recordId] ?? 1;
+      cityMunicipalityMap[cityMunicipality] =
+          (cityMunicipalityMap[cityMunicipality] ?? 0) + guestDays;
+    }
+    final cityMunicipalities =
+        (cityMunicipalityMap.entries
+                .map((e) => CityMunicipalityCount(
+                      cityMunicipality: e.key,
+                      count: e.value,
+                    ))
                 .toList()
               ..sort((a, b) => b.count.compareTo(a.count)))
             .take(5)
@@ -749,6 +810,7 @@ class BusinessDashboardApi extends BaseApi {
       ),
       topCountries: topCountries,
       provinces: provinces,
+      cityMunicipalities: cityMunicipalities,
       ageGroups: ageGroups,
       purposeOfVisit: purposeOfVisit,
     );
@@ -981,7 +1043,7 @@ class BusinessDashboardApi extends BaseApi {
 
       final checkIn = _stringValue(rec, 'check_in') ?? '';
       final checkOut = _stringValue(rec, 'check_out') ?? '';
-      final country = _csvCell(_stringValue(b, 'country') ?? 'Unknown');
+      final country = _csvCell(_countryLabel(b));
       final ageGroup = _stringValue(b, 'age_group') ?? '';
 
       if (maleCount > 0) {
@@ -1009,6 +1071,16 @@ class BusinessDashboardApi extends BaseApi {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
+
+  /// Bucket label for a guest breakdown row: 'Overseas Filipino' for overseas
+  /// Filipino leads (regardless of any selected country), the country name
+  /// when present, and 'Unspecified' only for genuine data gaps.
+  String _countryLabel(Map<String, dynamic> b) {
+    final isOverseas = b['is_overseas'] == true || b['is_overseas'] == 1;
+    if (isOverseas) return 'Overseas Filipino';
+    final country = _stringValue(b, 'country')?.trim() ?? '';
+    return country.isEmpty ? 'Unspecified' : country;
+  }
 
   String? _stringValue(Map<String, dynamic> data, String key) {
     final value = data[key];

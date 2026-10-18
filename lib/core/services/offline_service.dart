@@ -35,6 +35,7 @@ class OfflineAuthService {
     String? createdAt,
     String? updatedAt,
     Map<String, dynamic>? business,
+    Map<String, dynamic>? attraction,
   }) async {
     final db = await LocalDatabase.instance.database;
     final hash = _hashPassword(password, id);
@@ -51,7 +52,7 @@ class OfflineAuthService {
         'created_at': createdAt,
         'updated_at': updatedAt,
       };
-      
+
       final pCount = await txn.update(
         LocalDatabase.tableLocalProfiles,
         profileData,
@@ -95,6 +96,35 @@ class OfflineAuthService {
         );
         if (bCount == 0) {
           await txn.insert(LocalDatabase.tableLocalBusinesses, bizData);
+        }
+      }
+
+      if (attraction != null) {
+        final attType = attraction['attraction_type'];
+        final attData = {
+          'id': attraction['id'],
+          'profile_id': id,
+          'attraction_name': attraction['attraction_name'],
+          'attraction_type': attType is String
+              ? attType
+              : attType == null
+                  ? null
+                  : jsonEncode(attType),
+          'street': attraction['street'],
+          'barangay': attraction['barangay'],
+          'status': attraction['status'],
+          'created_at': attraction['created_at'],
+          'updated_at': attraction['updated_at'],
+        };
+
+        final aCount = await txn.update(
+          LocalDatabase.tableLocalAttractions,
+          attData,
+          where: 'id = ?',
+          whereArgs: [attraction['id']],
+        );
+        if (aCount == 0) {
+          await txn.insert(LocalDatabase.tableLocalAttractions, attData);
         }
       }
     });
@@ -160,13 +190,59 @@ class _PushResult {
   const _PushResult({this.failed = 0, this.networkLost = false});
 }
 
+// CHANGED: per-item outcome used by the chunked/concurrent push helpers below.
+// Lets a batch of N concurrent requests each report success/fail/network-lost/
+// token-expired independently, so the outer loop can decide whether to keep
+// dispatching further chunks.
+class _ItemOutcome {
+  final bool failed;
+  final bool networkLost;
+  final bool tokenExpired;
+  const _ItemOutcome({
+    this.failed = false,
+    this.networkLost = false,
+    this.tokenExpired = false,
+  });
+  static const success = _ItemOutcome();
+  static const fail = _ItemOutcome(failed: true);
+  static const lostConnection = _ItemOutcome(networkLost: true);
+  static const expiredToken = _ItemOutcome(tokenExpired: true);
+}
+
 // =============================================================================
 // SYNC SERVICE
 // =============================================================================
 
+/// Normalizes the `is_foreign` flag coming from the cloud into 1/0 for SQLite.
+/// The backend returns `is_foreign` as a MySQL tinyint (1/0); older payloads
+/// used the camelCase JSON key. Falling back to a non-Philippines country
+/// keeps rows synced before the column existed classified the same way.
+int _isForeignFromJson(dynamic r) {
+  final v = r is Map ? (r['is_foreign'] ?? r['isForeign']) : r;
+  if (v is num) return v.toInt() == 1 ? 1 : 0;
+  if (v is bool) return v ? 1 : 0;
+  return (r is Map && r['country'] is String && r['country'] != 'Philippines')
+      ? 1
+      : 0;
+}
+
 class SyncService {
   SyncService._internal();
   static final SyncService instance = SyncService._internal();
+
+  // CHANGED: one long-lived client for the whole service, mirroring
+  // BaseApi's static client. Every http.get/post/put call below now goes
+  // through this instead of the top-level http.* functions, so the
+  // underlying connection (and its TLS handshake) is reused across requests
+  // instead of being torn down after each one. Safe to leave open for the
+  // app's lifetime since SyncService is itself a singleton.
+  static final http.Client _client = http.Client();
+
+  // CHANGED: bounded parallelism for the push loops. Records within one
+  // batch are independent (no cross-record FK dependency in the payloads),
+  // so pushing a handful concurrently is safe — sqflite serializes the local
+  // writes regardless. Tune this if you see backend rate-limiting.
+  static const int _pushConcurrency = 5;
 
   String get _baseUrl {
     if (kIsWeb) {
@@ -185,8 +261,8 @@ class SyncService {
     final Map<String, String> h = {
       'Content-Type': 'application/json',
       'x-api-key': kIsWeb
-          ? const String.fromEnvironment('API_KEY', defaultValue: '')
-          : (dotenv.env['API_KEY'] ?? 'tourism_app_v2_secret_key_2026'),
+          ? const String.fromEnvironment('API_KEY')
+          : (dotenv.env['API_KEY'] ?? ''),
     };
 
     final token = SessionService.instance.current?.token;
@@ -209,6 +285,10 @@ class SyncService {
   static const _fullSyncInterval = Duration(hours: 24);
   static const _prefKeyLastSync = 'sync_lastSyncTimestamp';
   static const _prefKeyLastFullSync = 'sync_lastFullSyncTimestamp';
+  // Attraction-side timestamps use SEPARATE keys so business deltas are
+  // never touched by attraction syncs (and vice versa).
+  static const _prefKeyAttractionLastSync = 'attraction_sync_lastSync';
+  static const _prefKeyAttractionLastFullSync = 'attraction_sync_lastFullSync';
   DateTime? _lastSyncEnd;
 
   void listenForConnectivity() {
@@ -235,8 +315,8 @@ class SyncService {
       return;
     }
 
-    // Session loaded but not a business account — stop, no sync needed.
-    if (session.role != 'business') {
+    // Session loaded but neither a business nor attraction account — stop.
+    if (session.role != 'business' && session.role != 'attraction') {
       debugPrint('⏭ _handleOnlineTransition: skipped — role is ${session.role}');
       return;
     }
@@ -256,6 +336,45 @@ class SyncService {
       } catch (e) {
         debugPrint('⚠️ SyncService: Auto-auth error: $e');
       }
+    }
+
+    // ── Attraction online transition ────────────────────────────────────────
+    if (session.role == 'attraction') {
+      try {
+        await _pullProfileAndAttraction();
+
+        final current = SessionService.instance.current;
+        String? attractionId = current?.attractionId;
+
+        if (attractionId == null && current != null) {
+          final db = await LocalDatabase.instance.database;
+          final rows = await db.query(
+            LocalDatabase.tableLocalAttractions,
+            where: 'profile_id = ?',
+            whereArgs: [current.userId],
+            limit: 1,
+          );
+          if (rows.isNotEmpty) {
+            attractionId = rows.first['id'] as String?;
+          }
+        }
+
+        // CHANGED: no longer forces a full paged pull on every reconnect.
+        // _pullVisitEntriesFromBackend still self-forces a full pull the
+        // first time ever (no watermark) or once the 24h clock is due — this
+        // just stops it from re-happening on every radio flip.
+        await _pullVisitEntriesFromBackend(attractionId: attractionId);
+      } catch (e) {
+        debugPrint(
+          '⚠️ _handleOnlineTransition: initial attraction pulls failed: $e',
+        );
+      }
+
+      await _clearOfflineSessionFlag();
+
+      // Give a small delay for state to settle before full sync.
+      Future.delayed(_syncDelay, sync);
+      return;
     }
 
     try {
@@ -279,8 +398,11 @@ class SyncService {
       }
 
       if (businessId != null) {
-        await _pullRoomsFromBackend(businessId: businessId, forceFullSync: true);
-        await _pullFromBackend(businessId: businessId, forceFullSync: true);
+        // CHANGED: dropped forceFullSync: true here. Both pulls now honor
+        // the delta watermark (_needsFullSync) instead of always doing the
+        // full 2020-2030 sweep on every reconnect.
+        await _pullRoomsFromBackend(businessId: businessId);
+        await _pullFromBackend(businessId: businessId);
       }
     } catch (e) {
       debugPrint('⚠️ _handleOnlineTransition: initial pulls failed: $e');
@@ -310,8 +432,9 @@ class SyncService {
     }
 
     final session = SessionService.instance.current;
-    if (session == null || session.role != 'business') {
-      debugPrint('⏭ sync: skipped — only for business accounts');
+    if (session == null ||
+        (session.role != 'business' && session.role != 'attraction')) {
+      debugPrint('⏭ sync: skipped — only for business/attraction accounts');
       return;
     }
 
@@ -342,6 +465,48 @@ class SyncService {
     debugPrint('🔄 sync: starting sync process. Initial pending count: $initialPending');
     _emit(SyncState(status: SyncStatus.syncing, pendingCount: initialPending));
 
+    // ── Attraction path ─────────────────────────────────────────────────────
+    if (session.role == 'attraction') {
+      try {
+        await _pullProfileAndAttraction();
+
+        final createResult = await _pushPendingVisitCreates();
+        if (createResult.networkLost) {
+          final remaining = await _countPending();
+          _emit(SyncState(
+            status: SyncStatus.error,
+            errorMessage: 'Connection lost during sync — will retry automatically',
+            pendingCount: remaining,
+          ));
+          return;
+        }
+
+        await _pullVisitEntriesFromBackend();
+
+        final remaining = await _countPending();
+        if (createResult.failed > 0) {
+          _emit(SyncState(
+            status: SyncStatus.error,
+            errorMessage: '$remaining record(s) failed to sync',
+            pendingCount: remaining,
+          ));
+        } else {
+          _emit(SyncState(status: SyncStatus.synced, pendingCount: remaining));
+        }
+      } catch (e) {
+        _emit(
+          SyncState(
+            status: SyncStatus.error,
+            errorMessage: e.toString(),
+            pendingCount: await _countPending(),
+          ),
+        );
+      } finally {
+        _lastSyncEnd = DateTime.now();
+      }
+      return;
+    }
+
     try {
       await _pullProfileAndBusiness();
 
@@ -349,26 +514,29 @@ class SyncService {
       await _pullRoomsFromBackend();
 
       // Phase 2: Push pending room changes (creates then updates)
+      final hadPendingRooms = await _hasPendingRooms();
       final roomCreateResult = await _pushPendingRoomCreates();
       if (roomCreateResult.networkLost) {
-        final remaining = await _countPending();
-        _emit(SyncState(
-          status: SyncStatus.error,
-          errorMessage: 'Connection lost during room sync — will retry automatically',
-          pendingCount: remaining,
-        ));
+        // Room syncs are intentionally invisible to the banner — connectivity
+        // loss mid-room-push aborts the cycle and the connectivity listener
+        // retries automatically, so this stays silent (logged only).
+        debugPrint('🌐 SyncService: connection lost during room create push — '
+            'aborting cycle, will retry on next connectivity check');
         return;
       }
 
       final roomUpdateResult = await _pushPendingRoomUpdates();
       if (roomUpdateResult.networkLost) {
-        final remaining = await _countPending();
-        _emit(SyncState(
-          status: SyncStatus.error,
-          errorMessage: 'Connection lost during room sync — will retry automatically',
-          pendingCount: remaining,
-        ));
+        debugPrint('🌐 SyncService: connection lost during room update push — '
+            'aborting cycle, will retry on next connectivity check');
         return;
+      }
+
+      // The delta watermark still predates the pushes above, so this pull
+      // brings down the server's authoritative updatedAt for rooms that were
+      // just synced (locally-written timestamps are only approximations).
+      if (hadPendingRooms) {
+        await _pullRoomsFromBackend();
       }
 
       // Phase 3: Push pending guest record changes
@@ -397,12 +565,20 @@ class SyncService {
       await _pullFromBackend();                         // GET  → /api/business/guest-records
 
       final remaining = await _countPending();
-      final anyFailed = roomCreateResult.failed > 0 ||
-          roomUpdateResult.failed > 0 ||
-          createResult.failed > 0 ||
+      final roomFailed = roomCreateResult.failed > 0 ||
+          roomUpdateResult.failed > 0;
+      final guestFailed = createResult.failed > 0 ||
           updateResult.failed > 0;
 
-      if (anyFailed) {
+      // Room push failures are logged for diagnostics but intentionally kept
+      // out of the user-facing banner — room syncs are invisible by design.
+      if (roomFailed) {
+        debugPrint('⚠️ Room sync failed: '
+            '${roomCreateResult.failed} create(s), '
+            '${roomUpdateResult.failed} update(s) — hidden from banner by design');
+      }
+
+      if (guestFailed) {
         _emit(SyncState(
           status: SyncStatus.error,
           errorMessage: '$remaining record(s) failed to sync',
@@ -425,6 +601,59 @@ class SyncService {
   }
 
   Future<int> getPendingCount() => _countPending();
+
+  // ---------------------------------------------------------------------------
+  // CHANGED: generic chunked-concurrent push runner.
+  // Processes `items` in chunks of `_pushConcurrency`, firing each chunk's
+  // requests concurrently via Future.wait, then inspecting the aggregate
+  // outcome before deciding whether to dispatch the next chunk. This
+  // preserves the original semantics (abort the whole batch on network loss;
+  // stop and refresh token on 401) while turning N sequential handshakes+RTTs
+  // into roughly N / _pushConcurrency.
+  // ---------------------------------------------------------------------------
+  Future<_PushResult> _runChunkedPush<T>(
+    List<T> items,
+    Future<_ItemOutcome> Function(T item) pushOne, {
+    required String logTag,
+  }) async {
+    int failed = 0;
+    bool tokenExpired = false;
+
+    for (var i = 0; i < items.length; i += _pushConcurrency) {
+      if (!await _canReachBackend()) {
+        debugPrint('🌐 $logTag: connectivity lost — aborting batch');
+        return _PushResult(failed: failed, networkLost: true);
+      }
+
+      final end = (i + _pushConcurrency < items.length)
+          ? i + _pushConcurrency
+          : items.length;
+      final chunk = items.sublist(i, end);
+
+      final outcomes = await Future.wait(chunk.map(pushOne));
+
+      for (final outcome in outcomes) {
+        if (outcome.networkLost) {
+          debugPrint('🌐 $logTag: connection lost mid-push — aborting batch');
+          return _PushResult(failed: failed, networkLost: true);
+        }
+        if (outcome.tokenExpired) {
+          tokenExpired = true;
+        } else if (outcome.failed) {
+          failed++;
+        }
+      }
+
+      if (tokenExpired) break;
+    }
+
+    if (tokenExpired) {
+      debugPrint('🔐 $logTag: 401 seen — refreshing token, batch stopped for retry');
+      await _tryRefreshToken();
+    }
+
+    return _PushResult(failed: failed);
+  }
 
   // ---------------------------------------------------------------------------
   // PUSH PENDING CREATES
@@ -450,114 +679,139 @@ class SyncService {
       debugPrint('📤 _pushPendingCreates: ${records.length} record(s) to push');
     }
 
-    int failed = 0;
+    return _runChunkedPush<Map<String, dynamic>>(
+      records,
+      (record) => _pushOneCreate(db, record),
+      logTag: '_pushPendingCreates',
+    );
+  }
 
-    for (final record in records) {
-      final recordId = record['id'] as String;
+  Future<_ItemOutcome> _pushOneCreate(
+    Database db,
+    Map<String, dynamic> record,
+  ) async {
+    final recordId = record['id'] as String;
 
-      if (!await _canReachBackend()) {
-        debugPrint(
-          '🌐 _pushPendingCreates: connectivity lost — aborting batch',
-        );
-        return _PushResult(failed: failed, networkLost: true);
-      }
+    try {
+      // Read room IDs from junction table. For a normal create, only the
+      // currently assigned links (deleted_at IS NULL) are uploaded. For a
+      // checkout record, include ALL links (active + soft-deleted) so the
+      // cloud create preserves the full room history — the backend inserts
+      // them as 'completed' when actualCheckOut is set and never touches
+      // room status, so this is safe.
+      final isCheckout = (record['actual_checkout'] as String?)?.isNotEmpty ?? false;
+      final roomLinks = await db.query(
+        LocalDatabase.tableGuestRecordRooms,
+        columns: ['room_id'],
+        where: isCheckout
+            ? 'guest_record_id = ?'
+            : 'guest_record_id = ? AND deleted_at IS NULL',
+        whereArgs: [recordId],
+      );
+      final roomIds = roomLinks.map((r) => r['room_id'] as String).toList();
 
-      try {
-        // Read room IDs from junction table. For a normal create, only the
-        // currently assigned links (deleted_at IS NULL) are uploaded. For a
-        // checkout record, include ALL links (active + soft-deleted) so the
-        // cloud create preserves the full room history — the backend inserts
-        // them as 'completed' when actualCheckOut is set and never touches
-        // room status, so this is safe.
-        final isCheckout = (record['actual_checkout'] as String?)?.isNotEmpty ?? false;
-        final roomLinks = await db.query(
-          LocalDatabase.tableGuestRecordRooms,
-          columns: ['room_id'],
-          where: isCheckout
-              ? 'guest_record_id = ?'
-              : 'guest_record_id = ? AND deleted_at IS NULL',
+      // Read origin groups for this record, dropping incomplete rows
+      // (no guest counts or no origin) that the backend would reject.
+      final originGroupRows = (await db.query(
+        LocalDatabase.tableGuestOriginBreakdowns,
+        where: 'guest_record_id = ? AND deleted_at IS NULL',
+        whereArgs: [recordId],
+      ))
+          .where(_originGroupRowIsComplete)
+          .toList();
+
+      // Build payload and include the local UUID so the backend stores the
+      // same ID — keeps SQLite and MySQL in sync without a remapping step.
+      final payload = _toApiPayload(
+        record,
+        roomIds,
+        isCreate: true,
+        originGroups: originGroupRows.isNotEmpty ? originGroupRows : null,
+      );
+      payload['id'] = recordId;
+
+      final response = await _client
+          .post(
+            Uri.parse('$_baseUrl/api/business/guest-entries'),
+            headers: _headers,
+            body: jsonEncode(payload),
+          )
+          .timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => throw TimeoutException(
+              'POST guest-entries/$recordId timed out',
+            ),
+          );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        await db.update(
+          LocalDatabase.tableGuestRecords,
+          {
+            'sync_status': LocalDatabase.syncSynced,
+            'local_updated_at': DateTime.now().toUtc().toIso8601String(),
+          },
+          where: 'id = ?',
           whereArgs: [recordId],
         );
-        final roomIds = roomLinks.map((r) => r['room_id'] as String).toList();
-
-        // Build payload and include the local UUID so the backend stores the
-        // same ID — keeps SQLite and MySQL in sync without a remapping step.
-        final payload = _toApiPayload(record, roomIds, isCreate: true);
-        payload['id'] = recordId;
-
-        final response = await http
-            .post(
-              Uri.parse('$_baseUrl/api/business/guest-entries'),
-              headers: _headers,
-              body: jsonEncode(payload),
-            )
-            .timeout(
-              const Duration(seconds: 15),
-              onTimeout: () => throw TimeoutException(
-                'POST guest-entries/$recordId timed out',
-              ),
-            );
-
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          await db.update(
-            LocalDatabase.tableGuestRecords,
-            {
-              'sync_status': LocalDatabase.syncSynced,
-              'local_updated_at': DateTime.now().toUtc().toIso8601String(),
-            },
-            where: 'id = ?',
-            whereArgs: [recordId],
-          );
-          await _markJunctionSynced(db, recordId);
-          debugPrint('✅ _pushPendingCreates: synced $recordId');
-        } else if (response.statusCode == 401) {
-          debugPrint(
-            '🔐 _pushPendingCreates: 401 — token expired, refreshing and aborting for retry',
-          );
-          await _tryRefreshToken();
-          return _PushResult(failed: failed); // Stop batch — next sync will use the fresh token.
-        } else if (response.statusCode == 409) {
-          // The server already has a guest_records row with this id. Since
-          // the id is a UUID we generated on-device, this almost never means
-          // a genuine clash with someone else's data — it means our own
-          // earlier POST actually succeeded, but its 2xx response was lost
-          // (e.g. connectivity dropped right as the server committed, which
-          // is exactly what happens when the network is cut mid-sync). The
-          // record is already safely stored; treat this as synced instead of
-          // failing so it doesn't retry-and-409 forever.
-          await db.update(
-            LocalDatabase.tableGuestRecords,
-            {
-              'sync_status': LocalDatabase.syncSynced,
-              'local_updated_at': DateTime.now().toUtc().toIso8601String(),
-            },
-            where: 'id = ?',
-            whereArgs: [recordId],
-          );
-          await _markJunctionSynced(db, recordId);
-          debugPrint(
-            '♻️ _pushPendingCreates: $recordId already existed on server — marking synced',
-          );
-        } else {
-          failed++;
-          debugPrint(
-            '❌ _pushPendingCreates: failed for $recordId — '
-            '${response.statusCode} ${response.body}',
-          );
-        }
-      } catch (e) {
-        if (isNetworkError(e)) {
-          debugPrint(
-            '🌐 _pushPendingCreates: connection lost mid-push for $recordId — aborting batch ($e)',
-          );
-          return _PushResult(failed: failed, networkLost: true);
-        }
-        failed++;
-        debugPrint('❌ _pushPendingCreates: exception for $recordId — $e');
+        await _markJunctionSynced(db, recordId);
+        // Remove local origin groups — they are replaced by the next pull
+        await db.delete(
+          LocalDatabase.tableGuestOriginBreakdowns,
+          where: 'guest_record_id = ?',
+          whereArgs: [recordId],
+        );
+        debugPrint('✅ _pushPendingCreates: synced $recordId');
+        return _ItemOutcome.success;
+      } else if (response.statusCode == 401) {
+        debugPrint(
+          '🔐 _pushPendingCreates: 401 for $recordId — token expired',
+        );
+        return _ItemOutcome.expiredToken;
+      } else if (response.statusCode == 409) {
+        // The server already has a guest_records row with this id. Since
+        // the id is a UUID we generated on-device, this almost never means
+        // a genuine clash with someone else's data — it means our own
+        // earlier POST actually succeeded, but its 2xx response was lost
+        // (e.g. connectivity dropped right as the server committed, which
+        // is exactly what happens when the network is cut mid-sync). The
+        // record is already safely stored; treat this as synced instead of
+        // failing so it doesn't retry-and-409 forever.
+        await db.update(
+          LocalDatabase.tableGuestRecords,
+          {
+            'sync_status': LocalDatabase.syncSynced,
+            'local_updated_at': DateTime.now().toUtc().toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [recordId],
+        );
+        await _markJunctionSynced(db, recordId);
+        await db.delete(
+          LocalDatabase.tableGuestOriginBreakdowns,
+          where: 'guest_record_id = ?',
+          whereArgs: [recordId],
+        );
+        debugPrint(
+          '♻️ _pushPendingCreates: $recordId already existed on server — marking synced',
+        );
+        return _ItemOutcome.success;
+      } else {
+        debugPrint(
+          '❌ _pushPendingCreates: failed for $recordId — '
+          '${response.statusCode} ${response.body}',
+        );
+        return _ItemOutcome.fail;
       }
+    } catch (e) {
+      if (isNetworkError(e)) {
+        debugPrint(
+          '🌐 _pushPendingCreates: connection lost mid-push for $recordId — aborting batch ($e)',
+        );
+        return _ItemOutcome.lostConnection;
+      }
+      debugPrint('❌ _pushPendingCreates: exception for $recordId — $e');
+      return _ItemOutcome.fail;
     }
-
-    return _PushResult(failed: failed);
   }
 
   // ---------------------------------------------------------------------------
@@ -582,82 +836,101 @@ class SyncService {
       debugPrint('📤 _pushPendingUpdates: ${records.length} record(s) to push');
     }
 
-    int failed = 0;
+    return _runChunkedPush<Map<String, dynamic>>(
+      records,
+      (record) => _pushOneUpdate(db, record),
+      logTag: '_pushPendingUpdates',
+    );
+  }
 
-    for (final record in records) {
-      final recordId = record['id'] as String;
+  Future<_ItemOutcome> _pushOneUpdate(
+    Database db,
+    Map<String, dynamic> record,
+  ) async {
+    final recordId = record['id'] as String;
 
-      if (!await _canReachBackend()) {
-        debugPrint(
-          '🌐 _pushPendingUpdates: connectivity lost — aborting batch',
-        );
-        return _PushResult(failed: failed, networkLost: true);
-      }
+    try {
+      // Read room IDs from junction table (only currently assigned — removed
+      // links are soft-deleted and must not be re-uploaded)
+      final roomLinks = await db.query(
+        LocalDatabase.tableGuestRecordRooms,
+        columns: ['room_id'],
+        where: 'guest_record_id = ? AND deleted_at IS NULL',
+        whereArgs: [recordId],
+      );
+      final roomIds = roomLinks.map((r) => r['room_id'] as String).toList();
 
-      try {
-        // Read room IDs from junction table (only currently assigned — removed
-        // links are soft-deleted and must not be re-uploaded)
-        final roomLinks = await db.query(
-          LocalDatabase.tableGuestRecordRooms,
-          columns: ['room_id'],
-          where: 'guest_record_id = ? AND deleted_at IS NULL',
+      // Read origin groups for this record, dropping incomplete rows
+      // (no guest counts or no origin) that the backend would reject.
+      final originGroupRows = (await db.query(
+        LocalDatabase.tableGuestOriginBreakdowns,
+        where: 'guest_record_id = ? AND deleted_at IS NULL',
+        whereArgs: [recordId],
+      ))
+          .where(_originGroupRowIsComplete)
+          .toList();
+
+      final payload = _toApiPayload(
+        record,
+        roomIds,
+        isCreate: false,
+        originGroups: originGroupRows.isNotEmpty ? originGroupRows : null,
+      );
+
+      final response = await _client
+          .put(
+            Uri.parse('$_baseUrl/api/business/guest-records/$recordId'),
+            headers: _headers,
+            body: jsonEncode(payload),
+          )
+          .timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => throw TimeoutException(
+              'PUT guest-records/$recordId timed out',
+            ),
+          );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        await db.update(
+          LocalDatabase.tableGuestRecords,
+          {
+            'sync_status': LocalDatabase.syncSynced,
+            'local_updated_at': DateTime.now().toUtc().toIso8601String(),
+          },
+          where: 'id = ?',
           whereArgs: [recordId],
         );
-        final roomIds = roomLinks.map((r) => r['room_id'] as String).toList();
-
-        final payload = _toApiPayload(record, roomIds, isCreate: false);
-
-        final response = await http
-            .put(
-              Uri.parse('$_baseUrl/api/business/guest-records/$recordId'),
-              headers: _headers,
-              body: jsonEncode(payload),
-            )
-            .timeout(
-              const Duration(seconds: 15),
-              onTimeout: () => throw TimeoutException(
-                'PUT guest-records/$recordId timed out',
-              ),
-            );
-
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          await db.update(
-            LocalDatabase.tableGuestRecords,
-            {
-              'sync_status': LocalDatabase.syncSynced,
-              'local_updated_at': DateTime.now().toUtc().toIso8601String(),
-            },
-            where: 'id = ?',
-            whereArgs: [recordId],
-          );
-          await _markJunctionSynced(db, recordId);
-          debugPrint('✅ _pushPendingUpdates: synced $recordId');
-        } else if (response.statusCode == 401) {
-          debugPrint(
-            '🔐 _pushPendingUpdates: 401 — token expired, refreshing and aborting for retry',
-          );
-          await _tryRefreshToken();
-          return _PushResult(failed: failed);
-        } else {
-          failed++;
-          debugPrint(
-            '❌ _pushPendingUpdates: failed for $recordId — '
-            '${response.statusCode} ${response.body}',
-          );
-        }
-      } catch (e) {
-        if (isNetworkError(e)) {
-          debugPrint(
-            '🌐 _pushPendingUpdates: connection lost mid-push for $recordId — aborting batch ($e)',
-          );
-          return _PushResult(failed: failed, networkLost: true);
-        }
-        failed++;
-        debugPrint('❌ _pushPendingUpdates: exception for $recordId — $e');
+        await _markJunctionSynced(db, recordId);
+        // Remove local origin groups — they are replaced by the next pull
+        await db.delete(
+          LocalDatabase.tableGuestOriginBreakdowns,
+          where: 'guest_record_id = ?',
+          whereArgs: [recordId],
+        );
+        debugPrint('✅ _pushPendingUpdates: synced $recordId');
+        return _ItemOutcome.success;
+      } else if (response.statusCode == 401) {
+        debugPrint(
+          '🔐 _pushPendingUpdates: 401 for $recordId — token expired',
+        );
+        return _ItemOutcome.expiredToken;
+      } else {
+        debugPrint(
+          '❌ _pushPendingUpdates: failed for $recordId — '
+          '${response.statusCode} ${response.body}',
+        );
+        return _ItemOutcome.fail;
       }
+    } catch (e) {
+      if (isNetworkError(e)) {
+        debugPrint(
+          '🌐 _pushPendingUpdates: connection lost mid-push for $recordId — aborting batch ($e)',
+        );
+        return _ItemOutcome.lostConnection;
+      }
+      debugPrint('❌ _pushPendingUpdates: exception for $recordId — $e');
+      return _ItemOutcome.fail;
     }
-
-    return _PushResult(failed: failed);
   }
 
   // ---------------------------------------------------------------------------
@@ -691,6 +964,98 @@ class SyncService {
     );
   }
 
+  // ── Friendly entity labels for log lines ───────────────────────────────────
+
+  /// Builds a compact human-friendly label: the entity's display name plus a
+  /// short (8-char) id for disambiguation, e.g. `'Palm Grove Inn' (863661e2…)`.
+  /// Degrades to the short id when the name is missing or blank.
+  String _entityLabel(String? name, String id) {
+    final short = id.length > 8 ? '${id.substring(0, 8)}…' : id;
+    if (name == null || name.trim().isEmpty) return short;
+    return "'$name' ($short)";
+  }
+
+  /// Resolves the label for a single business id, looking up its cached name.
+  Future<String> _businessLabel(String businessId) async {
+    try {
+      final db = await LocalDatabase.instance.database;
+      final rows = await db.query(
+        LocalDatabase.tableLocalBusinesses,
+        columns: ['business_name'],
+        where: 'id = ?',
+        whereArgs: [businessId],
+        limit: 1,
+      );
+      return _entityLabel(
+        rows.isNotEmpty ? rows.first['business_name'] as String? : null,
+        businessId,
+      );
+    } catch (_) {
+      return _entityLabel(null, businessId);
+    }
+  }
+
+  /// Resolves the label for a single attraction id, looking up its cached name.
+  Future<String> _attractionLabel(String attractionId) async {
+    try {
+      final db = await LocalDatabase.instance.database;
+      final rows = await db.query(
+        LocalDatabase.tableLocalAttractions,
+        columns: ['attraction_name'],
+        where: 'id = ?',
+        whereArgs: [attractionId],
+        limit: 1,
+      );
+      return _entityLabel(
+        rows.isNotEmpty ? rows.first['attraction_name'] as String? : null,
+        attractionId,
+      );
+    } catch (_) {
+      return _entityLabel(null, attractionId);
+    }
+  }
+
+  /// Pulls the server's JSON `message` out of a non-2xx response, falling back
+  /// to the bare status code when the body isn't the expected shape.
+  String _serverErrorMessage(http.Response response) {
+    try {
+      final body = jsonDecode(response.body);
+      final m = body is Map ? body['message'] : null;
+      if (m is String && m.isNotEmpty) return '$m (HTTP ${response.statusCode})';
+    } catch (_) {}
+    return 'HTTP ${response.statusCode}';
+  }
+
+  /// Builds the list of entities this pull walks when no explicit id was
+  /// passed: only the entities belonging to the CURRENT session's profile, so
+  /// stale rows from other accounts logged into this device are never synced.
+  Future<List<({String id, String label})>> _entitiesForSession({
+    required Database db,
+    required String table,
+    required String nameColumn,
+    String? explicitId,
+    Future<String> Function(String id)? resolveLabel,
+  }) async {
+    if (explicitId != null) {
+      return [(id: explicitId, label: await resolveLabel!(explicitId))];
+    }
+
+    final session = SessionService.instance.current;
+    final rows = await db.query(
+      table,
+      columns: ['id', nameColumn],
+      where: session?.userId != null ? 'profile_id = ?' : null,
+      whereArgs: session?.userId != null ? [session!.userId] : null,
+    );
+
+    return rows
+        .map((r) => (
+          id: r['id'] as String,
+          label: _entityLabel(r[nameColumn] as String?, r['id'] as String),
+        ))
+        .toList();
+  }
+
   // ---------------------------------------------------------------------------
   // PULL ROOMS FROM BACKEND (Delta Sync)
   // Fetches rooms for the business and upserts them into local_rooms.
@@ -704,29 +1069,31 @@ class SyncService {
 
     final db = await LocalDatabase.instance.database;
 
-    final businesses = businessId != null
-        ? [{'id': businessId}]
-        : await db.query(
-            LocalDatabase.tableLocalBusinesses,
-            columns: ['id'],
-          );
+    final businesses = await _entitiesForSession(
+      db: db,
+      table: LocalDatabase.tableLocalBusinesses,
+      nameColumn: 'business_name',
+      explicitId: businessId,
+      resolveLabel: _businessLabel,
+    );
 
     // Determine if this should be a full sync or delta sync
     final needsFull = forceFullSync || await _needsFullSync();
     final lastSync = needsFull ? null : await _getLastSyncTimestamp();
 
     for (final business in businesses) {
-      final bizId = business['id'] as String;
+      final bizId = business.id;
+      final label = business.label;
 
       try {
         final url = lastSync != null
             ? '$_baseUrl/api/business/rooms?businessId=$bizId&lastSync=$lastSync'
             : '$_baseUrl/api/business/rooms?businessId=$bizId&fetchAll=true';
 
-        final response = await http.get(Uri.parse(url), headers: _headers);
+        final response = await _client.get(Uri.parse(url), headers: _headers);
 
         if (response.statusCode < 200 || response.statusCode >= 300) {
-          debugPrint('⚠️ _pullRoomsFromBackend: HTTP ${response.statusCode} for $bizId');
+          debugPrint('⚠️ _pullRoomsFromBackend: ${_serverErrorMessage(response)} — pull aborted for $label');
           continue;
         }
 
@@ -737,6 +1104,32 @@ class SyncService {
         for (final r in data) {
           final roomId = r['id'] as String;
           remoteIds.add(roomId);
+
+          // CHANGED: honor a deletion flag if the backend sends one on the
+          // delta response (mirrors how guest-records and visit-entries
+          // already handle isDeleted). This is a no-op if the backend
+          // doesn't send this field for rooms — worth confirming with the
+          // API before relying on it to replace the old forced-full-sync
+          // safety net.
+          final isDeleted = r['isDeleted'] == true || r['is_deleted'] == true;
+          if (isDeleted) {
+            final refs = await db.query(
+              LocalDatabase.tableGuestRecordRooms,
+              columns: ['id'],
+              where: 'room_id = ?',
+              whereArgs: [roomId],
+              limit: 1,
+            );
+            if (refs.isEmpty) {
+              debugPrint('🗑️ _pullRoomsFromBackend: deleting soft-deleted room $roomId for $label');
+              await db.delete(
+                LocalDatabase.tableLocalRooms,
+                where: 'id = ?',
+                whereArgs: [roomId],
+              );
+            }
+            continue;
+          }
 
           // Skip rooms that have local pending changes (user edited them offline)
           final existing = await db.query(
@@ -749,7 +1142,7 @@ class SyncService {
           if (existing.isNotEmpty) {
             final localSync = existing.first['sync_status'] as String?;
             if (localSync != null && localSync != LocalDatabase.syncSynced) {
-              debugPrint('⏳ _pullRoomsFromBackend: skipping room $roomId (local pending: $localSync)');
+              debugPrint('⏳ _pullRoomsFromBackend: skipping room $roomId (local pending: $localSync) for $label');
               continue;
             }
           }
@@ -790,7 +1183,7 @@ class SyncService {
               );
               if (refs.isNotEmpty) continue;
 
-              debugPrint('🧹 _pullRoomsFromBackend: pruning local room $id (not on cloud)');
+              debugPrint('🧹 _pullRoomsFromBackend: pruning local room $id (not on cloud) for $label');
               await db.delete(
                 LocalDatabase.tableLocalRooms,
                 where: 'id = ?',
@@ -800,12 +1193,12 @@ class SyncService {
           }
         }
 
-        debugPrint('✅ _pullRoomsFromBackend: synced ${data.length} rooms for $bizId');
+        debugPrint('✅ _pullRoomsFromBackend: synced ${data.length} rooms for $label');
       } on SocketException catch (e) {
         debugPrint('🌐 _pullRoomsFromBackend: network lost — aborting ($e)');
         return;
       } catch (e) {
-        debugPrint('❌ _pullRoomsFromBackend: failed for $bizId — $e');
+        debugPrint('❌ _pullRoomsFromBackend: failed for $label — $e');
       }
     }
   }
@@ -832,81 +1225,82 @@ class SyncService {
       debugPrint('📤 _pushPendingRoomCreates: ${records.length} room(s) to push');
     }
 
-    int failed = 0;
+    return _runChunkedPush<Map<String, dynamic>>(
+      records,
+      (record) => _pushOneRoomCreate(db, record),
+      logTag: '_pushPendingRoomCreates',
+    );
+  }
 
-    for (final record in records) {
-      final roomId = record['id'] as String;
+  Future<_ItemOutcome> _pushOneRoomCreate(
+    Database db,
+    Map<String, dynamic> record,
+  ) async {
+    final roomId = record['id'] as String;
 
-      if (!await _canReachBackend()) {
-        debugPrint('🌐 _pushPendingRoomCreates: connectivity lost — aborting batch');
-        return _PushResult(failed: failed, networkLost: true);
+    try {
+      final payload = {
+        'id':         roomId,
+        'businessId': record['business_id'],
+        'roomNumber': record['room_number'],
+        'capacity':   record['capacity'],
+      };
+
+      final response = await _client
+          .post(
+            Uri.parse('$_baseUrl/api/business/rooms'),
+            headers: _headers,
+            body: jsonEncode(payload),
+          )
+          .timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => throw TimeoutException(
+              'POST rooms/$roomId timed out',
+            ),
+          );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        await db.update(
+          LocalDatabase.tableLocalRooms,
+          {
+            'sync_status':      LocalDatabase.syncSynced,
+            'local_updated_at': DateTime.now().toUtc().toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [roomId],
+        );
+        debugPrint('✅ _pushPendingRoomCreates: synced $roomId');
+        return _ItemOutcome.success;
+      } else if (response.statusCode == 401) {
+        debugPrint('🔐 _pushPendingRoomCreates: 401 for $roomId — token expired');
+        return _ItemOutcome.expiredToken;
+      } else if (response.statusCode == 409) {
+        await db.update(
+          LocalDatabase.tableLocalRooms,
+          {
+            'sync_status':      LocalDatabase.syncSynced,
+            'local_updated_at': DateTime.now().toUtc().toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [roomId],
+        );
+        debugPrint('♻️ _pushPendingRoomCreates: $roomId already existed — marking synced');
+        return _ItemOutcome.success;
+      } else {
+        debugPrint(
+          '❌ _pushPendingRoomCreates: failed for $roomId — '
+          '${response.statusCode} ${response.body}',
+        );
+        return _ItemOutcome.fail;
       }
-
-      try {
-        final payload = {
-          'id':         roomId,
-          'businessId': record['business_id'],
-          'roomNumber': record['room_number'],
-          'capacity':   record['capacity'],
-        };
-
-        final response = await http
-            .post(
-              Uri.parse('$_baseUrl/api/business/rooms'),
-              headers: _headers,
-              body: jsonEncode(payload),
-            )
-            .timeout(
-              const Duration(seconds: 15),
-              onTimeout: () => throw TimeoutException(
-                'POST rooms/$roomId timed out',
-              ),
-            );
-
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          await db.update(
-            LocalDatabase.tableLocalRooms,
-            {
-              'sync_status':      LocalDatabase.syncSynced,
-              'local_updated_at': DateTime.now().toUtc().toIso8601String(),
-            },
-            where: 'id = ?',
-            whereArgs: [roomId],
-          );
-          debugPrint('✅ _pushPendingRoomCreates: synced $roomId');
-        } else if (response.statusCode == 401) {
-          debugPrint('🔐 _pushPendingRoomCreates: 401 — token expired');
-          await _tryRefreshToken();
-          return _PushResult(failed: failed);
-        } else if (response.statusCode == 409) {
-          await db.update(
-            LocalDatabase.tableLocalRooms,
-            {
-              'sync_status':      LocalDatabase.syncSynced,
-              'local_updated_at': DateTime.now().toUtc().toIso8601String(),
-            },
-            where: 'id = ?',
-            whereArgs: [roomId],
-          );
-          debugPrint('♻️ _pushPendingRoomCreates: $roomId already existed — marking synced');
-        } else {
-          failed++;
-          debugPrint(
-            '❌ _pushPendingRoomCreates: failed for $roomId — '
-            '${response.statusCode} ${response.body}',
-          );
-        }
-      } catch (e) {
-        if (isNetworkError(e)) {
-          debugPrint('🌐 _pushPendingRoomCreates: connection lost for $roomId — aborting ($e)');
-          return _PushResult(failed: failed, networkLost: true);
-        }
-        failed++;
-        debugPrint('❌ _pushPendingRoomCreates: exception for $roomId — $e');
+    } catch (e) {
+      if (isNetworkError(e)) {
+        debugPrint('🌐 _pushPendingRoomCreates: connection lost for $roomId — aborting ($e)');
+        return _ItemOutcome.lostConnection;
       }
+      debugPrint('❌ _pushPendingRoomCreates: exception for $roomId — $e');
+      return _ItemOutcome.fail;
     }
-
-    return _PushResult(failed: failed);
   }
 
   // ---------------------------------------------------------------------------
@@ -931,102 +1325,103 @@ class SyncService {
       debugPrint('📤 _pushPendingRoomUpdates: ${records.length} room(s) to push');
     }
 
-    int failed = 0;
+    return _runChunkedPush<Map<String, dynamic>>(
+      records,
+      (record) => _pushOneRoomUpdate(db, record),
+      logTag: '_pushPendingRoomUpdates',
+    );
+  }
 
-    for (final record in records) {
-      final roomId = record['id'] as String;
+  Future<_ItemOutcome> _pushOneRoomUpdate(
+    Database db,
+    Map<String, dynamic> record,
+  ) async {
+    final roomId = record['id'] as String;
 
-      if (!await _canReachBackend()) {
-        debugPrint('🌐 _pushPendingRoomUpdates: connectivity lost — aborting batch');
-        return _PushResult(failed: failed, networkLost: true);
-      }
+    try {
+      final payload = {
+        'roomNumber': record['room_number'],
+        'capacity':   record['capacity'],
+      };
 
-      try {
-        final payload = {
-          'roomNumber': record['room_number'],
-          'capacity':   record['capacity'],
-        };
-
-        final response = await http
-            .put(
-              Uri.parse('$_baseUrl/api/business/rooms/$roomId'),
-              headers: _headers,
-              body: jsonEncode(payload),
-            )
-            .timeout(
-              const Duration(seconds: 15),
-              onTimeout: () => throw TimeoutException(
-                'PUT rooms/$roomId timed out',
-              ),
-            );
-
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          // Also sync room_status via the dedicated status endpoint. Only
-          // mark the room synced when BOTH the main PUT and the status PUT
-          // succeed — otherwise the status change would be lost forever (e.g.
-          // a room left occupied on the cloud after an offline checkout).
-          var statusSynced = true;
-          try {
-            final statusPayload = {'roomStatus': record['room_status']};
-            final statusResponse = await http
-                .put(
-                  Uri.parse('$_baseUrl/api/business/rooms/$roomId/status'),
-                  headers: _headers,
-                  body: jsonEncode(statusPayload),
-                )
-                .timeout(
-                  const Duration(seconds: 15),
-                  onTimeout: () => throw TimeoutException(
-                    'PUT rooms/$roomId/status timed out',
-                  ),
-                );
-            statusSynced = statusResponse.statusCode >= 200 && statusResponse.statusCode < 300;
-            if (statusSynced) {
-              debugPrint('✅ _pushPendingRoomUpdates: synced room status for $roomId');
-            } else {
-              debugPrint('⚠️ _pushPendingRoomUpdates: room status sync failed for $roomId — ${statusResponse.statusCode}');
-            }
-          } catch (e) {
-            statusSynced = false;
-            debugPrint('⚠️ _pushPendingRoomUpdates: room status sync exception for $roomId — $e');
-          }
-
-          if (statusSynced) {
-            await db.update(
-              LocalDatabase.tableLocalRooms,
-              {
-                'sync_status':      LocalDatabase.syncSynced,
-                'local_updated_at': DateTime.now().toUtc().toIso8601String(),
-              },
-              where: 'id = ?',
-              whereArgs: [roomId],
-            );
-            debugPrint('✅ _pushPendingRoomUpdates: synced $roomId');
-          } else {
-            debugPrint('⚠️ _pushPendingRoomUpdates: keeping room $roomId pending — status sync failed');
-          }
-        } else if (response.statusCode == 401) {
-          debugPrint('🔐 _pushPendingRoomUpdates: 401 — token expired');
-          await _tryRefreshToken();
-          return _PushResult(failed: failed);
-        } else {
-          failed++;
-          debugPrint(
-            '❌ _pushPendingRoomUpdates: failed for $roomId — '
-            '${response.statusCode} ${response.body}',
+      final response = await _client
+          .put(
+            Uri.parse('$_baseUrl/api/business/rooms/$roomId'),
+            headers: _headers,
+            body: jsonEncode(payload),
+          )
+          .timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => throw TimeoutException(
+              'PUT rooms/$roomId timed out',
+            ),
           );
-        }
-      } catch (e) {
-        if (isNetworkError(e)) {
-          debugPrint('🌐 _pushPendingRoomUpdates: connection lost for $roomId — aborting ($e)');
-          return _PushResult(failed: failed, networkLost: true);
-        }
-        failed++;
-        debugPrint('❌ _pushPendingRoomUpdates: exception for $roomId — $e');
-      }
-    }
 
-    return _PushResult(failed: failed);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        // Also sync room_status via the dedicated status endpoint. Only
+        // mark the room synced when BOTH the main PUT and the status PUT
+        // succeed — otherwise the status change would be lost forever (e.g.
+        // a room left occupied on the cloud after an offline checkout).
+        var statusSynced = true;
+        try {
+          final statusPayload = {'roomStatus': record['room_status']};
+          final statusResponse = await _client
+              .put(
+                Uri.parse('$_baseUrl/api/business/rooms/$roomId/status'),
+                headers: _headers,
+                body: jsonEncode(statusPayload),
+              )
+              .timeout(
+                const Duration(seconds: 15),
+                onTimeout: () => throw TimeoutException(
+                  'PUT rooms/$roomId/status timed out',
+                ),
+              );
+          statusSynced = statusResponse.statusCode >= 200 && statusResponse.statusCode < 300;
+          if (statusSynced) {
+            debugPrint('✅ _pushPendingRoomUpdates: synced room status for $roomId');
+          } else {
+            debugPrint('⚠️ _pushPendingRoomUpdates: room status sync failed for $roomId — ${statusResponse.statusCode}');
+          }
+        } catch (e) {
+          statusSynced = false;
+          debugPrint('⚠️ _pushPendingRoomUpdates: room status sync exception for $roomId — $e');
+        }
+
+        if (statusSynced) {
+          await db.update(
+            LocalDatabase.tableLocalRooms,
+            {
+              'sync_status':      LocalDatabase.syncSynced,
+              'local_updated_at': DateTime.now().toUtc().toIso8601String(),
+            },
+            where: 'id = ?',
+            whereArgs: [roomId],
+          );
+          debugPrint('✅ _pushPendingRoomUpdates: synced $roomId');
+          return _ItemOutcome.success;
+        } else {
+          debugPrint('⚠️ _pushPendingRoomUpdates: keeping room $roomId pending — status sync failed');
+          return _ItemOutcome.fail;
+        }
+      } else if (response.statusCode == 401) {
+        debugPrint('🔐 _pushPendingRoomUpdates: 401 for $roomId — token expired');
+        return _ItemOutcome.expiredToken;
+      } else {
+        debugPrint(
+          '❌ _pushPendingRoomUpdates: failed for $roomId — '
+          '${response.statusCode} ${response.body}',
+        );
+        return _ItemOutcome.fail;
+      }
+    } catch (e) {
+      if (isNetworkError(e)) {
+        debugPrint('🌐 _pushPendingRoomUpdates: connection lost for $roomId — aborting ($e)');
+        return _ItemOutcome.lostConnection;
+      }
+      debugPrint('❌ _pushPendingRoomUpdates: exception for $roomId — $e');
+      return _ItemOutcome.fail;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1040,12 +1435,13 @@ class SyncService {
 
     final db = await LocalDatabase.instance.database;
 
-    final businesses = businessId != null
-        ? [{'id': businessId}]
-        : await db.query(
-            LocalDatabase.tableLocalBusinesses,
-            columns: ['id'],
-          );
+    final businesses = await _entitiesForSession(
+      db: db,
+      table: LocalDatabase.tableLocalBusinesses,
+      nameColumn: 'business_name',
+      explicitId: businessId,
+      resolveLabel: _businessLabel,
+    );
 
     // Determine if this should be a full sync or delta sync
     final needsFull = forceFullSync || await _needsFullSync();
@@ -1062,7 +1458,8 @@ class SyncService {
     final syncTimestamp = DateTime.now().toUtc().toIso8601String();
 
     for (final business in businesses) {
-      final businessId = business['id'] as String;
+      final businessId = business.id;
+      final label = business.label;
 
       try {
         // ── Build URL ───────────────────────────────────────────────────
@@ -1079,7 +1476,7 @@ class SyncService {
               '?businessId=$businessId'
               '&fetchAll=true'
               '&lastSync=$lastSync';
-          final response = await http.get(Uri.parse(url), headers: _headers);
+          final response = await _client.get(Uri.parse(url), headers: _headers);
           if (response.statusCode >= 200 && response.statusCode < 300) {
             final decoded = jsonDecode(response.body);
             final records = decoded is List<dynamic>
@@ -1091,6 +1488,11 @@ class SyncService {
                 allRemoteRecords.add(Map<String, dynamic>.from(r));
               }
             }
+          } else {
+            debugPrint(
+              '⚠️ _pullFromBackend: ${_serverErrorMessage(response)} — '
+              'delta batch failed to download for $label',
+            );
           }
         } else {
           // Full sync: fetch both active and archived (existing behavior)
@@ -1106,7 +1508,7 @@ class SyncService {
           ];
 
           for (final url in urls) {
-            final response = await http.get(Uri.parse(url), headers: _headers);
+            final response = await _client.get(Uri.parse(url), headers: _headers);
             if (response.statusCode >= 200 && response.statusCode < 300) {
               final decoded = jsonDecode(response.body);
               final records = decoded is List<dynamic>
@@ -1118,13 +1520,18 @@ class SyncService {
                   allRemoteRecords.add(Map<String, dynamic>.from(r));
                 }
               }
+            } else {
+              debugPrint(
+                '⚠️ _pullFromBackend: ${_serverErrorMessage(response)} — '
+                'full-sync batch failed to download for $label',
+              );
             }
           }
         }
 
         if (allRemoteRecords.isEmpty && lastSync != null) {
           // Delta sync with no changes — nothing to do
-          debugPrint('📥 _pullFromBackend: no changes for $businessId');
+          debugPrint('📥 _pullFromBackend: no changes for $label');
           continue;
         }
 
@@ -1140,131 +1547,177 @@ class SyncService {
           }
         }
 
-        // 1. Prune local synced records that no longer exist on the cloud
-        //    (only during full sync — delta sync only returns changed records
-        //     so we can't infer absence means deletion).
-        if (lastSync == null) {
-          final localSynced = await db.query(
-            LocalDatabase.tableGuestRecords,
-            columns: ['id', 'local_updated_at'],
-            where: 'business_id = ? AND sync_status = ?',
-            whereArgs: [businessId, LocalDatabase.syncSynced],
-          );
+        // Prune + write happen inside ONE transaction per business so SQLite
+        // commits the whole pull batch once instead of per-row (per-row
+        // autocommits each pay their own fsync). A mid-batch failure rolls
+        // back this business's pull atomically — no half-written state — and
+        // the outer catch below lets the loop continue to the next business.
+        await db.transaction((txn) async {
+          // 1. Prune local synced records that no longer exist on the cloud
+          //    (only during full sync — delta sync only returns changed records
+          //     so we can't infer absence means deletion).
+          if (lastSync == null) {
+            final localSynced = await txn.query(
+              LocalDatabase.tableGuestRecords,
+              columns: ['id', 'local_updated_at'],
+              where: 'business_id = ? AND sync_status = ?',
+              whereArgs: [businessId, LocalDatabase.syncSynced],
+            );
 
-          final now = DateTime.now().toUtc();
-          for (final local in localSynced) {
-            final id = local['id'] as String;
-            if (!remoteIds.contains(id)) {
-              final localUpdatedAtStr = local['local_updated_at'] as String?;
-              if (localUpdatedAtStr != null) {
-                final updatedAt = DateTime.tryParse(localUpdatedAtStr);
-                if (updatedAt != null &&
-                    now.difference(updatedAt).inSeconds < 60) {
-                  debugPrint('⏳ Skipping pruning for just-synced record $id (grace period)');
-                  continue;
+            final now = DateTime.now().toUtc();
+            for (final local in localSynced) {
+              final id = local['id'] as String;
+              if (!remoteIds.contains(id)) {
+                final localUpdatedAtStr = local['local_updated_at'] as String?;
+                if (localUpdatedAtStr != null) {
+                  final updatedAt = DateTime.tryParse(localUpdatedAtStr);
+                  if (updatedAt != null &&
+                      now.difference(updatedAt).inSeconds < 60) {
+                    debugPrint('⏳ Skipping pruning for just-synced record $id (grace period)');
+                    continue;
+                  }
                 }
-              }
 
-              debugPrint('🧹 _pullFromBackend: pruning local synced record $id (not found on cloud)');
-              await db.delete(
-                LocalDatabase.tableGuestRecords,
-                where: 'id = ?',
-                whereArgs: [id],
-              );
-              await db.delete(
-                LocalDatabase.tableGuestRecordRooms,
-                where: 'guest_record_id = ?',
-                whereArgs: [id],
-              );
+                debugPrint('🧹 _pullFromBackend: pruning local synced record $id (not found on cloud) for $label');
+                await txn.delete(
+                  LocalDatabase.tableGuestRecords,
+                  where: 'id = ?',
+                  whereArgs: [id],
+                );
+                await txn.delete(
+                  LocalDatabase.tableGuestRecordRooms,
+                  where: 'guest_record_id = ?',
+                  whereArgs: [id],
+                );
+                await txn.delete(
+                  LocalDatabase.tableGuestOriginBreakdowns,
+                  where: 'guest_record_id = ?',
+                  whereArgs: [id],
+                );
+              }
             }
           }
-        }
 
-        // 2. Insert / Update records from cloud (skip any with pending changes).
-        for (final remote in remoteRecords) {
-          final recordId = remote['id'] as String;
+          // 2. Insert / Update records from cloud (skip any with pending changes).
+          for (final remote in remoteRecords) {
+            final recordId = remote['id'] as String;
 
-          // If the server says this record is deleted, remove it locally.
-          if (remoteDeletedIds.contains(recordId)) {
-            debugPrint('🗑️ _pullFromBackend: deleting soft-deleted record $recordId');
-            await db.delete(
+            // If the server says this record is deleted, remove it locally.
+            if (remoteDeletedIds.contains(recordId)) {
+              debugPrint('🗑️ _pullFromBackend: deleting soft-deleted record $recordId for $label');
+              await txn.delete(
+                LocalDatabase.tableGuestRecords,
+                where: 'id = ?',
+                whereArgs: [recordId],
+              );
+              await txn.delete(
+                LocalDatabase.tableGuestRecordRooms,
+                where: 'guest_record_id = ?',
+                whereArgs: [recordId],
+              );
+              await txn.delete(
+                LocalDatabase.tableGuestOriginBreakdowns,
+                where: 'guest_record_id = ?',
+                whereArgs: [recordId],
+              );
+              continue;
+            }
+
+            final pending = await txn.query(
               LocalDatabase.tableGuestRecords,
-              where: 'id = ?',
-              whereArgs: [recordId],
+              where: 'id = ? AND sync_status != ?',
+              whereArgs: [recordId, LocalDatabase.syncSynced],
+              limit: 1,
             );
-            await db.delete(
+            if (pending.isNotEmpty) {
+              debugPrint('⏳ _pullFromBackend: skipping cloud record $recordId (has local pending changes) for $label');
+              continue;
+            }
+
+            // Upsert the guest record
+            await txn.insert(
+              LocalDatabase.tableGuestRecords,
+              _fromApiRecord(remote),
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+
+            // Replace room junction rows
+            await txn.delete(
               LocalDatabase.tableGuestRecordRooms,
               where: 'guest_record_id = ?',
               whereArgs: [recordId],
             );
-            continue;
-          }
 
-          final pending = await db.query(
-            LocalDatabase.tableGuestRecords,
-            where: 'id = ? AND sync_status != ?',
-            whereArgs: [recordId, LocalDatabase.syncSynced],
-            limit: 1,
-          );
-          if (pending.isNotEmpty) {
-            debugPrint('⏳ _pullFromBackend: skipping cloud record $recordId (has local pending changes)');
-            continue;
-          }
+            final rooms = remote['rooms'] as List<dynamic>? ?? [];
+            for (final r in rooms) {
+              final roomId = r['id'] as String;
+              await txn.rawInsert(
+                'INSERT OR IGNORE INTO ${LocalDatabase.tableLocalRooms} '
+                '(id, business_id, room_number, capacity, room_status, sync_status) '
+                'VALUES (?, ?, ?, ?, ?, ?)',
+                [
+                  roomId,
+                  businessId,
+                  r['roomNumber'] ?? r['room_number'] ?? roomId.substring(0, 8),
+                  r['capacity'] ?? 1,
+                  'vacant',
+                  LocalDatabase.syncSynced,
+                ],
+              );
+              await txn.insert(
+                LocalDatabase.tableGuestRecordRooms,
+                {
+                  'id':               _generateUuid(),
+                  'guest_record_id':  recordId,
+                  'room_id':          roomId,
+                  'status':           r['status'] ?? 'active',
+                  'deleted_at':       r['deletedAt'] ?? r['deleted_at'],
+                  'created_at':       r['created_at'] ?? r['createdAt'] ?? remote['created_at'],
+                  'updated_at':       r['updated_at'] ?? r['updatedAt'] ?? remote['updated_at'],
+                  'sync_status':      LocalDatabase.syncSynced,
+                  'local_updated_at': null,
+                },
+                conflictAlgorithm: ConflictAlgorithm.replace,
+              );
+            }
 
-          // Upsert the guest record
-          await db.insert(
-            LocalDatabase.tableGuestRecords,
-            _fromApiRecord(remote),
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
-
-          // Replace room junction rows
-          await db.delete(
-            LocalDatabase.tableGuestRecordRooms,
-            where: 'guest_record_id = ?',
-            whereArgs: [recordId],
-          );
-
-          final rooms = remote['rooms'] as List<dynamic>? ?? [];
-          for (final r in rooms) {
-            final roomId = r['id'] as String;
-            await db.rawInsert(
-              'INSERT OR IGNORE INTO ${LocalDatabase.tableLocalRooms} '
-              '(id, business_id, room_number, capacity, room_status, sync_status) '
-              'VALUES (?, ?, ?, ?, ?, ?)',
-              [
-                roomId,
-                businessId,
-                r['roomNumber'] ?? r['room_number'] ?? roomId.substring(0, 8),
-                r['capacity'] ?? 1,
-                'vacant',
-                LocalDatabase.syncSynced,
-              ],
+            // Replace origin breakdown rows
+            await txn.delete(
+              LocalDatabase.tableGuestOriginBreakdowns,
+              where: 'guest_record_id = ?',
+              whereArgs: [recordId],
             );
-            await db.insert(
-              LocalDatabase.tableGuestRecordRooms,
-              {
-                'id':               _generateUuid(),
-                'guest_record_id':  recordId,
-                'room_id':          roomId,
-                'status':           r['status'] ?? 'active',
-                'deleted_at':       r['deletedAt'] ?? r['deleted_at'],
-                'created_at':       r['created_at'] ?? r['createdAt'] ?? remote['created_at'],
-                'updated_at':       r['updated_at'] ?? r['updatedAt'] ?? remote['updated_at'],
-                'sync_status':      LocalDatabase.syncSynced,
-                'local_updated_at': null,
-              },
-              conflictAlgorithm: ConflictAlgorithm.replace,
-            );
-          }
-        }
 
-        debugPrint('✅ _pullFromBackend: processed ${remoteRecords.length} record(s) for $businessId');
+            final breakdowns = remote['guest_breakdowns'] as List<dynamic>? ?? [];
+            for (final b in breakdowns) {
+              await txn.insert(
+                LocalDatabase.tableGuestOriginBreakdowns,
+                {
+                  'id':                  _generateUuid(),
+                  'guest_record_id':     recordId,
+                  'country':             b['country'],
+                  'nationality':         b['nationality'],
+                  'is_overseas':         b['isOverseas'] == true ? 1 : 0,
+                  'province':            b['province'],
+                  'city_municipality':   b['cityMunicipality'],
+                  'male_count':          b['maleCount'] ?? 0,
+                  'female_count':        b['femaleCount'] ?? 0,
+                  'created_at':          b['created_at'] ?? remote['created_at'],
+                  'updated_at':          b['updated_at'] ?? remote['updated_at'],
+                  'deleted_at':          null,
+                },
+                conflictAlgorithm: ConflictAlgorithm.replace,
+              );
+            }
+          }
+        });
+
+        debugPrint('✅ _pullFromBackend: processed ${remoteRecords.length} record(s) for $label');
       } on SocketException catch (e) {
         debugPrint('🌐 _pullFromBackend: network lost — aborting ($e)');
         return;
       } catch (e) {
-        debugPrint('❌ _pullFromBackend: failed for business $businessId — $e');
+        debugPrint('❌ _pullFromBackend: failed for $label — $e');
       }
     }
 
@@ -1280,7 +1733,7 @@ class SyncService {
     if (!await _canReachBackend()) return;
 
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse('$_baseUrl/api/profile'),
         headers: _headers,
       );
@@ -1356,6 +1809,577 @@ class SyncService {
   }
 
   // ---------------------------------------------------------------------------
+  // ATTRACTION SYNC
+  // Mirrors the business flow but simpler: visit entries have no junction
+  // tables, and the backend always issues its own UUID on create — so a
+  // successful push remaps the local row's primary key from the response.
+  // ---------------------------------------------------------------------------
+
+  Future<void> _pullProfileAndAttraction() async {
+    if (!await _canReachBackend()) return;
+
+    try {
+      final response = await _client.get(
+        Uri.parse('$_baseUrl/api/profile'),
+        headers: _headers,
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        final user = decoded['user'];
+        final att = decoded['attraction'];
+
+        final db = await LocalDatabase.instance.database;
+
+        if (user != null) {
+          final profileData = {
+            'id': user['id'],
+            'username': user['username'],
+            'full_name': user['full_name'],
+            'email': user['email'],
+            'phone': user['phone'],
+            'role': user['role'],
+            'created_at': user['created_at'],
+            'updated_at': user['updated_at'],
+          };
+          final count = await db.update(
+            LocalDatabase.tableLocalProfiles,
+            profileData,
+            where: 'id = ?',
+            whereArgs: [user['id']],
+          );
+          if (count == 0) {
+            profileData['password_hash'] = 'sync_dummy_hash';
+            await db.insert(LocalDatabase.tableLocalProfiles, profileData);
+          }
+        }
+
+        if (att != null) {
+          final attType = att['attraction_type'];
+          final attData = {
+            'id': att['id'],
+            'profile_id': att['user_id'] ?? user?['id'],
+            'attraction_name': att['attraction_name'],
+            'attraction_type': attType is String
+                ? attType
+                : attType == null
+                    ? null
+                    : jsonEncode(attType),
+            'street': att['street'],
+            'barangay': att['barangay'],
+            'status': att['status'],
+            'created_at': att['created_at'],
+            'updated_at': att['updated_at'],
+          };
+          final count = await db.update(
+            LocalDatabase.tableLocalAttractions,
+            attData,
+            where: 'id = ?',
+            whereArgs: [att['id']],
+          );
+          if (count == 0) {
+            await db.insert(LocalDatabase.tableLocalAttractions, attData);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ _pullProfileAndAttraction failed: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // PUSH PENDING VISIT ENTRY CREATES
+  // POST /api/attraction/visit-entry/visit-entries — entries saved offline.
+  // ONE reachability check before the batch; inside the loop a dropped
+  // connection is detected via isNetworkError only (fast-sync requirement).
+  // ---------------------------------------------------------------------------
+  Future<_PushResult> _pushPendingVisitCreates() async {
+    if (!await _canReachBackend()) {
+      debugPrint('⏭ _pushPendingVisitCreates: skipped — Backend unreachable');
+      return const _PushResult();
+    }
+
+    final db = await LocalDatabase.instance.database;
+
+    final records = await db.query(
+      LocalDatabase.tableVisitEntries,
+      where: 'sync_status = ?',
+      whereArgs: [LocalDatabase.syncPendingCreate],
+    );
+
+    if (records.isNotEmpty) {
+      debugPrint(
+        '📤 _pushPendingVisitCreates: ${records.length} entry(ies) to push',
+      );
+    }
+
+    return _runChunkedPush<Map<String, dynamic>>(
+      records,
+      (record) => _pushOneVisitCreate(db, record),
+      logTag: '_pushPendingVisitCreates',
+    );
+  }
+
+  Future<_ItemOutcome> _pushOneVisitCreate(
+    Database db,
+    Map<String, dynamic> record,
+  ) async {
+    final recordId = record['id'] as String;
+
+    try {
+      final country = record['country'] as String?;
+      final storedForeign = record['is_foreign'];
+      // Read the persisted "Foreign tourist" flag; fall back to the
+      // country-derived heuristic for rows synced before the column existed.
+      final isForeign = storedForeign == 1 ||
+          storedForeign is bool && storedForeign ||
+          (country != null && country != 'Philippines');
+      final payload = <String, dynamic>{
+        'id':               recordId,
+        'attractionId':     record['attraction_id'],
+        'visitDate':        record['visit_date'],
+        'guestCount':       record['guest_count'],
+        'maleCount':        record['male_count'],
+        'femaleCount':      record['female_count'],
+        'isForeign':        isForeign,
+        'country':          country,
+        'province':         record['province'],
+        'cityMunicipality': record['city_municipality'],
+        // Preserve the original offline save time so created_at ordering
+        // survives the sync (backend stores it instead of sync-time NOW()).
+        if (record['created_at'] != null) 'createdAt': record['created_at'],
+      };
+
+      final response = await _client
+          .post(
+            Uri.parse('$_baseUrl/api/attraction/visit-entry/visit-entries'),
+            headers: _headers,
+            body: jsonEncode(payload),
+          )
+          .timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => throw TimeoutException(
+              'POST visit-entries/$recordId timed out',
+            ),
+          );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        // The backend ignores our client id and stores its own UUID —
+        // remap the local primary key so SQLite matches the cloud row.
+        String syncedId = recordId;
+        try {
+          final body = jsonDecode(response.body);
+          final serverId =
+              body is Map ? body['visitEntryId'] as String? : null;
+          if (serverId != null && serverId.isNotEmpty && serverId != recordId) {
+            await db.update(
+              LocalDatabase.tableVisitEntries,
+              {'id': serverId},
+              where: 'id = ?',
+              whereArgs: [recordId],
+            );
+            syncedId = serverId;
+          }
+        } catch (_) {}
+
+        await db.update(
+          LocalDatabase.tableVisitEntries,
+          {
+            'sync_status':      LocalDatabase.syncSynced,
+            'local_updated_at': DateTime.now().toUtc().toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [syncedId],
+        );
+        debugPrint('✅ _pushPendingVisitCreates: synced $recordId → $syncedId');
+        return _ItemOutcome.success;
+      } else if (response.statusCode == 401) {
+        debugPrint(
+          '🔐 _pushPendingVisitCreates: 401 for $recordId — token expired',
+        );
+        return _ItemOutcome.expiredToken;
+      } else if (response.statusCode == 409) {
+        // Defensive: the server generates its own ids so a clash should not
+        // happen; treat it like an already-landed create instead of failing.
+        await db.update(
+          LocalDatabase.tableVisitEntries,
+          {
+            'sync_status':      LocalDatabase.syncSynced,
+            'local_updated_at': DateTime.now().toUtc().toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [recordId],
+        );
+        debugPrint(
+          '♻️ _pushPendingVisitCreates: $recordId already existed on server — marking synced',
+        );
+        return _ItemOutcome.success;
+      } else {
+        debugPrint(
+          '❌ _pushPendingVisitCreates: failed for $recordId — '
+          '${response.statusCode} ${response.body}',
+        );
+        return _ItemOutcome.fail;
+      }
+    } catch (e) {
+      if (isNetworkError(e)) {
+        debugPrint(
+          '🌐 _pushPendingVisitCreates: connection lost mid-push for $recordId — aborting batch ($e)',
+        );
+        return _ItemOutcome.lostConnection;
+      }
+      debugPrint('❌ _pushPendingVisitCreates: exception for $recordId — $e');
+      return _ItemOutcome.fail;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // PULL VISIT ENTRIES FROM BACKEND
+  // Delta sync: requests only rows changed since the per-attraction lastSync
+  // watermark (one fetchAll=true request, including soft-deleted rows so local
+  // copies are pruned). A full paged pull happens when forced (connectivity
+  // re-acquire) or when the per-attraction 24h clock is due — which also prunes
+  // local rows that no longer exist on the cloud. Rows with local pending
+  // changes are never clobbered.
+  // ---------------------------------------------------------------------------
+  Future<void> _pullVisitEntriesFromBackend({
+    String? attractionId,
+    bool forceFullSync = false,
+  }) async {
+    if (!await _canReachBackend()) {
+      debugPrint('⏭ _pullVisitEntriesFromBackend: skipped — Backend unreachable');
+      return;
+    }
+
+    final db = await LocalDatabase.instance.database;
+
+    final attractions = await _entitiesForSession(
+      db: db,
+      table: LocalDatabase.tableLocalAttractions,
+      nameColumn: 'attraction_name',
+      explicitId: attractionId,
+      resolveLabel: _attractionLabel,
+    );
+
+    for (final attraction in attractions) {
+      final attId = attraction.id;
+      final label = attraction.label;
+
+      // Per-attraction bookkeeping: each attraction keeps its OWN 24h clock
+      // and delta watermark so syncing one never disturbs the other's.
+      final needsFull = forceFullSync || await _needsAttractionFullSync(attId);
+      final lastSync = needsFull
+          ? null
+          : await _getAttractionLastSyncTimestamp(attId);
+
+      // Captured BEFORE this attraction's requests so rows modified between
+      // request and response have updated_at > this watermark and are re-pulled
+      // next cycle — nothing can slip through the window.
+      final attSyncedAt = DateTime.now().toUtc().toIso8601String();
+
+      try {
+        if (lastSync != null) {
+          await _pullVisitEntriesDelta(db, attId, lastSync, attSyncedAt, label);
+        } else {
+          await _pullVisitEntriesFull(db, attId, needsFull, attSyncedAt, label);
+        }
+      } on SocketException catch (e) {
+        debugPrint(
+          '🌐 _pullVisitEntriesFromBackend: network lost — aborting ($e)',
+        );
+        return;
+      } catch (e) {
+        debugPrint('❌ _pullVisitEntriesFromBackend: failed for $label — $e');
+      }
+    }
+  }
+
+  /// Writes one remote visit entry into the local table, never clobbering a
+  /// row with local pending changes. Shared by the full and delta pull paths.
+  Future<void> _upsertVisitEntry(
+    DatabaseExecutor txn,
+    Map<String, dynamic> remote,
+    String attId,
+    String label,
+  ) async {
+    final entryId = remote['id'] as String?;
+    if (entryId == null || entryId.isEmpty) return;
+
+    // Skip entries that have local pending changes (saved offline).
+    final existing = await txn.query(
+      LocalDatabase.tableVisitEntries,
+      columns: ['sync_status'],
+      where: 'id = ?',
+      whereArgs: [entryId],
+      limit: 1,
+    );
+    if (existing.isNotEmpty) {
+      final localSync = existing.first['sync_status'] as String?;
+      if (localSync != null && localSync != LocalDatabase.syncSynced) {
+        debugPrint(
+          '⏳ _pullVisitEntriesFromBackend: skipping entry $entryId (local pending: $localSync) for $label',
+        );
+        return;
+      }
+    }
+
+    await txn.insert(
+      LocalDatabase.tableVisitEntries,
+      {
+        'id':                entryId,
+        'attraction_id': remote['attraction_id'] ?? remote['attractionId'] ?? attId,
+        'visit_date':        remote['visit_date'] ?? remote['visitDate'],
+        'guest_count':
+            (remote['guest_count'] as num?)?.toInt() ??
+            (remote['guestCount'] as num?)?.toInt() ??
+            0,
+        'male_count':
+            (remote['male_count'] as num?)?.toInt() ??
+            (remote['maleCount'] as num?)?.toInt(),
+        'female_count':
+            (remote['female_count'] as num?)?.toInt() ??
+            (remote['femaleCount'] as num?)?.toInt(),
+        'is_foreign':       _isForeignFromJson(remote),
+        'country':           remote['country'],
+        'province':          remote['province'],
+        'city_municipality': remote['city_municipality'] ?? remote['cityMunicipality'],
+        'nationality':       remote['nationality'],
+        'created_at':        remote['created_at'] ?? remote['createdAt'],
+        'updated_at':        remote['updated_at'] ?? remote['updatedAt'],
+        'sync_status':       LocalDatabase.syncSynced,
+        'local_updated_at':  null,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Full paged pull of one attraction's whole visit history. Keeps the
+  /// per-page chunked-transaction model: each 100-row page commits once
+  ///(bounded SQLite write lock) and a failed chunk is logged and skipped so it
+  /// can't stall a large pull. Prunes local rows absent from the cloud. The
+  /// watermark only advances on a fully-successful pull — any skipped chunk
+  /// leaves it behind so the next delta re-fetches what was missed.
+  Future<void> _pullVisitEntriesFull(
+    Database db,
+    String attId,
+    bool needsFull,
+    String attSyncedAt,
+    String label,
+  ) async {
+    var totalCount = 0;
+    var page = 1;
+    const pageSize = 100; // backend caps pageSize at 100
+    var received = 0;
+    var chunkFailed = false;
+
+    final remoteIds = <String>{};
+
+    while (true) {
+      final url = '$_baseUrl/api/attraction/visit-records'
+          '?page=$page&pageSize=$pageSize'
+          '&dateFrom=2000-01-01&dateTo=2099-12-31'
+          '&attractionId=$attId';
+      final response = await _client.get(Uri.parse(url), headers: _headers);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        debugPrint(
+          '⚠️ _pullVisitEntriesFromBackend: ${_serverErrorMessage(response)} — '
+          'full pull aborted for $label',
+        );
+        // Abort before pruning — an incomplete fetch must never look like
+        // "everything was deleted on the cloud".
+        return;
+      }
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) break;
+      totalCount = (decoded['totalCount'] as num?)?.toInt() ?? 0;
+      final rows = decoded['data'] as List? ?? [];
+      received += rows.length;
+
+      // Register every cloud id before writing so a failed chunk below
+      // can never cause pruning to delete a row that exists on the cloud.
+      for (final r in rows) {
+        final entryId = r['id'] as String?;
+        if (entryId != null && entryId.isNotEmpty) {
+          remoteIds.add(entryId);
+        }
+      }
+
+      // Chunked commit: one transaction per 100-row page bounds the
+      // SQLite write lock so in-app saves during sync are never blocked
+      // behind the whole visit history. A failed chunk is logged and
+      // skipped so it can't stall a large pull.
+      try {
+        await db.transaction((txn) async {
+          for (final r in rows) {
+            await _upsertVisitEntry(
+              txn,
+              Map<String, dynamic>.from(r as Map),
+              attId,
+              label,
+            );
+          }
+        });
+      } catch (e) {
+        chunkFailed = true;
+        debugPrint(
+          '⚠️ _pullVisitEntriesFromBackend: page $page chunk failed and '
+          'was skipped — continuing with the rest of the pull ($e)',
+        );
+      }
+
+      if (received >= totalCount || rows.isEmpty) break;
+      page++;
+    }
+
+    // Prune local synced rows absent from the cloud — full sync only
+    // (delta-style partial fetches can't infer deletion from absence).
+    if (needsFull) {
+      await db.transaction((txn) async {
+        final localSynced = await txn.query(
+          LocalDatabase.tableVisitEntries,
+          columns: ['id', 'local_updated_at'],
+          where: 'attraction_id = ? AND sync_status = ?',
+          whereArgs: [attId, LocalDatabase.syncSynced],
+        );
+
+        final now = DateTime.now().toUtc();
+        for (final local in localSynced) {
+          final id = local['id'] as String;
+          if (!remoteIds.contains(id)) {
+            final localUpdatedAtStr = local['local_updated_at'] as String?;
+            if (localUpdatedAtStr != null) {
+              final updatedAt = DateTime.tryParse(localUpdatedAtStr);
+              if (updatedAt != null &&
+                  now.difference(updatedAt).inSeconds < 60) {
+                debugPrint(
+                  '⏳ Skipping pruning for just-synced entry $id (grace period)',
+                );
+                continue;
+              }
+            }
+
+            debugPrint(
+              '🧹 _pullVisitEntriesFromBackend: pruning local entry $id (not found on cloud) for $label',
+            );
+            await txn.delete(
+              LocalDatabase.tableVisitEntries,
+              where: 'id = ?',
+              whereArgs: [id],
+            );
+          }
+        }
+      });
+    }
+
+    debugPrint(
+      '✅ _pullVisitEntriesFromBackend: full pull — processed $received entry(ies) for $label',
+    );
+
+    // Watermark only advances on a fully-successful pull.
+    if (chunkFailed) return;
+    await _setAttractionLastSyncTimestamp(attId, attSyncedAt);
+    if (needsFull) {
+      await _setAttractionLastFullSyncTimestamp(attId, attSyncedAt);
+      debugPrint('✅ _pullVisitEntriesFromBackend: full sync timestamp saved for $label');
+    }
+  }
+
+  /// Delta pull: one fetchAll=true request returns ONLY rows changed since the
+  /// stored per-attraction watermark (including soft-deleted rows so local
+  /// copies are pruned). No paging, no prune-by-absence (absence ≠ deletion in
+  /// a delta response). Writes are chunked at 500 rows so even a long offline
+  /// gap keeps the SQLite write lock bounded. The watermark only advances on a
+  /// fully-successful pull so a skipped chunk is re-fetched next delta.
+  Future<void> _pullVisitEntriesDelta(
+    Database db,
+    String attId,
+    String lastSync,
+    String attSyncedAt,
+    String label,
+  ) async {
+    final url = '$_baseUrl/api/attraction/visit-records'
+        '?fetchAll=true'
+        '&lastSync=$lastSync'
+        '&attractionId=$attId';
+    final response = await _client.get(Uri.parse(url), headers: _headers);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      debugPrint(
+        '⚠️ _pullVisitEntriesFromBackend: ${_serverErrorMessage(response)} — '
+        'delta pull aborted for $label',
+      );
+      return;
+    }
+
+    final decoded = jsonDecode(response.body);
+    final rows = decoded is List<dynamic>
+        ? decoded
+        : (decoded is Map ? (decoded['data'] as List? ?? []) : []);
+    final remoteRows = rows
+        .map<Map<String, dynamic>>((r) => Map<String, dynamic>.from(r as Map))
+        .toList();
+
+    if (remoteRows.isNotEmpty) {
+      debugPrint('📥 _pullVisitEntriesFromBackend: ${remoteRows.length} change(s) for $label');
+    }
+
+    // Soft-deleted rows in the delta tell the client to remove its copy.
+    final deletedIds = <String>{};
+    for (final r in remoteRows) {
+      if (r['isDeleted'] == true) {
+        final id = r['id'] as String?;
+        if (id != null && id.isNotEmpty) deletedIds.add(id);
+      }
+    }
+
+    // Chunked commit at 500 rows: bounds the SQLite write lock after a long
+    // offline stretch. A failed chunk is logged, skipped, and leaves the
+    // watermark un-advanced so it is re-fetched next cycle.
+    const chunkSize = 500;
+    var chunkFailed = false;
+    for (var start = 0; start < remoteRows.length; start += chunkSize) {
+      final end = start + chunkSize < remoteRows.length
+          ? start + chunkSize
+          : remoteRows.length;
+      try {
+        await db.transaction((txn) async {
+          for (var i = start; i < end; i++) {
+            final r = remoteRows[i];
+            final id = r['id'] as String?;
+            if (id == null || id.isEmpty) continue;
+            if (deletedIds.contains(id)) {
+              debugPrint('🗑️ _pullVisitEntriesFromBackend: deleting soft-deleted entry $id for $label');
+              await txn.delete(
+                LocalDatabase.tableVisitEntries,
+                where: 'id = ?',
+                whereArgs: [id],
+              );
+              continue;
+            }
+            await _upsertVisitEntry(txn, r, attId, label);
+          }
+        });
+      } catch (e) {
+        chunkFailed = true;
+        debugPrint(
+          '⚠️ _pullVisitEntriesFromBackend: delta chunk ${start ~/ chunkSize + 1} '
+          'failed and was skipped — continuing with the rest of the pull for $label ($e)',
+        );
+      }
+    }
+
+    debugPrint(
+      '✅ _pullVisitEntriesFromBackend: delta — applied ${remoteRows.length} change(s) for $label',
+    );
+
+    // Watermark only advances on a fully-successful delta pull.
+    if (chunkFailed) return;
+    await _setAttractionLastSyncTimestamp(attId, attSyncedAt);
+  }
+
+  // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
 
@@ -1377,16 +2401,8 @@ class SyncService {
     }
   }
 
-  Future<bool> _canReachBackend() async {
-    if (!ConnectivityService.instance.isOnline) return false;
-    try {
-      final response = await http
-          .get(Uri.parse('$_baseUrl/health'), headers: _headers)
-          .timeout(const Duration(seconds: 4));
-      return response.statusCode < 500;
-    } catch (_) {
-      return false;
-    }
+    Future<bool> _canReachBackend() async {
+    return ConnectivityService.instance.isOnline;
   }
 
   /// Marks a guest record's junction rows as synced after the record's own
@@ -1409,17 +2425,34 @@ class SyncService {
     if (kIsWeb) return 0;
 
     final db = await LocalDatabase.instance.database;
+    // Only guest records and visit entries are counted — rooms sync under the
+    // hood and must never drive the sync banner.
     final result = await db.rawQuery(
       '''
       SELECT COUNT(*) as count FROM (
         SELECT id FROM ${LocalDatabase.tableGuestRecords} WHERE sync_status != ?
         UNION ALL
-        SELECT id FROM ${LocalDatabase.tableLocalRooms} WHERE sync_status != ?
+        SELECT id FROM ${LocalDatabase.tableVisitEntries} WHERE sync_status != ?
       )
       ''',
-      [LocalDatabase.syncSynced, LocalDatabase.syncSynced],
+      [
+        LocalDatabase.syncSynced,
+        LocalDatabase.syncSynced,
+      ],
     );
     return (result.first['count'] as int?) ?? 0;
+  }
+
+  Future<bool> _hasPendingRooms() async {
+    if (kIsWeb) return false;
+
+    final db = await LocalDatabase.instance.database;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM ${LocalDatabase.tableLocalRooms} '
+      'WHERE sync_status != ?',
+      [LocalDatabase.syncSynced],
+    );
+    return ((result.first['count'] as int?) ?? 0) > 0;
   }
 
   void _emit(SyncState state) {
@@ -1477,9 +2510,76 @@ class SyncService {
     return DateTime.now().toUtc().difference(parsed) >= _fullSyncInterval;
   }
 
+  // Attraction-side counterparts — deliberately separate prefs keys so
+  // business and attraction delta bookkeeping never interfere. Each key is
+  // NAMESPACED per attraction so multi-attraction accounts keep independent
+  // watermarks: pulling attraction A must never advance the watermark that
+  // attraction B's next delta is computed against. New namespaced keys start
+  // null, so the first sync after this change self-seeds via a full pull.
+
+  /// Persists the attraction [lastSync] watermark for one attraction.
+  Future<void> _setAttractionLastSyncTimestamp(String attractionId, String isoTimestamp) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('${_prefKeyAttractionLastSync}_$attractionId', isoTimestamp);
+    } catch (_) {}
+  }
+
+  /// Returns the stored attraction [lastSync] watermark for one attraction.
+  Future<String?> _getAttractionLastSyncTimestamp(String attractionId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString('${_prefKeyAttractionLastSync}_$attractionId');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Returns the stored attraction [lastFullSync] watermark for one attraction.
+  Future<String?> _getAttractionLastFullSyncTimestamp(String attractionId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString('${_prefKeyAttractionLastFullSync}_$attractionId');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Persists the attraction [lastFullSync] watermark for one attraction.
+  Future<void> _setAttractionLastFullSyncTimestamp(String attractionId, String isoTimestamp) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('${_prefKeyAttractionLastFullSync}_$attractionId', isoTimestamp);
+    } catch (_) {}
+  }
+
+  /// Determines whether an attraction full pull is needed
+  /// (first ever sync or last full sync >24h ago). Per-attraction.
+  Future<bool> _needsAttractionFullSync(String attractionId) async {
+    final lastFullSync = await _getAttractionLastFullSyncTimestamp(attractionId);
+    if (lastFullSync == null) return true;
+    final parsed = DateTime.tryParse(lastFullSync);
+    if (parsed == null) return true;
+    return DateTime.now().toUtc().difference(parsed) >= _fullSyncInterval;
+  }
+
   // ---------------------------------------------------------------------------
   // Payload Mappers
   // ---------------------------------------------------------------------------
+
+  /// Mirrors [OriginGroup.isComplete] at the SQLite-row level: a breakdown row
+  /// must have at least one guest AND an origin (overseas flag or country).
+  /// Incomplete rows are excluded from sync payloads so the backend never
+  /// rejects a record with
+  /// "Each origin group must have at least one guest (maleCount + femaleCount >= 1)".
+  bool _originGroupRowIsComplete(Map<String, dynamic> g) {
+    final male = (g['male_count'] as num?)?.toInt() ?? 0;
+    final female = (g['female_count'] as num?)?.toInt() ?? 0;
+    final isOverseas = g['is_overseas'] == 1 || g['is_overseas'] == true;
+    final country = (g['country'] as String?)?.trim();
+    return male + female > 0 &&
+        (isOverseas || (country != null && country.isNotEmpty));
+  }
 
   /// Converts a SQLite row + its room IDs into the JSON body expected by
   /// both POST /api/business/guest-entries and PUT /api/business/guest-records/:id.
@@ -1487,6 +2587,7 @@ class SyncService {
     Map<String, dynamic> record,
     List<String> roomIds, {
     bool isCreate = false,
+    List<Map<String, dynamic>>? originGroups,
   }) {
     final actualCheckOut = record['actual_checkout'];
     final isCheckout = actualCheckOut != null &&
@@ -1516,6 +2617,17 @@ class SyncService {
     //   (e.g. PUT arrives before the offline create's POST was pushed)
     // - Checkout branch: ignores roomIds and works from existing junction rows
     payload['roomIds'] = roomIds;
+
+    if (originGroups != null && originGroups.isNotEmpty) {
+      payload['originGroups'] = originGroups.map((g) => {
+        'country':          g['country'],
+        'isOverseas':       g['is_overseas'] == 1,
+        'province':         g['province'],
+        'cityMunicipality': g['city_municipality'],
+        'maleCount':        g['male_count'],
+        'femaleCount':      g['female_count'],
+      }).toList();
+    }
 
     return payload;
   }

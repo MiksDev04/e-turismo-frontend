@@ -5,7 +5,7 @@ import '../../../core/constants/app_colors.dart';
 
 // ─── Models ───────────────────────────────────────────────────────────────────
 
-enum MessageTag { compliance, general, warning }
+enum MessageTag { compliance, announcement, warning }
 
 class ComplianceMessage {
   const ComplianceMessage({
@@ -34,7 +34,7 @@ const _sampleMessages = [
   ),
   ComplianceMessage(
     title: 'System Update: New Report Features',
-    tag: MessageTag.general,
+    tag: MessageTag.announcement,
     preview:
         'We have updated the tourism demographics system with new features '
         'including improved analytics, better report filtering, and enhanced data visualization tools. Check out the new dashboard for real-time insights.',
@@ -329,7 +329,7 @@ class _TagBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, color) = switch (tag) {
       MessageTag.compliance => ('compliance', AppColors.accentRed),
-      MessageTag.general => ('general', AppColors.primaryBlue),
+      MessageTag.announcement => ('announcement', AppColors.accentPurple),
       MessageTag.warning => ('warning', AppColors.accentOrange),
     };
 

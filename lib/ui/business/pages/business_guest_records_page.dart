@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/database/local_database.dart';
 import '../../../core/services/offline_service.dart';
+import '../../../core/widgets/app_toast.dart';
+import '../../../models/origin_group.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../shared/widgets/paginator.dart';
 import '../../shared/widgets/action_icon_button.dart';
@@ -20,10 +22,47 @@ String _roomsDisplay(GuestRecord r) => r.roomDetails.isNotEmpty
 
 String _dateOnly(String v) => v.length >= 10 ? v.substring(0, 10) : v;
 
+String _birthdateWithAge(String? birthdate) {
+  if (birthdate == null || birthdate.trim().isEmpty) return '-';
+  final b = DateTime.tryParse(birthdate);
+  if (b == null) return birthdate;
+  final now = DateTime.now();
+  var age = now.year - b.year;
+  if (now.month < b.month || (now.month == b.month && now.day < b.day)) age--;
+  if (age < 0) return birthdate;
+  return '$birthdate ($age yrs)';
+}
+
 String _actualCheckOutDate(GuestRecord r) {
   final v = r.actualCheckOut;
   if (v == null || v.isEmpty) return '—';
   return v.substring(0, 10);
+}
+
+DateTime? _parseCreatedAt(String? v) {
+  if (v == null || v.trim().isEmpty) return null;
+  final s = v.trim();
+  if (s.contains(' ')) {
+    final d = s.split(' ').first;
+    final parts = d.split('-');
+    if (parts.length == 3) {
+      return DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+    }
+  }
+  if (s.contains('T')) return DateTime.tryParse(s);
+  final parts = s.split('-');
+  if (parts.length == 3) {
+    return DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+  }
+  return DateTime.tryParse(s);
+}
+
+String buildGuestRecordCode(DateTime createdAt, String id) {
+  final yy = createdAt.year % 100;
+  final mm = createdAt.month.toString().padLeft(2, '0');
+  final dd = createdAt.day.toString().padLeft(2, '0');
+  final hex = id.replaceAll('-', '').substring(0, 4).toUpperCase();
+  return 'TR-${yy.toString().padLeft(2, '0')}$mm$dd-$hex';
 }
 
 // ─── Models ───────────────────────────────────────────────────────────────────
@@ -98,6 +137,7 @@ class GuestRecord {
     this.leadIsOverseas = false,
     this.leadBirthdate,
     this.leadSex,
+    this.originGroups = const [],
   });
 
   final String id;
@@ -122,6 +162,7 @@ class GuestRecord {
   final bool leadIsOverseas;
   final String? leadBirthdate;
   final String? leadSex;
+  final List<OriginGroup> originGroups;
 }
 
 // ─── Filter Options ───────────────────────────────────────────────────────────
@@ -160,12 +201,6 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
 
   DateTime? _checkInFrom;
   DateTime? _checkOutTo;
-  String? _selectedPurpose;
-
-  final List<String> _purposeOptions = [
-    'All', 'Leisure', 'Business', 'Education', 'Medical', 'Religious', 'Others',
-  ];
-
   static const List<int> _pageSizeOptions = [10, 20, 30];
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -254,7 +289,6 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       status: _activeFilter == _Filter.active ? 'active' : 'archived',
       checkInFrom: _checkInFrom?.toIso8601String().split('T').first,
       checkOutTo: _checkOutTo?.toIso8601String().split('T').first,
-      purpose: _selectedPurpose,
     );
     if (!mounted) return;
     if (result.isSuccess) {
@@ -338,6 +372,7 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       maleCount:              updated.maleCount,
       femaleCount:            updated.femaleCount,
       breakdowns:             updated.demographics?.breakdowns ?? [],
+      originGroups:           updated.originGroups,
       leadCountry:            updated.leadCountry,
       leadMunicipality:       updated.leadMunicipality,
       leadProvince:           updated.leadProvince,
@@ -352,7 +387,7 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
     if (result.isSuccess) {
       _loadRecords();
     } else {
-      _showSnack(result.error ?? 'Failed to update.', isError: true);
+      AppToast.warning(context, result.error ?? 'Update failed.');
     }
   }
 
@@ -537,6 +572,7 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       maleCount:              record.maleCount,
       femaleCount:            record.femaleCount,
       breakdowns:             record.demographics?.breakdowns ?? [],
+      originGroups:           record.originGroups,
       leadCountry:            record.leadCountry,
       leadMunicipality:       record.leadMunicipality,
       leadProvince:           record.leadProvince,
@@ -547,17 +583,12 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
       actualCheckOut:         actualCheckOut,
       status:                 'archived',
     );
-    if (updateResult.isSuccess) {
-      _showSnack(
-        allSuccess
-            ? 'Guest checked out successfully.'
-            : 'Guest checked out, but some rooms could not be marked vacant.',
-      );
+    if (updateResult.isSuccess && allSuccess) {
+      AppToast.success(context, 'Guest checked out.');
+    } else if (updateResult.isSuccess) {
+      AppToast.warning(context, 'Checked out, but some rooms stayed occupied.');
     } else {
-      _showSnack(
-        'Guest checked out but the check-out time was not recorded.',
-        isError: true,
-      );
+      AppToast.warning(context, 'Checked out, but check-out time not saved.');
     }
 
     // The junction rows were marked pending_update above so a failed cloud
@@ -583,23 +614,10 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
     _loadRecords();
   }
 
-  void _showSnack(String msg, {bool isError = false, Color? color}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: isError
-            ? AppColors.accentRed
-            : (color ?? AppColors.primaryCyan),
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
   void _clearAllFilters() {
     setState(() {
       _checkInFrom      = null;
       _checkOutTo       = null;
-      _selectedPurpose  = null;
       _currentPage      = 0;
     });
     _loadRecords();
@@ -651,14 +669,8 @@ class _BusinessGuestRecordsPageState extends State<BusinessGuestRecordsPage> {
                         _FiltersSection(
                           checkInFrom:       _checkInFrom,
                           checkOutTo:        _checkOutTo,
-                          selectedPurpose:   _selectedPurpose,
-                          purposeOptions:    _purposeOptions,
                           onCheckInFromTap:  () => _pickDate(context, true),
                           onCheckOutToTap:   () => _pickDate(context, false),
-                          onPurposeChanged:  (v) {
-                            setState(() => _selectedPurpose = v);
-                            _reload();
-                          },
                           onClearAll: _clearAllFilters,
                           isNarrow:   isNarrow,
                         ),
@@ -804,29 +816,22 @@ class _FiltersSection extends StatelessWidget {
   const _FiltersSection({
     required this.checkInFrom,
     required this.checkOutTo,
-    required this.selectedPurpose,
-    required this.purposeOptions,
     required this.onCheckInFromTap,
     required this.onCheckOutToTap,
-    required this.onPurposeChanged,
     required this.onClearAll,
     required this.isNarrow,
   });
 
   final DateTime? checkInFrom;
   final DateTime? checkOutTo;
-  final String? selectedPurpose;
-  final List<String> purposeOptions;
   final VoidCallback onCheckInFromTap;
   final VoidCallback onCheckOutToTap;
-  final ValueChanged<String?> onPurposeChanged;
   final VoidCallback onClearAll;
   final bool isNarrow;
 
   bool get _hasActiveFilters =>
       checkInFrom != null ||
-      checkOutTo != null ||
-      (selectedPurpose != null && selectedPurpose != 'All');
+      checkOutTo != null;
 
   @override
   Widget build(BuildContext context) {
@@ -853,14 +858,6 @@ class _FiltersSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          _DropFilter(
-            label: 'Purpose',
-            value: selectedPurpose,
-            items: purposeOptions,
-            onChanged: onPurposeChanged,
-            icon: Icons.work_outline,
-          ),
           if (_hasActiveFilters) ...[
             const SizedBox(height: 10),
             _ClearAllBtn(onTap: onClearAll),
@@ -885,16 +882,6 @@ class _FiltersSection extends StatelessWidget {
             label: 'Check-out To',
             date: checkOutTo,
             onTap: onCheckOutToTap,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _DropFilter(
-            label: 'Purpose',
-            value: selectedPurpose,
-            items: purposeOptions,
-            onChanged: onPurposeChanged,
-            icon: Icons.work_outline,
           ),
         ),
         if (_hasActiveFilters) ...[
@@ -968,89 +955,6 @@ class _DateFilter extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DropFilter extends StatelessWidget {
-  const _DropFilter({
-    required this.label,
-    required this.value,
-    required this.items,
-    required this.onChanged,
-    required this.icon,
-  });
-
-  final String label;
-  final String? value;
-  final List<String> items;
-  final ValueChanged<String?> onChanged;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.textGray,
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 7),
-          decoration: BoxDecoration(
-            color: AppColors.cardBackground,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.cardBorder),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: value,
-              isDense: true,
-              isExpanded: true,
-              hint: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Row(
-                  children: [
-                    Icon(icon, color: AppColors.textSubtle, size: 14),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'All',
-                      style: TextStyle(
-                        color: AppColors.textSubtle,
-                        fontSize: 12.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              dropdownColor: AppColors.cardBackground,
-              iconEnabledColor: AppColors.textGray,
-              style: const TextStyle(
-                color: AppColors.textWhite,
-                fontSize: 12.5,
-              ),
-              items: items
-                  .map(
-                    (e) => DropdownMenuItem(
-                      value: e,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        child: Text(e),
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged: onChanged,
             ),
           ),
         ),
@@ -1362,6 +1266,7 @@ class _TableHeader extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         children: [
+          const Expanded(flex: 2, child: _HeaderCell('Ref. ID')),
           const Expanded(flex: 3, child: _HeaderCell('Check-in')),
           Expanded(
             flex: 3,
@@ -1370,7 +1275,6 @@ class _TableHeader extends StatelessWidget {
           const Expanded(flex: 2, child: _HeaderCell('Nights')),
           const Expanded(flex: 1, child: _HeaderCell('Guests')),
           const Expanded(flex: 3, child: _HeaderCell('Room(s)')),
-          const Expanded(flex: 2, child: _HeaderCell('Purpose')),
           const Expanded(flex: 3, child: _HeaderCell('Actions')),
         ],
       ),
@@ -1412,6 +1316,21 @@ class _RecordRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       child: Row(
         children: [
+          Expanded(
+            flex: 2,
+            child: _parseCreatedAt(r.createdAt) != null
+                ? Text(
+                    buildGuestRecordCode(_parseCreatedAt(r.createdAt)!, r.id),
+                    style: const TextStyle(
+                      color: AppColors.primaryCyan,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'monospace',
+                      letterSpacing: 0.3,
+                    ),
+                  )
+                : const Text('-', style: TextStyle(color: AppColors.textGray, fontSize: 13)),
+          ),
           Expanded(
             flex: 3,
             child: Text(
@@ -1456,13 +1375,6 @@ class _RecordRow extends StatelessWidget {
             ),
           ),
           Expanded(
-            flex: 2,
-            child: Text(
-              r.purpose,
-              style: const TextStyle(color: AppColors.textGray, fontSize: 13),
-            ),
-          ),
-          Expanded(
             flex: 3,
             child: _ActionButtons(
               status: r.status,
@@ -1496,6 +1408,18 @@ class _RecordCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (_parseCreatedAt(r.createdAt) != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                buildGuestRecordCode(_parseCreatedAt(r.createdAt)!, r.id),
+                style: const TextStyle(
+                  color: AppColors.primaryCyan,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
           Row(
             children: [
               Expanded(
@@ -1521,6 +1445,8 @@ class _RecordCard extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
+              _GuestBadge(count: r.guests),
             ],
           ),
           const SizedBox(height: 8),
@@ -1528,9 +1454,7 @@ class _RecordCard extends StatelessWidget {
             spacing: 16,
             runSpacing: 4,
             children: [
-              _InfoChip(label: 'Guests', value: '${r.guests}'),
               _InfoChip(label: 'Room(s)', value: _roomsDisplay(r)),
-              _InfoChip(label: 'Purpose', value: r.purpose),
             ],
           ),
           const SizedBox(height: 10),
@@ -1592,6 +1516,42 @@ class _InfoChip extends StatelessWidget {
           TextSpan(
             text: value,
             style: const TextStyle(color: AppColors.textGray),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GuestBadge extends StatelessWidget {
+  const _GuestBadge({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.primaryCyan.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: AppColors.primaryCyan.withOpacity(0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.people_outline,
+            color: AppColors.primaryCyan,
+            size: 13,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '$count',
+            style: const TextStyle(
+              color: AppColors.primaryCyan,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -1784,6 +1744,28 @@ class _RecordDetailModal extends StatelessWidget {
                     const SizedBox(height: 12),
 
                     _LeadGuestDemoGrid(record: record),
+
+                    if (record.originGroups.isNotEmpty) ...[
+                      const SizedBox(height: 24),
+                      Container(
+                        width: double.infinity,
+                        height: 1,
+                        color: AppColors.cardBorder.withOpacity(0.6),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: AppColors.inputBackground,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.cardBorder.withOpacity(0.4)),
+                        ),
+                        child: const _ModalSectionLabel('Origin Groups'),
+                      ),
+                      const SizedBox(height: 12),
+                      _OriginGroupsDisplay(record: record),
+                    ],
                   ],
                 ),
               ),
@@ -1807,7 +1789,13 @@ class _StayInfoGrid extends StatelessWidget {
         ? '${record.rooms} (${record.roomDetails.map((r) => '${'Room '}${r.roomNumber}${r.status == 'completed' ? ' (used)' : ''}').join(', ')})'
         : '${record.rooms}';
 
+    final code = _parseCreatedAt(record.createdAt) != null
+        ? buildGuestRecordCode(_parseCreatedAt(record.createdAt)!, record.id)
+        : null;
+
     final items = [
+      if (code != null)
+        (Icons.tag, 'Reference Code', code),
       (Icons.login,                 'Check-in',          _dateOnly(record.checkIn)),
       (Icons.logout,                'Check-out (Planned)', _dateOnly(record.checkOut)),
       if (record.actualCheckOut != null)
@@ -1856,12 +1844,12 @@ class _LeadGuestDemoGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = [
       (Icons.person_outline,            'Sex',               record.leadSex ?? '-'),
-      (Icons.cake_outlined,             'Birthdate',         record.leadBirthdate ?? '-'),
+      (Icons.cake_outlined,             'Birthdate',         _birthdateWithAge(record.leadBirthdate)),
       (Icons.flag_outlined,             'Country',           record.leadCountry ?? '-'),
       (Icons.account_balance_outlined,  'Nationality',       record.leadNationality ?? '-'),
       (Icons.map_outlined,              'Province',          record.leadProvince ?? '-'),
       (Icons.location_city_outlined,    'City/Municipality', record.leadMunicipality ?? '-'),
-      (Icons.flight_outlined,           'Is Overseas',       record.leadIsOverseas ? 'Yes' : 'No'),
+      (Icons.flight_outlined,           'Overseas Filipino',       record.leadIsOverseas ? 'Yes' : 'No'),
     ];
 
     const spacing = 12.0;
@@ -1932,6 +1920,137 @@ class _DetailField extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
+      ],
+    );
+  }
+}
+
+// ─── Origin Groups Display ────────────────────────────────────────────────────
+
+class _OriginGroupsDisplay extends StatelessWidget {
+  const _OriginGroupsDisplay({required this.record});
+  final GuestRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = record.originGroups;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 500;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final g in groups) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.inputBackground,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.cardBorder.withOpacity(0.4)),
+                ),
+                child: isNarrow
+                    ? _buildGroupContent(g, true)
+                    : Row(
+                        children: [
+                          Expanded(flex: 3, child: _buildGroupContent(g, false)),
+                          const SizedBox(width: 12),
+                          _buildSexCounts(g),
+                        ],
+                      ),
+              ),
+              if (g != groups.last) const SizedBox(height: 8),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildGroupContent(OriginGroup g, bool stacked) {
+    final locationParts = <String>[];
+    if (g.isOverseas) {
+      locationParts.add('Overseas Filipino');
+    } else {
+      if (g.country != null) locationParts.add(g.country!);
+      if (g.province != null) locationParts.add(g.province!);
+      if (g.cityMunicipality != null) locationParts.add(g.cityMunicipality!);
+    }
+    final location = locationParts.join(', ');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            if (g.isOverseas)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'OFW/Balikbayan',
+                  style: TextStyle(color: Color(0xFFF59E0B), fontSize: 10, fontWeight: FontWeight.w600),
+                ),
+              )
+            else
+              Icon(Icons.public_outlined, color: AppColors.textSubtle, size: 13),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                location.isNotEmpty ? location : '—',
+                style: const TextStyle(color: AppColors.textWhite, fontSize: 12.5),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (g.nationality != null) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: (g.nationality == 'Filipino'
+                          ? AppColors.primaryCyan
+                          : AppColors.accentGreen)
+                      .withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(
+                  g.nationality!,
+                  style: TextStyle(
+                    color: g.nationality == 'Filipino'
+                        ? AppColors.primaryCyan
+                        : AppColors.accentGreen,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        if (stacked) ...[
+          const SizedBox(height: 6),
+          _buildSexCounts(g),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSexCounts(OriginGroup g) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.male_outlined, color: AppColors.textSubtle, size: 13),
+        const SizedBox(width: 3),
+        Text('${g.maleCount}', style: const TextStyle(color: AppColors.textWhite, fontSize: 12)),
+        const SizedBox(width: 10),
+        Icon(Icons.female_outlined, color: AppColors.textSubtle, size: 13),
+        const SizedBox(width: 3),
+        Text('${g.femaleCount}', style: const TextStyle(color: AppColors.textWhite, fontSize: 12)),
       ],
     );
   }

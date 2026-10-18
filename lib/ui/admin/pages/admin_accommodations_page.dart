@@ -8,10 +8,13 @@ import 'package:app/core/services/connectivity_service.dart';
 import 'package:app/core/utils/datetime_utils.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../core/services/accommodation_export_service.dart';
 import '../../shared/layouts/admin_layout.dart';
 import '../../shared/widgets/paginator.dart';
 import '../widgets/business_details_modal.dart';
+import '../widgets/status_change_dialog.dart';
+import '../models/activity_models.dart';
 import '../models/accommodation_models.dart';
 import '../../../api/messages_api.dart';
 import '../../../core/services/session_service.dart';
@@ -181,12 +184,7 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
       final rows = await _api.fetchExportRows();
       if (!mounted) return;
       if (rows.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No accommodation data to export.'),
-            backgroundColor: Color(0xFFFFA000),
-          ),
-        );
+        AppToast.warning(context, 'No data to export.');
         return;
       }
       if (excel) {
@@ -226,23 +224,14 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
     if (result.success) {
       await _sendDecisionLetter(item, newStatus, remarks: remarks);
       _loadAccommodations();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${item.name} has been ${newStatus.name}.'),
-          backgroundColor: newStatus == AccommodationStatus.approved
-              ? const Color(0xFF00C48C)
-              : const Color(0xFFFF4D6A),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      final msg = '${item.name} — ${newStatus.name}.';
+      if (newStatus == AccommodationStatus.approved) {
+        AppToast.success(context, msg);
+      } else {
+        AppToast.warning(context, msg);
+      }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.error ?? 'Something went wrong.'),
-          backgroundColor: const Color(0xFFFF4D6A),
-          duration: const Duration(seconds: 3),
-        ),
-      );
+      AppToast.warning(context, result.error ?? 'Status update failed.');
     }
   }
 
@@ -251,7 +240,8 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
     AccommodationStatus newStatus, {
     String? remarks,
   }) async {
-    if (newStatus != AccommodationStatus.approved) return;
+    if (newStatus != AccommodationStatus.approved &&
+        newStatus != AccommodationStatus.rejected) return;
 
     final senderId = _senderId;
     final senderName = _senderName;
@@ -262,24 +252,22 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
         senderName == null ||
         senderEmail == null ||
         senderPhone == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Accommodation was updated, but the decision letter could not be sent because the admin session is missing.',
-          ),
-          backgroundColor: Color(0xFFFFA000),
-          duration: Duration(seconds: 3),
-        ),
+      AppToast.warning(
+        context,
+        'Updated, but decision letter not sent — admin session missing.',
       );
       return;
     }
 
-    const subject = 'Accommodation Application Approved';
+    final isApproved = newStatus == AccommodationStatus.approved;
+    final subject =
+        isApproved ? 'Accommodation Application Approved' : 'Accommodation Application Rejected';
     final remarksText = remarks?.trim();
     final remarksSection =
         remarksText?.isNotEmpty == true ? '\n\nRemarks: $remarksText' : '';
-    final body =
-        'We\'re pleased to let you know your accommodation application has been approved.$remarksSection';
+    final body = isApproved
+        ? 'We\'re pleased to let you know your accommodation application has been approved.$remarksSection'
+        : 'We regret to inform you that your accommodation application has been rejected.$remarksSection';
     const messageType = MessageType.announcement;
 
     try {
@@ -291,6 +279,7 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
         senderEmail: senderEmail,
         senderPhone: senderPhone,
         messageType: messageType,
+        recipientKind: MessageRecipientKind.business,
       );
       await _messagesApi.sendToSelected(
         senderId: senderId,
@@ -302,15 +291,84 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
       unawaited(MessageBadgeController.instance.refresh());
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Accommodation was updated, but the decision letter failed to send: $e',
-          ),
-          backgroundColor: const Color(0xFFFFA000),
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      AppToast.warning(context, 'Updated, but decision letter failed: $e');
+    }
+  }
+
+  // ── Manage status (warning / revert to approved) ──────────────────────────
+
+  void _openStatusDialog(Accommodation item) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.7),
+      builder: (_) => StatusChangeDialog(
+        title: 'Manage Business Status',
+        entityName: item.name,
+        currentStatusLabel: switch (item.status) {
+          AccommodationStatus.approved => 'Approved',
+          AccommodationStatus.pending => 'Pending',
+          AccommodationStatus.rejected => 'Rejected',
+          AccommodationStatus.warning => 'Warning',
+        },
+        currentStatusColor: switch (item.status) {
+          AccommodationStatus.approved => AppColors.accentGreen,
+          AccommodationStatus.pending => AppColors.accentPurple,
+          AccommodationStatus.rejected => AppColors.accentRed,
+          AccommodationStatus.warning => AppColors.accentOrange,
+        },
+        currentStatusIcon: switch (item.status) {
+          AccommodationStatus.approved => Icons.verified_outlined,
+          AccommodationStatus.pending => Icons.schedule_rounded,
+          AccommodationStatus.rejected => Icons.cancel_outlined,
+          AccommodationStatus.warning => Icons.warning_amber_rounded,
+        },
+        canSetWarning: item.status == AccommodationStatus.approved &&
+            (item.activityStatus == ActivityStatus.inactive ||
+                item.activityStatus == ActivityStatus.noActivity),
+        canSetApproved: item.status == AccommodationStatus.warning,
+        onConfirm: (newStatus, reason) =>
+            _handleStatusChange(item, newStatus, reason),
+      ),
+    );
+  }
+
+  Future<void> _handleStatusChange(
+    Accommodation item,
+    String newStatus,
+    String reason,
+  ) async {
+    final session = SessionService.instance.current;
+    final messageContent = buildOfficialMessageLetter(
+      recipient: item.name,
+      subject: 'Business Status Update',
+      messageContent: reason,
+      senderFullName: session?.fullName ?? 'Tourism Officer',
+      senderEmail: session?.email ?? '',
+      senderPhone: session?.phone ?? '',
+      messageType: MessageType.compliance,
+      recipientKind: MessageRecipientKind.business,
+    );
+    final result = await _api.updateStatus(
+      item.id,
+      newStatus,
+      reason: reason,
+      messageContent: messageContent,
+    );
+    if (!mounted) return;
+
+    if (result.success) {
+      unawaited(MessageBadgeController.instance.refresh());
+      _loadAccommodations();
+      final msg = newStatus == 'warning'
+          ? '${item.name} has been flagged with a warning.'
+          : '${item.name} has been restored to approved.';
+      if (newStatus == 'warning') {
+        AppToast.warning(context, msg);
+      } else {
+        AppToast.success(context, msg);
+      }
+    } else {
+      AppToast.warning(context, result.error ?? 'Status update failed.');
     }
   }
 
@@ -416,11 +474,13 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
                           _AccommodationCardList(
                             rows: _accommodations,
                             onStatusUpdate: _updateStatus,
+                            onManage: _openStatusDialog,
                           )
                         else
                           _AccommodationTable(
                             rows: _accommodations,
                             onStatusUpdate: _updateStatus,
+                            onManage: _openStatusDialog,
                           ),
                         if (!_isLoading) ...[
                           const SizedBox(height: 12),
@@ -1263,35 +1323,16 @@ class _RankingCard extends StatelessWidget {
   final AccommodationRankingRow row;
   final int maxGuests;
 
-  static const _medals = ['🥇', '🥈', '🥉'];
-
-  Color get _rankColor {
-    switch (row.rank) {
-      case 1:
-        return const Color(0xFFFFD700);
-      case 2:
-        return const Color(0xFFC0C0C0);
-      case 3:
-        return const Color(0xFFCD7F32);
-      default:
-        return AppColors.textGray;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final isTop3 = row.rank <= 3;
-    final rankColor = _rankColor;
     final progress = maxGuests > 0 ? row.totalGuests / maxGuests : 0.0;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: isTop3 ? rankColor.withOpacity(0.06) : AppColors.cardBackground,
+        color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isTop3 ? rankColor.withOpacity(0.28) : AppColors.cardBorder,
-        ),
+        border: Border.all(color: AppColors.cardBorder),
       ),
       child: Row(
         children: [
@@ -1299,29 +1340,24 @@ class _RankingCard extends StatelessWidget {
           SizedBox(
             width: 48,
             child: Center(
-              child: isTop3
-                  ? Text(
-                      _medals[row.rank - 1],
-                      style: const TextStyle(fontSize: 28),
-                    )
-                  : Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: AppColors.cardBorder.withOpacity(0.5),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          '${row.rank}',
-                          style: const TextStyle(
-                            color: AppColors.textGray,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: AppColors.cardBorder.withOpacity(0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    '${row.rank}',
+                    style: const TextStyle(
+                      color: AppColors.textGray,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
+                  ),
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -1332,10 +1368,10 @@ class _RankingCard extends StatelessWidget {
               children: [
                 Text(
                   row.businessName,
-                  style: TextStyle(
-                    color: isTop3 ? AppColors.textWhite : AppColors.textGray,
-                    fontSize: isTop3 ? 14.5 : 14,
-                    fontWeight: isTop3 ? FontWeight.w600 : FontWeight.w500,
+                  style: const TextStyle(
+                    color: AppColors.textGray,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1345,10 +1381,8 @@ class _RankingCard extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: progress,
                     backgroundColor: AppColors.cardBorder.withOpacity(0.3),
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      isTop3
-                          ? rankColor.withOpacity(0.65)
-                          : AppColors.primaryCyan.withOpacity(0.35),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      AppColors.primaryCyan,
                     ),
                     minHeight: 4,
                   ),
@@ -1363,8 +1397,8 @@ class _RankingCard extends StatelessWidget {
             children: [
               Text(
                 _commify(row.totalGuests),
-                style: TextStyle(
-                  color: isTop3 ? rankColor : AppColors.textWhite,
+                style: const TextStyle(
+                  color: AppColors.textWhite,
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
                   height: 1,
@@ -1565,11 +1599,16 @@ class _SearchBar extends StatelessWidget {
 // ─── Accommodation Table (wide screens) ──────────────────────────────────────
 
 class _AccommodationTable extends StatelessWidget {
-  const _AccommodationTable({required this.rows, required this.onStatusUpdate});
+  const _AccommodationTable({
+    required this.rows,
+    required this.onStatusUpdate,
+    required this.onManage,
+  });
 
   final List<Accommodation> rows;
   final Function(Accommodation, AccommodationStatus, {String? remarks})
   onStatusUpdate;
+  final ValueChanged<Accommodation> onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -1598,8 +1637,11 @@ class _AccommodationTable extends StatelessWidget {
               itemCount: rows.length,
               separatorBuilder: (_, __) =>
                   const Divider(color: AppColors.cardBorder, height: 1),
-              itemBuilder: (_, i) =>
-                  _TableRow(item: rows[i], onStatusUpdate: onStatusUpdate),
+              itemBuilder: (_, i) => _TableRow(
+                item: rows[i],
+                onStatusUpdate: onStatusUpdate,
+                onManage: onManage,
+              ),
             ),
         ],
       ),
@@ -1619,13 +1661,6 @@ class _TableHeader extends StatelessWidget {
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
               child: _HeaderCell('Business Name'),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8),
-              child: _HeaderCell('Type'),
             ),
           ),
           Expanded(
@@ -1654,6 +1689,13 @@ class _TableHeader extends StatelessWidget {
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
               child: _HeaderCell('Rooms'),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: _HeaderCell('Last Activity'),
             ),
           ),
           Expanded(
@@ -1694,11 +1736,16 @@ class _HeaderCell extends StatelessWidget {
 }
 
 class _TableRow extends StatelessWidget {
-  const _TableRow({required this.item, required this.onStatusUpdate});
+  const _TableRow({
+    required this.item,
+    required this.onStatusUpdate,
+    required this.onManage,
+  });
 
   final Accommodation item;
   final Function(Accommodation, AccommodationStatus, {String? remarks})
   onStatusUpdate;
+  final ValueChanged<Accommodation> onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -1741,17 +1788,6 @@ class _TableRow extends StatelessWidget {
                     ),
                   ),
                 ],
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                item.businessType.label,
-                style: const TextStyle(color: AppColors.textGray, fontSize: 13),
-                overflow: TextOverflow.ellipsis,
               ),
             ),
           ),
@@ -1803,6 +1839,19 @@ class _TableRow extends StatelessWidget {
             flex: 2,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                item.status == AccommodationStatus.pending
+                    ? '—'
+                    : formatRelativeDate(item.lastActivity),
+                style: const TextStyle(color: AppColors.textGray, fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: _StatusBadge(status: item.status),
@@ -1818,6 +1867,7 @@ class _TableRow extends StatelessWidget {
                 child: _ActionButtons(
                   item: item,
                   onStatusUpdate: onStatusUpdate,
+                  onManage: onManage,
                 ),
               ),
             ),
@@ -1834,11 +1884,13 @@ class _AccommodationCardList extends StatelessWidget {
   const _AccommodationCardList({
     required this.rows,
     required this.onStatusUpdate,
+    required this.onManage,
   });
 
   final List<Accommodation> rows;
   final Function(Accommodation, AccommodationStatus, {String? remarks})
   onStatusUpdate;
+  final ValueChanged<Accommodation> onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -1855,18 +1907,26 @@ class _AccommodationCardList extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       itemCount: rows.length,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (_, i) =>
-          _AccommodationCard(item: rows[i], onStatusUpdate: onStatusUpdate),
+      itemBuilder: (_, i) => _AccommodationCard(
+        item: rows[i],
+        onStatusUpdate: onStatusUpdate,
+        onManage: onManage,
+      ),
     );
   }
 }
 
 class _AccommodationCard extends StatelessWidget {
-  const _AccommodationCard({required this.item, required this.onStatusUpdate});
+  const _AccommodationCard({
+    required this.item,
+    required this.onStatusUpdate,
+    required this.onManage,
+  });
 
   final Accommodation item;
   final Function(Accommodation, AccommodationStatus, {String? remarks})
   onStatusUpdate;
+  final ValueChanged<Accommodation> onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -1915,8 +1975,6 @@ class _AccommodationCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          _CardDetail(label: 'Type', value: item.businessType.label),
-          const SizedBox(height: 6),
           _CardDetail(label: 'Business Line', value: item.businessLineLabel),
           const SizedBox(height: 6),
           _CardDetail(label: 'Owner', value: item.owner),
@@ -1924,8 +1982,19 @@ class _AccommodationCard extends StatelessWidget {
           _CardDetail(label: 'Contact', value: item.contact),
           const SizedBox(height: 6),
           _CardDetail(label: 'Rooms', value: '${item.rooms}'),
+          const SizedBox(height: 6),
+          _CardDetail(
+            label: 'Last Activity',
+            value: item.status == AccommodationStatus.pending
+                ? '—'
+                : formatRelativeDate(item.lastActivity),
+          ),
           const SizedBox(height: 12),
-          _ActionButtons(item: item, onStatusUpdate: onStatusUpdate),
+          _ActionButtons(
+            item: item,
+            onStatusUpdate: onStatusUpdate,
+            onManage: onManage,
+          ),
         ],
       ),
     );
@@ -2042,11 +2111,16 @@ String _formatRegisteredDate(String? rawValue) {
 // ─── Action Buttons ───────────────────────────────────────────────────────────
 
 class _ActionButtons extends StatelessWidget {
-  const _ActionButtons({required this.item, required this.onStatusUpdate});
+  const _ActionButtons({
+    required this.item,
+    required this.onStatusUpdate,
+    required this.onManage,
+  });
 
   final Accommodation item;
   final Function(Accommodation, AccommodationStatus, {String? remarks})
   onStatusUpdate;
+  final ValueChanged<Accommodation> onManage;
 
   Future<void> _showRemarksModal(
     BuildContext context, {
@@ -2297,6 +2371,13 @@ class _ActionButtons extends StatelessWidget {
             ),
           ),
         ],
+        _ActionButton(
+          icon: Icons.manage_accounts_rounded,
+          tooltip: 'Manage Status',
+          color: AppColors.accentOrange,
+          label: 'Manage',
+          onTap: () => onManage(item),
+        ),
       ],
     );
   }

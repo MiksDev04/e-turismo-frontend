@@ -1,6 +1,7 @@
 // ignore_for_file: inference_failure_on_function_invocation
 
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'base_api.dart';
 import '../core/utils/datetime_utils.dart';
 
@@ -10,14 +11,63 @@ class AdminDashboardStats {
   const AdminDashboardStats({
     required this.activeAccommodations,
     required this.touristsThisPeriod,
-    required this.pendingRegistrations,
+    required this.pendingAccommodations,
+    required this.activeAttractions,
+    required this.pendingAttractions,
     required this.touristsThisYear,
   });
 
   final int activeAccommodations;
   final int touristsThisPeriod;
-  final int pendingRegistrations;
+  final int pendingAccommodations;
+  final int activeAttractions;
+  final int pendingAttractions;
   final int touristsThisYear;
+}
+
+/// Per-type pending registration counts used by the admin navigation badges.
+class PendingCounts {
+  const PendingCounts({
+    required this.pendingAccommodations,
+    required this.pendingAttractions,
+  });
+
+  final int pendingAccommodations;
+  final int pendingAttractions;
+
+  const PendingCounts.empty()
+      : pendingAccommodations = 0,
+        pendingAttractions = 0;
+
+  factory PendingCounts.fromJson(Map<String, dynamic> json) => PendingCounts(
+    pendingAccommodations: (json['pendingAccommodations'] as num?)?.toInt() ?? 0,
+    pendingAttractions: (json['pendingAttractions'] as num?)?.toInt() ?? 0,
+  );
+}
+
+/// Shared pending-count cache for the admin sidebar / bottom nav badges.
+class PendingBadgeController {
+  PendingBadgeController._();
+
+  static final PendingBadgeController instance = PendingBadgeController._();
+
+  final ValueNotifier<PendingCounts> counts = ValueNotifier<PendingCounts>(
+    const PendingCounts.empty(),
+  );
+  bool _isRefreshing = false;
+
+  Future<void> refresh() async {
+    if (_isRefreshing) return;
+    _isRefreshing = true;
+    try {
+      final data = await AdminDashboardApi().fetchPendingCounts();
+      counts.value = data;
+    } catch (_) {
+      counts.value = const PendingCounts.empty();
+    } finally {
+      _isRefreshing = false;
+    }
+  }
 }
 
 typedef DashboardStats = AdminDashboardStats;
@@ -36,14 +86,15 @@ class GenderDistribution {
   int get total => male + female + other;
   double get maleRatio => total == 0 ? 0 : male / total;
   double get femaleRatio => total == 0 ? 0 : female / total;
+  double get otherRatio => total == 0 ? 0 : other / total;
 }
 
 typedef SexDistribution = GenderDistribution;
 
-class AgeGroupCount {
-  const AgeGroupCount({required this.ageGroup, required this.count});
+class CityMunicipalityCount {
+  const CityMunicipalityCount({required this.cityMunicipality, required this.count});
 
-  final String ageGroup;
+  final String cityMunicipality;
   final int count;
 }
 
@@ -70,10 +121,10 @@ class AccommodationTypeCount {
   final int count;
 }
 
-class PurposeCount {
-  const PurposeCount({required this.purpose, required this.count});
+class AttractionCount {
+  const AttractionCount({required this.type, required this.count});
 
-  final String purpose;
+  final String type;
   final int count;
 }
 
@@ -93,22 +144,22 @@ class AdminDashboardData {
   const AdminDashboardData({
     required this.stats,
     required this.genderDistribution,
-    required this.ageGroups,
+    required this.cityMunicipalities,
     required this.topNationalities,
     required this.provinces,
     required this.compliance,
     required this.accommodationTypes,
-    required this.purposeOfVisit,
+    required this.attractions,
   });
 
   final AdminDashboardStats stats;
   final GenderDistribution genderDistribution;
-  final List<AgeGroupCount> ageGroups;
+  final List<CityMunicipalityCount> cityMunicipalities;
   final List<NationalityCount> topNationalities;
   final List<ProvinceCount> provinces;
   final ComplianceData compliance;
   final List<AccommodationTypeCount> accommodationTypes;
-  final List<PurposeCount> purposeOfVisit;
+  final List<AttractionCount> attractions;
 }
 
 typedef DashboardData = AdminDashboardData;
@@ -180,6 +231,17 @@ class AdminDashboardApi extends BaseApi {
     return List<Map<String, dynamic>>.from(data as List);
   }
 
+  Future<List<Map<String, dynamic>>> _fetchAttractionVisitLogs({
+    required String startDate,
+    required String endDate,
+  }) async {
+    final response = await get(
+      '/api/dashboard/attraction-visit-logs?startDate=$startDate&endDate=$endDate',
+    );
+    final data = handleResponse(response);
+    return List<Map<String, dynamic>>.from(data as List? ?? []);
+  }
+
   Future<List<Map<String, dynamic>>> _fetchBreakdowns(
     List<String> recordIds,
   ) async {
@@ -196,8 +258,14 @@ class AdminDashboardApi extends BaseApi {
     final data = handleResponse(response);
     return {
       'active': (data['activeAccommodations'] as num).toInt(),
-      'pending': (data['pendingRegistrations'] as num).toInt(),
+      'pending': (data['pendingAccommodations'] as num).toInt(),
     };
+  }
+
+  Future<PendingCounts> fetchPendingCounts() async {
+    final response = await get('/api/dashboard/pending-counts');
+    final data = handleResponse(response);
+    return PendingCounts.fromJson(data as Map<String, dynamic>);
   }
 
   List<String> _extractBusinessLines(Object? value) {
@@ -218,6 +286,52 @@ class AdminDashboardApi extends BaseApi {
     }
 
     return raw.map((e) => (e?.toString() ?? '').trim()).where((e) => e.isNotEmpty).map(_toTitleCase).toList();
+  }
+
+  List<String> _extractAttractionTypes(Object? value) {
+    if (value == null) return const [];
+
+    List<dynamic> raw = [];
+    if (value is List) {
+      raw = value;
+    } else if (value is String) {
+      if (value.startsWith('[')) {
+        try {
+          final decoded = jsonDecode(value);
+          if (decoded is List) raw = decoded;
+        } catch (_) {}
+      } else {
+        raw = [value];
+      }
+    }
+
+    return raw
+        .map((e) => (e?.toString() ?? '').trim())
+        .where((e) => e.isNotEmpty)
+        .map(_attractionTypeLabel)
+        .toSet()
+        .toList();
+  }
+
+  String _attractionTypeLabel(String s) {
+    switch (s) {
+      case 'natural_attractions':
+        return 'Natural Attractions';
+      case 'cultural':
+        return 'Cultural';
+      case 'religious':
+        return 'Religious';
+      case 'historical_heritage_sites':
+        return 'Historical Heritage Sites';
+      case 'agri_tourism':
+        return 'Agri-Tourism';
+      case 'farm_tourism_sites':
+        return 'Farm Tourism Sites';
+      case 'ecotourism':
+        return 'Ecotourism';
+      default:
+        return _toTitleCase(s);
+    }
   }
 
   Future<List<AccommodationTypeCount>> _fetchAccommodationTypes(
@@ -279,6 +393,11 @@ class AdminDashboardApi extends BaseApi {
     final yearRecords =
         List<Map<String, dynamic>>.from(data['yearRecords'] as List);
 
+    final attractionVisitLogs =
+        List<Map<String, dynamic>>.from(data['attractionVisitLogs'] as List? ?? []);
+    final yearAttractionVisitLogs =
+        List<Map<String, dynamic>>.from(data['yearAttractionVisitLogs'] as List? ?? []);
+
     final periodStart = parseDbDateTime(start);
     final periodEnd = parseDbDateTime(end);
     final yearStartDt = parseDbDateTime(yearStart);
@@ -288,26 +407,34 @@ class AdminDashboardApi extends BaseApi {
     for (final r in periodRecords) {
       touristsThisPeriod += _recordGuestDays(r, periodStart, periodEnd);
     }
+    for (final log in attractionVisitLogs) {
+      touristsThisPeriod += (log['guest_count'] as num?)?.toInt() ?? 0;
+    }
     int touristsThisYear = 0;
     for (final r in yearRecords) {
       touristsThisYear += _recordGuestDays(r, yearStartDt, yearEndDt);
     }
+    for (final log in yearAttractionVisitLogs) {
+      touristsThisYear += (log['guest_count'] as num?)?.toInt() ?? 0;
+    }
 
     final stats = data['stats'] as Map<String, dynamic>;
     final activeAccommodations = (stats['activeAccommodations'] as num).toInt();
-    final pendingRegistrations = (stats['pendingRegistrations'] as num).toInt();
+    final pendingAccommodations =
+        (stats['pendingAccommodations'] as num?)?.toInt() ?? 0;
+    final activeAttractions = (stats['activeAttractions'] as num).toInt();
+    final pendingAttractions =
+        (stats['pendingAttractions'] as num?)?.toInt() ?? 0;
 
     final breakdowns =
         List<Map<String, dynamic>>.from(data['breakdowns'] as List);
 
     // Build per-record guest-days map for the period
     final recordGuestDays = <String, int>{};
-    final recordTotalGuests = <String, int>{};
     for (final r in periodRecords) {
       final id = r['id']?.toString();
       if (id != null) {
         recordGuestDays[id] = _recordGuestDays(r, periodStart, periodEnd);
-        recordTotalGuests[id] = (r['total_guests'] as num?)?.toInt() ?? 0;
       }
     }
 
@@ -337,33 +464,44 @@ class AdminDashboardApi extends BaseApi {
       if (unaccounted > 0) other += unaccounted * days;
     }
 
-    final ageGroupMap = <String, int>{};
-    for (final breakdown in breakdowns) {
-      final ageGroup = (breakdown['age_group'] as String? ?? '').trim();
-      if (ageGroup.isEmpty) continue;
-      final label = _toTitleCase(ageGroup);
-      // Age is known only for the lead guest (1 person per record), weighted by
-      // the days they spent inside the period.
-      final recordId = breakdown['guest_record_id']?.toString() ?? '';
-      final guestDays = recordGuestDays[recordId] ?? 1;
-      final totalGuests = recordTotalGuests[recordId] ?? 0;
-      final days = totalGuests > 0 ? guestDays ~/ totalGuests : 1;
-      ageGroupMap[label] = (ageGroupMap[label] ?? 0) + days;
+    // Attraction visit logs: each log is a single-day visit, so guest_count,
+    // male_count and female_count contribute directly (no day weighting).
+    // Gender is optional: a headcount-only log with no recorded male/female
+    // counts contributes to "other" (the report estimates the split instead).
+    for (final log in attractionVisitLogs) {
+      final guestCount = (log['guest_count'] as num?)?.toInt() ?? 0;
+      if (guestCount <= 0) continue;
+      final maleCount = (log['male_count'] as num?)?.toInt() ?? 0;
+      final femaleCount = (log['female_count'] as num?)?.toInt() ?? 0;
+      male += maleCount;
+      female += femaleCount;
+      final unaccounted = guestCount - maleCount - femaleCount;
+      if (unaccounted > 0) other += unaccounted;
     }
-    final ageGroups =
-        ageGroupMap.entries
-            .map((e) => AgeGroupCount(ageGroup: e.key, count: e.value))
-            .toList()
-          ..sort((a, b) => b.count.compareTo(a.count));
 
     final nationalityMap = <String, int>{};
     for (final breakdown in breakdowns) {
-      final country = (breakdown['country'] as String? ?? '').trim();
-      if (country.isEmpty) continue;
-      final label = _toTitleCase(country);
+      final isOverseas =
+          breakdown['is_overseas'] == true || breakdown['is_overseas'] == 1;
+      final String label;
+      if (isOverseas) {
+        // Overseas Filipino leads are always bucketed under their own
+        // classification, regardless of any selected country.
+        label = 'Overseas Filipino';
+      } else {
+        final country = (breakdown['country'] as String? ?? '').trim();
+        label = country.isEmpty ? 'Unspecified' : _toTitleCase(country);
+      }
       final recordId = breakdown['guest_record_id']?.toString() ?? '';
       final guestDays = recordGuestDays[recordId] ?? 1;
       nationalityMap[label] = (nationalityMap[label] ?? 0) + guestDays;
+    }
+    for (final log in attractionVisitLogs) {
+      final guestCount = (log['guest_count'] as num?)?.toInt() ?? 0;
+      if (guestCount <= 0) continue;
+      final country = (log['country'] as String? ?? '').trim();
+      final label = country.isEmpty ? 'Unspecified' : _toTitleCase(country);
+      nationalityMap[label] = (nationalityMap[label] ?? 0) + guestCount;
     }
     final topNationalities =
         (nationalityMap.entries
@@ -381,11 +519,21 @@ class AdminDashboardApi extends BaseApi {
     final provinceMap = <String, int>{};
     for (final breakdown in breakdowns) {
       final province = (breakdown['province'] as String? ?? '').trim();
-      if (province.isEmpty) continue;
-      final label = _toTitleCase(province);
+      final provinceKey = province.isEmpty ? 'Unspecified' : province;
+      final label = provinceKey == 'Unspecified'
+          ? 'Unspecified'
+          : _toTitleCase(provinceKey);
       final recordId = breakdown['guest_record_id']?.toString() ?? '';
       final guestDays = recordGuestDays[recordId] ?? 1;
       provinceMap[label] = (provinceMap[label] ?? 0) + guestDays;
+    }
+    for (final log in attractionVisitLogs) {
+      final guestCount = (log['guest_count'] as num?)?.toInt() ?? 0;
+      if (guestCount <= 0) continue;
+      final province = (log['province'] as String? ?? '').trim();
+      final label =
+          province.isEmpty ? 'Unspecified' : _toTitleCase(province);
+      provinceMap[label] = (provinceMap[label] ?? 0) + guestCount;
     }
     final provinces =
         (provinceMap.entries
@@ -395,18 +543,46 @@ class AdminDashboardApi extends BaseApi {
             .take(5)
             .toList();
 
-    final purposeMap = <String, int>{};
-    for (final record in periodRecords) {
-      final purpose = (record['purpose_of_visit'] as String? ?? '').trim();
-      if (purpose.isEmpty) continue;
-      final label = _toTitleCase(purpose);
-      final id = record['id']?.toString() ?? '';
-      final guestDays = recordGuestDays[id] ?? 1;
-      purposeMap[label] = (purposeMap[label] ?? 0) + guestDays;
+    final cityMap = <String, int>{};
+    for (final breakdown in breakdowns) {
+      final city = (breakdown['city_municipality'] as String? ?? '').trim();
+      final label = city.isEmpty ? 'Unspecified' : _toTitleCase(city);
+      final recordId = breakdown['guest_record_id']?.toString() ?? '';
+      final guestDays = recordGuestDays[recordId] ?? 1;
+      cityMap[label] = (cityMap[label] ?? 0) + guestDays;
     }
-    final purposeOfVisit =
-        (purposeMap.entries
-                .map((e) => PurposeCount(purpose: e.key, count: e.value))
+    for (final log in attractionVisitLogs) {
+      final guestCount = (log['guest_count'] as num?)?.toInt() ?? 0;
+      if (guestCount <= 0) continue;
+      final city = (log['city_municipality'] as String? ?? '').trim();
+      final label = city.isEmpty ? 'Unspecified' : _toTitleCase(city);
+      cityMap[label] = (cityMap[label] ?? 0) + guestCount;
+    }
+    final cityMunicipalities =
+        (cityMap.entries
+                .map(
+                  (entry) => CityMunicipalityCount(
+                    cityMunicipality: entry.key,
+                    count: entry.value,
+                  ),
+                )
+                .toList()
+              ..sort((a, b) => b.count.compareTo(a.count)))
+            .take(5)
+            .toList();
+
+    final attractionMap = <String, int>{};
+    for (final log in attractionVisitLogs) {
+      final guestCount = (log['guest_count'] as num?)?.toInt() ?? 0;
+      if (guestCount <= 0) continue;
+      final types = _extractAttractionTypes(log['attraction_type']);
+      for (final type in types) {
+        attractionMap[type] = (attractionMap[type] ?? 0) + guestCount;
+      }
+    }
+    final attractions =
+        (attractionMap.entries
+                .map((e) => AttractionCount(type: e.key, count: e.value))
                 .toList()
               ..sort((a, b) => b.count.compareTo(a.count)))
             .take(5)
@@ -439,7 +615,9 @@ class AdminDashboardApi extends BaseApi {
       stats: AdminDashboardStats(
         activeAccommodations: activeAccommodations,
         touristsThisPeriod: touristsThisPeriod,
-        pendingRegistrations: pendingRegistrations,
+        pendingAccommodations: pendingAccommodations,
+        activeAttractions: activeAttractions,
+        pendingAttractions: pendingAttractions,
         touristsThisYear: touristsThisYear,
       ),
       genderDistribution: GenderDistribution(
@@ -447,15 +625,15 @@ class AdminDashboardApi extends BaseApi {
         female: female,
         other: other,
       ),
-      ageGroups: ageGroups,
+      cityMunicipalities: cityMunicipalities,
       topNationalities: topNationalities,
       provinces: provinces,
       compliance: ComplianceData(
         compliant: activeAccommodations,
-        nonCompliant: pendingRegistrations,
+        nonCompliant: pendingAccommodations,
       ),
       accommodationTypes: accommodationTypes,
-      purposeOfVisit: purposeOfVisit,
+      attractions: attractions,
     );
   }
 
@@ -467,6 +645,10 @@ class AdminDashboardApi extends BaseApi {
     for (final year in years) {
       final (start, end) = _dateRange(0, year);
       final records = await _fetchGuestRecords(startDate: start, endDate: end);
+      final attractionLogs = await _fetchAttractionVisitLogs(
+        startDate: start,
+        endDate: end,
+      );
 
       final yearStartDt = parseDbDateTime(start);
       final yearEndDt = parseDbDateTime(end);
@@ -551,6 +733,17 @@ class AdminDashboardApi extends BaseApi {
             1,
           );
         }
+      }
+
+      for (final log in attractionLogs) {
+        final visitDate = log['visit_date']?.toString() ?? '';
+        final month = int.tryParse(
+          visitDate.length >= 7 ? visitDate.substring(5, 7) : '',
+        );
+        if (month == null) continue;
+        final count = (log['guest_count'] as num?)?.toInt() ?? 0;
+        if (count <= 0) continue;
+        monthMap[month] = (monthMap[month] ?? 0) + count;
       }
 
       result[year] = List.generate(

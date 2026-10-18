@@ -1,5 +1,6 @@
 // lib/api/admin_accommodation_api.dart
 // Test Branch: admin-accommodation-api
+// Hello
 
 import 'package:flutter/foundation.dart';
 import 'package:app/api/base_api.dart';
@@ -254,6 +255,30 @@ class AdminAccommodationApi extends BaseApi {
     } catch (e) {
       debugPrint('❌ flag error: $e');
       return AccommodationResult.err('Failed to flag. Please try again.');
+    }
+  }
+
+  // ── Update status (manage: warning/approved) with message to owner ────────
+  Future<AccommodationResult> updateStatus(
+    String businessId,
+    String newStatus, {
+    required String reason,
+    required String messageContent,
+  }) async {
+    try {
+      final response = await put(
+        '/api/admin/accommodations/$businessId/status',
+        {
+          'status': newStatus,
+          'reason': reason,
+          'messageContent': messageContent,
+        },
+      );
+      handleResponse(response);
+      return AccommodationResult.ok();
+    } catch (e) {
+      debugPrint('❌ updateStatus error: $e');
+      return AccommodationResult.err('Failed to update status. Please try again.');
     }
   }
 

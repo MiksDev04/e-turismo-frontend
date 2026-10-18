@@ -37,6 +37,11 @@ class SessionData {
   final String? ownerLastName;
   final String? ownerMiddleName;
 
+  // Attraction fields (null for non-attraction accounts)
+  final String? attractionId;
+  final String? attractionName;
+  final List<String>? attractionType;
+
   const SessionData({
     required this.userId,
     required this.fullName,
@@ -66,6 +71,9 @@ class SessionData {
     this.ownerFirstName,
     this.ownerLastName,
     this.ownerMiddleName,
+    this.attractionId,
+    this.attractionName,
+    this.attractionType,
   });
 
   SessionData copyWith({
@@ -97,6 +105,9 @@ class SessionData {
     String? ownerFirstName,
     String? ownerLastName,
     String? ownerMiddleName,
+    String? attractionId,
+    String? attractionName,
+    List<String>? attractionType,
   }) {
     return SessionData(
       userId: userId ?? this.userId,
@@ -127,6 +138,9 @@ class SessionData {
       ownerFirstName: ownerFirstName ?? this.ownerFirstName,
       ownerLastName: ownerLastName ?? this.ownerLastName,
       ownerMiddleName: ownerMiddleName ?? this.ownerMiddleName,
+      attractionId: attractionId ?? this.attractionId,
+      attractionName: attractionName ?? this.attractionName,
+      attractionType: attractionType ?? this.attractionType,
     );
   }
 
@@ -182,6 +196,9 @@ class SessionService extends ChangeNotifier {
   static const _kOwnerFirstName     = 'session_owner_first_name';
   static const _kOwnerLastName      = 'session_owner_last_name';
   static const _kOwnerMiddleName    = 'session_owner_middle_name';
+  static const _kAttractionId       = 'session_attraction_id';
+  static const _kAttractionName     = 'session_attraction_name';
+  static const _kAttractionType     = 'session_attraction_type';
 
   // ── Singleton ─────────────────────────────────────────────────────────────
   SessionService._();
@@ -275,6 +292,15 @@ class SessionService extends ChangeNotifier {
     final String? oMiddle = data.ownerMiddleName;
     if (oMiddle != null) await prefs.setString(_kOwnerMiddleName, oMiddle); else await prefs.remove(_kOwnerMiddleName);
 
+    final String? attId = data.attractionId;
+    if (attId != null) await prefs.setString(_kAttractionId, attId); else await prefs.remove(_kAttractionId);
+
+    final String? attName = data.attractionName;
+    if (attName != null) await prefs.setString(_kAttractionName, attName); else await prefs.remove(_kAttractionName);
+
+    final List<String>? attType = data.attractionType;
+    if (attType != null) await prefs.setStringList(_kAttractionType, attType); else await prefs.remove(_kAttractionType);
+
     _cached = data;
     notifyListeners();
   }
@@ -314,6 +340,9 @@ class SessionService extends ChangeNotifier {
       ownerFirstName:     prefs.getString(_kOwnerFirstName),
       ownerLastName:      prefs.getString(_kOwnerLastName),
       ownerMiddleName:    prefs.getString(_kOwnerMiddleName),
+      attractionId:       prefs.getString(_kAttractionId),
+      attractionName:     prefs.getString(_kAttractionName),
+      attractionType:     prefs.getStringList(_kAttractionType),
     );
   }
 
@@ -330,7 +359,8 @@ class SessionService extends ChangeNotifier {
       _kStreet, _kPermitFileUrl, _kValidIdUrl, _kBusinessType,
       _kStatus, _kRemarks, _kRegion, _kCityMunicipality, _kProvince,
       _kBarangay, _kTradename, _kBusinessLine, _kOwnerFirstName,
-      _kOwnerLastName, _kOwnerMiddleName,
+      _kOwnerLastName, _kOwnerMiddleName, _kAttractionId, _kAttractionName,
+      _kAttractionType,
     ]) {
       await prefs.remove(key);
     }

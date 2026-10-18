@@ -14,6 +14,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../../api/admin_accommodation_api.dart';
+import '../widgets/app_toast.dart';
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 
@@ -144,19 +145,22 @@ class AccommodationExportService {
 
       final fileName = _buildFileName('xlsx');
       final path = await _saveToDevice(fileName, bytes);
-      if (path == null) throw Exception('Failed to save file to device.');
+      if (path == null) return; // user cancelled the save dialog
 
-      if (!kIsWeb) {
+      if (!context.mounted) return;
+
+      if (!kIsWeb && !(Platform.isAndroid || Platform.isIOS)) {
         await OpenFile.open(path);
       }
 
-      _showSnack(
-        context,
-        'Excel saved:\n$path',
-      );
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        AppToast.success(context, 'Saved $fileName');
+      } else {
+        AppToast.success(context, 'Downloaded $fileName');
+      }
     } catch (e) {
       debugPrint('❌ Excel export error: $e');
-      if (context.mounted) _showSnack(context, 'Export failed: $e', error: true);
+      if (context.mounted) AppToast.warning(context, 'Export failed: $e');
     }
   }
 
@@ -252,22 +256,23 @@ class AccommodationExportService {
       final pdfBytes = await doc.save();
       final fileName = _buildFileName('pdf');
       final path = await _saveToDevice(fileName, pdfBytes);
-      if (path == null) throw Exception('Failed to save file to device.');
+      if (path == null) return; // user cancelled the save dialog
 
       if (!context.mounted) return;
 
-      if (!kIsWeb) {
+      if (!kIsWeb && !(Platform.isAndroid || Platform.isIOS)) {
         await OpenFile.open(path);
       }
 
-      _showSnack(
-        context,
-        'PDF saved:\n$path',
-      );
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        AppToast.success(context, 'Saved $fileName');
+      } else {
+        AppToast.success(context, 'Downloaded $fileName');
+      }
     } catch (e) {
       debugPrint('❌ PDF export error: $e');
       if (context.mounted) {
-        _showSnack(context, 'PDF export failed: $e', error: true);
+        AppToast.warning(context, 'PDF export failed: $e');
       }
     }
   }
@@ -278,46 +283,20 @@ class AccommodationExportService {
     String fileName,
     List<int> bytes,
   ) async {
-    if (kIsWeb) {
-      try {
-        return await saveFileToDownloads(fileName, bytes);
-      } catch (e) {
-        debugPrint('❌ web save failed: $e');
-        return null;
-      }
-    }
-    Future<String?> tryWrite(String dirPath) async {
-      try {
-        final dir = Directory(dirPath);
-        if (!dir.existsSync()) dir.createSync(recursive: true);
-        final path = '$dirPath/$fileName';
-        await File(path).writeAsBytes(bytes);
-        return path;
-      } catch (_) {
-        return null;
-      }
+    // Returns the saved path, or `null` when the user cancels the save dialog.
+    // Real failures throw and are surfaced by the caller.
+    if (kIsWeb || Platform.isAndroid || Platform.isIOS) {
+      return saveFileToDownloads(fileName, bytes);
     }
 
-    try {
-      if (Platform.isAndroid) {
-        // Try public Downloads first, fall back to app-scoped external storage
-        return await tryWrite('/storage/emulated/0/Download') ??
-            await tryWrite(
-              (await getExternalStorageDirectory())?.path ??
-                  (await getApplicationDocumentsDirectory()).path,
-            );
-      } else if (Platform.isIOS) {
-        return await tryWrite((await getApplicationDocumentsDirectory()).path);
-      } else {
-        return await tryWrite(
-          (await getDownloadsDirectory())?.path ??
-              (await getApplicationDocumentsDirectory()).path,
-        );
-      }
-    } catch (e) {
-      debugPrint('❌ _saveToDevice error: $e');
-      return null;
-    }
+    final dir = Directory(
+      (await getDownloadsDirectory())?.path ??
+          (await getApplicationDocumentsDirectory()).path,
+    );
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    final path = '${dir.path}/$fileName';
+    await File(path).writeAsBytes(bytes);
+    return path;
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -337,23 +316,5 @@ class AccommodationExportService {
       'July', 'August', 'September', 'October', 'November', 'December',
     ];
     return '${months[dt.month]} ${dt.day}, ${dt.year}  ${_p(dt.hour)}:${_p(dt.minute)}';
-  }
-
-  static void _showSnack(
-    BuildContext context,
-    String msg, {
-    bool error = false,
-    SnackBarAction? action,
-  }) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor:
-            error ? const Color(0xFFFF4D6A) : const Color(0xFF0E7490),
-        action: action,
-        duration: Duration(seconds: error ? 4 : 8),
-      ),
-    );
   }
 }

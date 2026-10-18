@@ -2,13 +2,14 @@ import 'dart:async';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ConnectivityService (Unified)
 //
-//  Wraps connectivity_plus and performs an active ping check to verify
-//  actual internet connectivity.
+//  Wraps connectivity_plus and performs an active reachability check against
+//  the app's own backend to verify actual internet + server connectivity.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ConnectivityService {
@@ -32,17 +33,26 @@ class ConnectivityService {
   Timer? _timer;
   StreamSubscription? _subscription;
 
-  /// Starts monitoring connectivity changes.
- Future<void> startWatching() async { // was: void startWatching()
-  _subscription?.cancel();
-  _subscription = _connectivity.onConnectivityChanged.listen((results) {
-    _check();
-  });
+  /// The host to check reachability against — your own backend, not a
+  /// third-party domain, so the check reflects what the app actually needs.
+  String get _checkHost {
+    final url = defaultTargetPlatform == TargetPlatform.android
+        ? (dotenv.env['ANDROID_BACKEND_URL'] ?? 'https://e-turismo-backend-main.onrender.com')
+        : (dotenv.env['BACKEND_URL'] ?? 'https://e-turismo-backend-main.onrender.com');
+    return Uri.parse(url).host;
+  }
 
-  _timer?.cancel();
-  _timer = Timer.periodic(const Duration(seconds: 5), (_) => _check());
-  await _check(); // was: _check() — now awaited so initial state is accurate
-}
+  /// Starts monitoring connectivity changes.
+  Future<void> startWatching() async {
+    _subscription?.cancel();
+    _subscription = _connectivity.onConnectivityChanged.listen((results) {
+      _check();
+    });
+
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 10), (_) => _check());
+    await _check();
+  }
 
   void dispose() {
     _timer?.cancel();
@@ -61,19 +71,20 @@ class ConnectivityService {
     return await checkOnline;
   }
 
-  Future<void> _check() async {
+  // Only one check runs at a time. Without this, the periodic timer, the
+  // connectivity_plus listener and callers of `checkOnline` all start their own
+  // lookups, which pile up whenever the network is slow.
+  Future<void>? _inFlight;
+
+  Future<void> _check() => _inFlight ??= _runCheck().whenComplete(() => _inFlight = null);
+
+  Future<void> _runCheck() async {
     bool online;
     if (kIsWeb) {
       final results = await _connectivity.checkConnectivity();
       online = results.any((r) => r != ConnectivityResult.none);
     } else {
-      try {
-        final result = await InternetAddress.lookup('google.com')
-            .timeout(const Duration(seconds: 2));
-        online = result.isNotEmpty && result.first.rawAddress.isNotEmpty;
-      } catch (_) {
-        online = false;
-      }
+      online = await _hasInternet();
     }
 
     if (online != _isOnline) {
@@ -81,6 +92,65 @@ class ConnectivityService {
       _controller.add(_isOnline);
       debugPrint('🌐 ConnectivityService: changed to isOnline = $_isOnline');
     }
+  }
+
+  /// "Online" means the device can reach the internet. Whether the backend
+  /// itself is up is handled separately by [classifyError] (500 vs 503).
+  Future<bool> _hasInternet() async {
+    // 1. Fast exit: no network interface at all.
+    try {
+      final results = await _connectivity.checkConnectivity();
+      if (results.every((r) => r == ConnectivityResult.none)) return false;
+    } catch (_) {
+      // Fall through to the active probes.
+    }
+
+    // 2. Race raw-socket probes (no DNS involved) against a DNS lookup of the
+    //    backend host. First success wins, so a slow/broken DNS resolver no
+    //    longer makes a working connection look offline.
+    final online = await _anySucceeds([
+      () => _canConnect('1.1.1.1', 443),
+      () => _canConnect('8.8.8.8', 443),
+      _canResolveBackend,
+    ]);
+
+    if (!online) debugPrint('🌐 Connectivity check failed: all probes failed');
+    return online;
+  }
+
+  Future<bool> _canConnect(String host, int port) async {
+    try {
+      final socket = await Socket.connect(host, port,
+          timeout: const Duration(seconds: 4));
+      socket.destroy();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _canResolveBackend() async {
+    try {
+      final result = await InternetAddress.lookup(_checkHost)
+          .timeout(const Duration(seconds: 4));
+      return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
+    } catch (e) {
+      debugPrint('🌐 DNS lookup for $_checkHost failed: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _anySucceeds(List<Future<bool> Function()> probes) {
+    final completer = Completer<bool>();
+    var pending = probes.length;
+    for (final probe in probes) {
+      probe().then((ok) {
+        if (ok && !completer.isCompleted) completer.complete(true);
+      }).catchError((_) {}).whenComplete(() {
+        if (--pending == 0 && !completer.isCompleted) completer.complete(false);
+      });
+    }
+    return completer.future;
   }
 }
 
