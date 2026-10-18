@@ -74,11 +74,15 @@ void main() async {
   await PsgcRepository.instance.load();
 
   // ── Step 6: Window constraints (desktop only) ──────────────────────────────
-  // ── Step 6: Window constraints (desktop only) ──────────────────────────────
+  // No maximum size — the window must be free to fill the whole monitor.
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
     await windowManager.ensureInitialized();
-    await windowManager.setMinimumSize(const Size(375, 500));
-    await windowManager.setMaximumSize(const Size(1440, 900));
+    const windowOptions = WindowOptions(minimumSize: Size(375, 500));
+    await windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.maximize();
+      await windowManager.show();
+      await windowManager.focus();
+    });
   }
 
   debugPaintBaselinesEnabled = false;

@@ -203,17 +203,19 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       final typePrefix = batch.reportType.toUpperCase();
       final periodSlug = batch.displayPeriod.replaceAll(', ', '_').replaceAll(' ', '');
       final fileName = '${typePrefix}_${batch.reportVariant}_${periodSlug}.$format';
-      await _saveFile(fileName, bytes);
+      final savedPath = await _saveFile(fileName, bytes);
       if (!mounted) return;
-      AppToast.success(context, 'File downloaded: $fileName');
+      if (savedPath != null) {
+        AppToast.success(context, 'File downloaded: $fileName');
+      }
     } catch (e) {
       if (mounted) AppToast.warning(context, 'Download failed: $e');
     }
   }
 
-  Future<void> _saveFile(String fileName, List<int> bytes) async {
+  Future<String?> _saveFile(String fileName, List<int> bytes) async {
     // Use the file_saver service
-    await saveFileToDownloads(fileName, bytes);
+    return saveFileToDownloads(fileName, bytes);
   }
 
   void _clearFilters() {

@@ -145,14 +145,16 @@ class AccommodationExportService {
 
       final fileName = _buildFileName('xlsx');
       final path = await _saveToDevice(fileName, bytes);
-      if (path == null) throw Exception('Failed to save file to device.');
+      if (path == null) return; // user cancelled the save dialog
+
+      if (!context.mounted) return;
 
       if (!kIsWeb && !(Platform.isAndroid || Platform.isIOS)) {
         await OpenFile.open(path);
       }
 
       if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-        AppToast.success(context, 'Excel ready — choose where to save it');
+        AppToast.success(context, 'Saved $fileName');
       } else {
         AppToast.success(context, 'Downloaded $fileName');
       }
@@ -254,7 +256,7 @@ class AccommodationExportService {
       final pdfBytes = await doc.save();
       final fileName = _buildFileName('pdf');
       final path = await _saveToDevice(fileName, pdfBytes);
-      if (path == null) throw Exception('Failed to save file to device.');
+      if (path == null) return; // user cancelled the save dialog
 
       if (!context.mounted) return;
 
@@ -263,7 +265,7 @@ class AccommodationExportService {
       }
 
       if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-        AppToast.success(context, 'PDF ready — choose where to save it');
+        AppToast.success(context, 'Saved $fileName');
       } else {
         AppToast.success(context, 'Downloaded $fileName');
       }
@@ -281,39 +283,20 @@ class AccommodationExportService {
     String fileName,
     List<int> bytes,
   ) async {
-    if (kIsWeb) {
-      try {
-        return await saveFileToDownloads(fileName, bytes);
-      } catch (e) {
-        debugPrint('❌ web save failed: $e');
-        return null;
-      }
-    }
-    Future<String?> tryWrite(String dirPath) async {
-      try {
-        final dir = Directory(dirPath);
-        if (!dir.existsSync()) dir.createSync(recursive: true);
-        final path = '$dirPath/$fileName';
-        await File(path).writeAsBytes(bytes);
-        return path;
-      } catch (_) {
-        return null;
-      }
+    // Returns the saved path, or `null` when the user cancels the save dialog.
+    // Real failures throw and are surfaced by the caller.
+    if (kIsWeb || Platform.isAndroid || Platform.isIOS) {
+      return saveFileToDownloads(fileName, bytes);
     }
 
-    try {
-      if (Platform.isAndroid || Platform.isIOS) {
-        return await saveFileToDownloads(fileName, bytes);
-      } else {
-        return await tryWrite(
-          (await getDownloadsDirectory())?.path ??
-              (await getApplicationDocumentsDirectory()).path,
-        );
-      }
-    } catch (e) {
-      debugPrint('❌ _saveToDevice error: $e');
-      return null;
-    }
+    final dir = Directory(
+      (await getDownloadsDirectory())?.path ??
+          (await getApplicationDocumentsDirectory()).path,
+    );
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    final path = '${dir.path}/$fileName';
+    await File(path).writeAsBytes(bytes);
+    return path;
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

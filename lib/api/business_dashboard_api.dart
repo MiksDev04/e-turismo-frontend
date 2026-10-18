@@ -544,16 +544,24 @@ class BusinessDashboardApi extends BaseApi {
 
     final placeholders = recordIds.map((_) => '?').join(', ');
     final rows = await db.rawQuery(
-      'SELECT id as guest_record_id, '
-      '  lead_country as country, '
-      '  lead_province as province, '
-      '  lead_city_municipality as city_municipality, '
-      '  lead_sex as sex, '
-      '  lead_is_overseas as is_overseas, '
-      '  lead_birthdate, '
-      '  check_in '
-      'FROM ${LocalDatabase.tableGuestRecords} '
-      'WHERE id IN ($placeholders)',
+      'SELECT gr.id as guest_record_id, '
+      '  gr.lead_country as country, '
+      '  COALESCE(NULLIF(TRIM(gr.lead_province), \'\'), '
+      '    (SELECT g.province FROM ${LocalDatabase.tableGuestOriginBreakdowns} g '
+      '     WHERE g.guest_record_id = gr.id AND g.deleted_at IS NULL '
+      '       AND g.province IS NOT NULL AND TRIM(g.province) <> \'\' '
+      '     LIMIT 1)) as province, '
+      '  COALESCE(NULLIF(TRIM(gr.lead_city_municipality), \'\'), '
+      '    (SELECT g.city_municipality FROM ${LocalDatabase.tableGuestOriginBreakdowns} g '
+      '     WHERE g.guest_record_id = gr.id AND g.deleted_at IS NULL '
+      '       AND g.city_municipality IS NOT NULL AND TRIM(g.city_municipality) <> \'\' '
+      '     LIMIT 1)) as city_municipality, '
+      '  gr.lead_sex as sex, '
+      '  gr.lead_is_overseas as is_overseas, '
+      '  gr.lead_birthdate, '
+      '  gr.check_in '
+      'FROM ${LocalDatabase.tableGuestRecords} gr '
+      'WHERE gr.id IN ($placeholders)',
       recordIds,
     );
 
@@ -740,10 +748,10 @@ class BusinessDashboardApi extends BaseApi {
     final provinceMap = <String, int>{};
     for (final b in breakdowns) {
       final province = _stringValue(b, 'province')?.trim() ?? '';
-      final provinceKey = province.isEmpty ? 'Unspecified' : province;
+      if (province.isEmpty) continue;
       final recordId = _stringValue(b, 'guest_record_id') ?? '';
       final guestDays = recordGuestDays[recordId] ?? 1;
-      provinceMap[provinceKey] = (provinceMap[provinceKey] ?? 0) + guestDays;
+      provinceMap[province] = (provinceMap[province] ?? 0) + guestDays;
     }
     final provinces =
         (provinceMap.entries
@@ -759,12 +767,11 @@ class BusinessDashboardApi extends BaseApi {
     for (final b in breakdowns) {
       final cityMunicipality =
           _stringValue(b, 'city_municipality')?.trim() ?? '';
-      final cityKey =
-          cityMunicipality.isEmpty ? 'Unspecified' : cityMunicipality;
+      if (cityMunicipality.isEmpty) continue;
       final recordId = _stringValue(b, 'guest_record_id') ?? '';
       final guestDays = recordGuestDays[recordId] ?? 1;
-      cityMunicipalityMap[cityKey] =
-          (cityMunicipalityMap[cityKey] ?? 0) + guestDays;
+      cityMunicipalityMap[cityMunicipality] =
+          (cityMunicipalityMap[cityMunicipality] ?? 0) + guestDays;
     }
     final cityMunicipalities =
         (cityMunicipalityMap.entries

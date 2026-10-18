@@ -145,9 +145,9 @@ class _DocumentPreviewModalState extends State<DocumentPreviewModal> {
       final fileName = '${widget.title.replaceAll(' ', '_')}_'
           '${DateTime.now().millisecondsSinceEpoch}.$_fileExtension';
 
-      await saveFileToDownloads(fileName, _bytes!);
+      final savedPath = await saveFileToDownloads(fileName, _bytes!);
 
-      if (mounted) {
+      if (mounted && savedPath != null) {
         AppToast.success(context, 'Downloaded $fileName');
       }
     } catch (e) {

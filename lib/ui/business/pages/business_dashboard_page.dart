@@ -365,10 +365,6 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
         'Female,${d.sexDistribution.female},'
         '${(d.sexDistribution.femaleRatio * 100).toStringAsFixed(1)}%',
       );
-      buf.writeln(
-        'Unspecified,${d.sexDistribution.other},'
-        '${(d.sexDistribution.otherRatio * 100).toStringAsFixed(1)}%',
-      );
       buf.writeln();
 
       // ── Age Group Distribution ─────────────────────────────────────────────
@@ -436,9 +432,9 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
         if (!mounted) return;
         AppToast.success(context, 'Downloaded $fileName');
       } else if (Platform.isAndroid || Platform.isIOS) {
-        await saveFileToDownloads(fileName, bytes);
+        final saved = await saveFileToDownloads(fileName, bytes);
         if (!mounted) return;
-        AppToast.success(context, 'Choose where to save $fileName');
+        if (saved != null) AppToast.success(context, 'Saved $fileName');
       } else {
         final dir = await _exportDirectory();
         final file = File(p.join(dir.path, fileName));
@@ -556,11 +552,6 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
                   'Female',
                   '${d.sexDistribution.female}',
                   '${(d.sexDistribution.femaleRatio * 100).toStringAsFixed(1)}%',
-                ],
-                [
-                  'Unspecified',
-                  '${d.sexDistribution.other}',
-                  '${(d.sexDistribution.otherRatio * 100).toStringAsFixed(1)}%',
                 ],
               ],
               cellStyle: const pw.TextStyle(fontSize: 10),
@@ -716,9 +707,9 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
         if (!mounted) return;
         AppToast.success(context, 'Downloaded $fileName');
       } else if (Platform.isAndroid || Platform.isIOS) {
-        await saveFileToDownloads(fileName, pdfBytes);
+        final saved = await saveFileToDownloads(fileName, pdfBytes);
         if (!mounted) return;
-        AppToast.success(context, 'Choose where to save $fileName');
+        if (saved != null) AppToast.success(context, 'Saved $fileName');
       } else {
         final dir = await _exportDirectory();
         final file = File(p.join(dir.path, fileName));
