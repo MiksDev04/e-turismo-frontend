@@ -1840,6 +1840,7 @@ class ReportViewerModal extends StatefulWidget {
 
 class _ReportViewerModalState extends State<ReportViewerModal> {
   bool _loading = true;
+  bool _printing = false;
   String? _error;
   Uint8List? _pdfBytes;
 
@@ -1940,21 +1941,33 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
   }
 
   Future<void> _handlePrint() async {
+    final bytes = _pdfBytes; // the sheet currently on screen (already loaded)
+    if (_printing || bytes == null) return;
+
+    // WHY the viewer is unloaded first: on Windows both `printing` (5.14.3) and
+    // Syncfusion's viewer use ONE process-wide PDFium (both ship pdfium.dll).
+    // `printing` calls FPDF_DestroyLibrary() at the end of every print job, which
+    // invalidates any document the Syncfusion viewer still has open -> crash/hang.
+    // Unmounting SfPdfViewer closes its PDFium document first; the viewer
+    // re-initializes PDFium itself when it loads the PDF again afterwards.
+    setState(() {
+      _printing = true;
+      _pdfBytes = null;
+    });
     try {
-      final bytes = await _reportService.downloadReport(
-        DownloadReportParams(
-          reportType: widget.batch.reportType,
-          reportVariant: widget.batch.reportVariant,
-          periodYear: widget.batch.periodYear,
-          periodMonths: widget.batch.periodMonths,
-          format: 'pdf',
-        ),
-        timeout: const Duration(seconds: 120),
-      );
+      await WidgetsBinding.instance.endOfFrame; // viewer is disposed
+      await Future<void>.delayed(const Duration(milliseconds: 400)); // native close
       if (!mounted) return;
       await Printing.layoutPdf(onLayout: (_) async => bytes);
     } catch (e) {
       debugPrint('❌ Print error: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pdfBytes = bytes; // re-mounts the viewer
+          _printing = false;
+        });
+      }
     }
   }
 
@@ -2077,7 +2090,7 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
               ),
             const Divider(color: AppColors.cardBorder, height: 1),
             Expanded(
-              child: _loading
+              child: (_loading || _printing)
                   ? const _LoadingView()
                   : _error != null
                   ? _ErrorView(
