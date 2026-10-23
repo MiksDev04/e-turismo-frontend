@@ -1,5 +1,7 @@
 // lib/ui/admin/widgets/daily_tourist_calendar_dialog.dart
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
@@ -52,7 +54,8 @@ class _DailyTouristCalendarDialog extends StatefulWidget {
 }
 
 class _DailyTouristCalendarDialogState
-    extends State<_DailyTouristCalendarDialog> {
+    extends State<_DailyTouristCalendarDialog>
+    with SingleTickerProviderStateMixin {
   static const int _minYear = 2000;
 
   /// Future years can never hold records, so the picker stops at this year.
@@ -66,6 +69,16 @@ class _DailyTouristCalendarDialogState
   DailyTouristsResult? _result;
 
   int _requestId = 0;
+
+  late final AnimationController _animCtrl;
+  late final Animation<double> _fadeAnim;
+  late final Animation<Offset> _slideAnim;
+
+  /// The real "now", used to mark today's cell.
+  DateTime get _now => DateTime.now();
+
+  /// Whether the month currently shown in the calendar is the current month.
+  bool get _isCurrentMonth => _year == _now.year && _month == _now.month;
 
   final List<String> _monthNames = const [
     'January',
@@ -85,9 +98,27 @@ class _DailyTouristCalendarDialogState
   @override
   void initState() {
     super.initState();
+
+    _animCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    );
+    _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.04),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut));
+    _animCtrl.forward();
+
     _month = widget.initialMonth.clamp(1, 12);
     _year = widget.initialYear.clamp(_minYear, _maxYear);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _animCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -168,94 +199,100 @@ class _DailyTouristCalendarDialogState
             ),
           ),
           Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxWidth),
-              child: Container(
-                margin: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: AppColors.cardBackground,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.cardBorder),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.5),
-                      blurRadius: 40,
-                      offset: const Offset(0, 16),
+            child: FadeTransition(
+              opacity: _fadeAnim,
+              child: SlideTransition(
+                position: _slideAnim,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxWidth),
+                  child: Container(
+                    margin: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardBackground,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.cardBorder),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.5),
+                          blurRadius: 40,
+                          offset: const Offset(0, 16),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _DialogHeader(
-                      title: widget.title,
-                      onClose: () => Navigator.of(context).pop(),
-                    ),
-                    const Divider(color: AppColors.cardBorder, height: 1),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: _Dropdown(
-                              value: _month,
-                              items: List.generate(12, (index) {
-                                final monthValue = index + 1;
-                                return DropdownMenuItem<int>(
-                                  value: monthValue,
-                                  child: Text(
-                                    _monthNames[index],
-                                    style: const TextStyle(
-                                      color: AppColors.textWhite,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                );
-                              }),
-                              onChanged: _loading ? null : _onMonthChanged,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _Dropdown(
-                              value: _year,
-                              items: List.generate(
-                                _maxYear - _minYear + 1,
-                                (index) {
-                                  final yearValue = _minYear + index;
-                                  return DropdownMenuItem<int>(
-                                    value: yearValue,
-                                    child: Text(
-                                      yearValue.toString(),
-                                      style: const TextStyle(
-                                        color: AppColors.textWhite,
-                                        fontSize: 13,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _DialogHeader(
+                          title: widget.title,
+                          onClose: () => Navigator.of(context).pop(),
+                        ),
+                        const Divider(color: AppColors.cardBorder, height: 1),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _Dropdown(
+                                  value: _month,
+                                  items: List.generate(12, (index) {
+                                    final monthValue = index + 1;
+                                    return DropdownMenuItem<int>(
+                                      value: monthValue,
+                                      child: Text(
+                                        _monthNames[index],
+                                        style: const TextStyle(
+                                          color: AppColors.textWhite,
+                                          fontSize: 13,
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                },
+                                    );
+                                  }),
+                                  onChanged: _loading ? null : _onMonthChanged,
+                                ),
                               ),
-                              onChanged: _loading ? null : _onYearChanged,
-                            ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _Dropdown(
+                                  value: _year,
+                                  items: List.generate(
+                                    _maxYear - _minYear + 1,
+                                    (index) {
+                                      final yearValue = _minYear + index;
+                                      return DropdownMenuItem<int>(
+                                        value: yearValue,
+                                        child: Text(
+                                          yearValue.toString(),
+                                          style: const TextStyle(
+                                            color: AppColors.textWhite,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  onChanged: _loading ? null : _onYearChanged,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                        const Divider(color: AppColors.cardBorder, height: 1),
+                        Flexible(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: _buildBody(),
+                          ),
+                        ),
+                        const Divider(color: AppColors.cardBorder, height: 1),
+                        _TotalFooter(
+                          monthLabel: _monthLabel,
+                          year: _year,
+                          total: _result?.total ?? 0,
+                          isLoading: _loading,
+                        ),
+                      ],
                     ),
-                    const Divider(color: AppColors.cardBorder, height: 1),
-                    Flexible(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: _buildBody(),
-                      ),
-                    ),
-                    const Divider(color: AppColors.cardBorder, height: 1),
-                    _TotalFooter(
-                      monthLabel: _monthLabel,
-                      year: _year,
-                      total: _result?.total ?? 0,
-                      isLoading: _loading,
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -373,7 +410,14 @@ class _DailyTouristCalendarDialogState
                     final day = index - leadingCells + 1;
                     if (day > daysInMonth) return const SizedBox.shrink();
                     final count = result.countFor(day);
-                    return _DayCell(day: day, count: count);
+                    // Only the real current date carries the "Today" pill, and
+                    // only while the current month is on screen.
+                    final isToday = _isCurrentMonth && day == _now.day;
+                    return _DayCell(
+                      day: day,
+                      count: count,
+                      isToday: isToday,
+                    );
                   },
                 ),
               ],
@@ -503,57 +547,187 @@ class _WeekdayHeader extends StatelessWidget {
   }
 }
 
-class _DayCell extends StatelessWidget {
-  const _DayCell({required this.day, required this.count});
+class _DayCell extends StatefulWidget {
+  const _DayCell({
+    required this.day,
+    required this.count,
+    required this.isToday,
+  });
 
   final int day;
   final int count;
 
+  /// Whether this cell is the real current date.
+  final bool isToday;
+
+  @override
+  State<_DayCell> createState() => _DayCellState();
+}
+
+class _DayCellState extends State<_DayCell> {
+  /// How far the diagonal "Today" tag reaches past the cell corner.
+  static const double _cornerOffset = 10;
+
+  bool _hovered = false;
+  bool _pressed = false;
+
   @override
   Widget build(BuildContext context) {
+    final day = widget.day;
+    final count = widget.count;
+    final isToday = widget.isToday;
     final hasData = count > 0;
-    return Container(
-      decoration: BoxDecoration(
-        color: hasData
-            ? AppColors.primaryCyan.withOpacity(0.12)
-            : AppColors.inputBackground,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: hasData
-              ? AppColors.primaryCyan.withOpacity(0.40)
-              : AppColors.inputBorder,
+
+    // Hovering lifts the accent; today's cell keeps its orange identity.
+    final Color borderColor;
+    final Color background;
+    if (isToday) {
+      borderColor = AppColors.accentOrange;
+      background = AppColors.accentOrange.withOpacity(_hovered ? 0.18 : 0.10);
+    } else if (_hovered) {
+      borderColor = AppColors.primaryCyan.withOpacity(0.95);
+      background = hasData
+          ? AppColors.primaryCyan.withOpacity(0.20)
+          : AppColors.inputBackground;
+    } else {
+      borderColor = hasData
+          ? AppColors.primaryCyan.withOpacity(0.40)
+          : AppColors.inputBorder;
+      background = hasData
+          ? AppColors.primaryCyan.withOpacity(0.12)
+          : AppColors.inputBackground;
+    }
+
+    final dayText = Text(
+      day.toString(),
+      style: TextStyle(
+        color: hasData ? AppColors.textWhite : AppColors.textGray,
+        fontSize: 11,
+        fontWeight: hasData ? FontWeight.w600 : FontWeight.w500,
+      ),
+    );
+
+    final countText = Text(
+      count.toString(),
+      style: TextStyle(
+        color: hasData ? AppColors.primaryCyan : AppColors.textSubtle,
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() {
+        _hovered = false;
+        _pressed = false;
+      }),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        // Swallow the tap so the outside-tap layer never closes the dialog.
+        onTap: () {},
+        child: AnimatedScale(
+          scale: _pressed ? 0.94 : 1.0,
+          duration: const Duration(milliseconds: 110),
+          curve: Curves.easeOut,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          // Painted on top of the content so the diagonal tag of today's
+          // cell cannot cover the border.
+          foregroundDecoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: borderColor,
+              width: isToday ? 1.6 : 1,
+            ),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return Stack(
+                  children: [
+                    Positioned.fill(
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.topCenter,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              dayText,
+                              const SizedBox(height: 2),
+                              countText,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (isToday)
+                      Positioned(
+                        left: constraints.maxWidth -
+                            _TodayBadge.width / 2 -
+                            _cornerOffset,
+                        top: constraints.maxHeight -
+                            _TodayBadge.height / 2 -
+                            _cornerOffset,
+                        child: Transform.rotate(
+                          angle: -math.pi / 4,
+                          child: const _TodayBadge(),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        // Scale the content down when the cell is too small (narrow screens)
-        // so the day number and the count never overflow the cell.
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.topCenter,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                day.toString(),
-                style: TextStyle(
-                  color: hasData ? AppColors.textWhite : AppColors.textGray,
-                  fontSize: 11,
-                  fontWeight: hasData ? FontWeight.w600 : FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                count.toString(),
-                style: TextStyle(
-                  color: hasData
-                      ? AppColors.primaryCyan
-                      : AppColors.textSubtle,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
+    );
+  }
+}
+
+/// Diagonal corner tag that marks the current date.
+class _TodayBadge extends StatelessWidget {
+  const _TodayBadge();
+
+  /// Fixed size so the tag can be centred on the cell corner precisely.
+  static const double width = 30;
+  static const double height = 14;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppColors.accentOrange,
+        borderRadius: BorderRadius.circular(height / 2),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 4.5, vertical: 2.5),
+          child: Text(
+            'Today',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 8,
+              fontWeight: FontWeight.w700,
+              height: 1.0,
+            ),
           ),
         ),
       ),
