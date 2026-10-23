@@ -668,7 +668,7 @@ class _ViewButtonState extends State<_ViewButton> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  Icons.open_in_full_rounded,
+                  Icons.remove_red_eye_outlined,
                   color: _hovered ? color : color.withOpacity(0.7),
                   size: 11,
                 ),

@@ -136,19 +136,23 @@ class _BusinessDetailsModalState extends State<BusinessDetailsModal>
     final modalMaxWidth =
         isWide ? _modalMaxWidthWide : _modalMaxWidthCompact;
 
-    return Center(
-      child: GestureDetector(
-        onTap: () => Navigator.of(context).pop(),
-        child: SizedBox(
-          width: double.infinity,
-          height: double.infinity,
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Tapping outside the card closes the modal. The card is painted on
+        // top of this layer, so taps inside it never reach it.
+        Positioned.fill(
           child: GestureDetector(
-            onTap: () {},
-            child: FadeTransition(
-              opacity: _fadeAnim,
-              child: SlideTransition(
-                position: _slideAnim,
-                child: Center(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(context).pop(),
+          ),
+        ),
+        Center(
+          child: FadeTransition(
+            opacity: _fadeAnim,
+            child: SlideTransition(
+              position: _slideAnim,
+              child: Center(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: modalMaxWidth),
                     child: Container(
@@ -199,8 +203,7 @@ class _BusinessDetailsModalState extends State<BusinessDetailsModal>
               ),
             ),
           ),
-        ),
-      ),
+      ],
     );
   }
 }

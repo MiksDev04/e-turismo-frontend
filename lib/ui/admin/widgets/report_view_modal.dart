@@ -1840,8 +1840,16 @@ class ReportViewerModal extends StatefulWidget {
 
 class _ReportViewerModalState extends State<ReportViewerModal> {
   bool _loading = true;
+  bool _printing = false;
   String? _error;
   Uint8List? _pdfBytes;
+
+  List<ReportSheetOption> _sheets = [];
+  ReportSheetOption? _selectedSheet;
+
+  bool get _showSheetPicker =>
+      _sheets.isNotEmpty &&
+      (widget.batch.reportType == 'dae' || widget.batch.reportType == 'var1');
 
   ReportViewResponse? _viewData;
   TabController? _tabController;
@@ -1855,7 +1863,31 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
   @override
   void initState() {
     super.initState();
-    _loadReport();
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _loadSheets();
+    if (mounted) await _loadReport();
+  }
+
+  Future<void> _loadSheets() async {
+    final reportType = widget.batch.reportType;
+    if (reportType != 'dae' && reportType != 'var1') return;
+    try {
+      final sheets = await _reportService.getReportSheets(reportType);
+      if (!mounted) return;
+      setState(() {
+        _sheets = sheets;
+        _selectedSheet = sheets.isNotEmpty ? sheets.first : null;
+      });
+      debugPrint(
+        '📋 Report sheets ($reportType): ${sheets.map((s) => s.name).toList()}',
+      );
+      debugPrint('📋 Selected account: ${_selectedSheet?.name}');
+    } catch (e) {
+      debugPrint('❌ Report sheets error: $e');
+    }
   }
 
   @override
@@ -1865,6 +1897,13 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
   }
 
   Future<void> _loadReport() async {
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+        _pdfBytes = null;
+      });
+    }
     try {
       final bytes = await _reportService.downloadReport(
         DownloadReportParams(
@@ -1873,6 +1912,7 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
           periodYear: widget.batch.periodYear,
           periodMonths: widget.batch.periodMonths,
           format: 'pdf',
+          sheetId: _selectedSheet?.id,
         ),
         timeout: const Duration(seconds: 120),
       );
@@ -1901,9 +1941,34 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
   }
 
   Future<void> _handlePrint() async {
-    final bytes = _pdfBytes;
-    if (bytes == null) return;
-    await Printing.layoutPdf(onLayout: (_) async => bytes);
+    final bytes = _pdfBytes; // the sheet currently on screen (already loaded)
+    if (_printing || bytes == null) return;
+
+    // WHY the viewer is unloaded first: on Windows both `printing` (5.14.3) and
+    // Syncfusion's viewer use ONE process-wide PDFium (both ship pdfium.dll).
+    // `printing` calls FPDF_DestroyLibrary() at the end of every print job, which
+    // invalidates any document the Syncfusion viewer still has open -> crash/hang.
+    // Unmounting SfPdfViewer closes its PDFium document first; the viewer
+    // re-initializes PDFium itself when it loads the PDF again afterwards.
+    setState(() {
+      _printing = true;
+      _pdfBytes = null;
+    });
+    try {
+      await WidgetsBinding.instance.endOfFrame; // viewer is disposed
+      await Future<void>.delayed(const Duration(milliseconds: 400)); // native close
+      if (!mounted) return;
+      await Printing.layoutPdf(onLayout: (_) async => bytes);
+    } catch (e) {
+      debugPrint('❌ Print error: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pdfBytes = bytes; // re-mounts the viewer
+          _printing = false;
+        });
+      }
+    }
   }
 
   Future<void> _handleReload() async {
@@ -2001,10 +2066,31 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
               onZoomIn: () => _zoomPdfBy(0.25),
               onZoomOut: () => _zoomPdfBy(-0.25),
               zoomPercent: _pdfZoomPercent,
+              sheetPicker: !isMobile && _showSheetPicker
+                  ? _SheetPicker(
+                      sheets: _sheets,
+                      selected: _selectedSheet,
+                      width: 280,
+                      padding: EdgeInsets.zero,
+                      onSelected: (sheet) {
+                        setState(() => _selectedSheet = sheet);
+                        _loadReport(); // placeholder until Task 11 wires sheetId
+                      },
+                    )
+                  : null,
             ),
+            if (_showSheetPicker && isMobile)
+              _SheetPicker(
+                sheets: _sheets,
+                selected: _selectedSheet,
+                onSelected: (sheet) {
+                  setState(() => _selectedSheet = sheet);
+                  _loadReport(); // placeholder until Task 11 wires sheetId
+                },
+              ),
             const Divider(color: AppColors.cardBorder, height: 1),
             Expanded(
-              child: _loading
+              child: (_loading || _printing)
                   ? const _LoadingView()
                   : _error != null
                   ? _ErrorView(
@@ -3050,6 +3136,78 @@ class _ReportViewerModalState extends State<ReportViewerModal> {
 
 // ── Modal Header ──────────────────────────────────────────────────────────────
 
+class _SheetPicker extends StatelessWidget {
+  const _SheetPicker({
+    required this.sheets,
+    required this.selected,
+    required this.onSelected,
+    this.width = 360,
+    this.padding = const EdgeInsets.fromLTRB(20, 4, 20, 12),
+  });
+
+  final List<ReportSheetOption> sheets;
+  final ReportSheetOption? selected;
+  final ValueChanged<ReportSheetOption> onSelected;
+  final double width;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: padding,
+      child: DropdownMenu<ReportSheetOption>(
+        width: width,
+        enableFilter: true,
+        initialSelection: selected,
+        textStyle: const TextStyle(color: Colors.black, fontSize: 13),
+        inputDecorationTheme: InputDecorationTheme(
+          isDense: true,
+          filled: true,
+          fillColor: Colors.white,
+          labelStyle: const TextStyle(color: Colors.black, fontSize: 12),
+          floatingLabelStyle: const TextStyle(color: Colors.black),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Colors.black, width: 1.2),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Colors.black, width: 1.2),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Colors.black, width: 1.6),
+          ),
+        ),
+        label: const Text(
+          'Search',
+          style: TextStyle(color: Colors.black, fontSize: 12),
+        ),
+        onSelected: (sheet) {
+          if (sheet != null) onSelected(sheet);
+        },
+        dropdownMenuEntries: [
+          for (final sheet in sheets)
+            DropdownMenuEntry(
+              label: sheet.name,
+              value: sheet,
+              style: ButtonStyle(
+                foregroundColor: const WidgetStatePropertyAll(Colors.black),
+                textStyle: const WidgetStatePropertyAll(
+                  TextStyle(color: Colors.black, fontSize: 13),
+                ),
+                backgroundColor:
+                    selected?.id == sheet.id
+                        ? const WidgetStatePropertyAll(AppColors.activeNavBg)
+                        : null,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ModalHeader extends StatelessWidget {
   const _ModalHeader({
     required this.batch,
@@ -3059,6 +3217,7 @@ class _ModalHeader extends StatelessWidget {
     required this.onZoomIn,
     required this.onZoomOut,
     required this.zoomPercent,
+    this.sheetPicker,
   });
 
   final ReportBatch batch;
@@ -3068,6 +3227,7 @@ class _ModalHeader extends StatelessWidget {
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
   final int zoomPercent;
+  final Widget? sheetPicker;
 
   @override
   Widget build(BuildContext context) {
@@ -3275,15 +3435,27 @@ class _ModalHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Expanded(child: titleSection),
+          Expanded(
+            child: Align(alignment: Alignment.centerLeft, child: titleSection),
+          ),
           const SizedBox(width: 12),
           reloadButton,
           const SizedBox(width: 8),
           zoomControls,
           const SizedBox(width: 8),
           printButton,
-          const SizedBox(width: 8),
-          closeButton,
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (sheetPicker != null) ...[sheetPicker!, const SizedBox(width: 10)],
+                  closeButton,
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );

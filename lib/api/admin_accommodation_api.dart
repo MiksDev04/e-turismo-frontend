@@ -5,6 +5,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:app/api/base_api.dart';
 import 'package:app/ui/admin/models/accommodation_models.dart';
+import 'package:app/ui/admin/models/daily_tourist_models.dart';
 
 // ─── Result wrapper ───────────────────────────────────────────────────────────
 
@@ -201,6 +202,29 @@ class AdminAccommodationApi extends BaseApi {
     } catch (e) {
       debugPrint('❌ fetchRankings error: $e');
       rethrow;
+    }
+  }
+
+  // ── Fetch per-day tourist counts for a business in a month ────────────────
+  //
+  // Returns null on any error so the UI can render an error + retry state.
+  Future<DailyTouristsResult?> fetchDailyTourists(
+    String businessId,
+    int month,
+    int year,
+  ) async {
+    try {
+      final response = await get(
+        '/api/admin/accommodations/$businessId/daily-tourists?month=$month&year=$year',
+      );
+      final body = handleResponse(response) as Map<String, dynamic>;
+      return DailyTouristsResult.fromMap(body);
+    } on ApiException catch (e) {
+      debugPrint('❌ fetchDailyTourists error: ${e.statusCode} ${e.message}');
+      return null;
+    } catch (e) {
+      debugPrint('❌ fetchDailyTourists unexpected error: $e');
+      return null;
     }
   }
 

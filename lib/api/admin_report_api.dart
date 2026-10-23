@@ -98,6 +98,18 @@ class ReportBatch {
   );
 }
 
+// ─── Report Sheet Option ─────────────────────────────────────────────────────
+
+class ReportSheetOption {
+  const ReportSheetOption({required this.id, required this.name});
+
+  final String id;
+  final String name;
+
+  static ReportSheetOption fromJson(Map<String, dynamic> json) =>
+      ReportSheetOption(id: json['id'] as String, name: json['name'] as String);
+}
+
 // ─── Report View Data Models ─────────────────────────────────────────────────
 
 class ReportViewResponse {
@@ -462,6 +474,7 @@ class DownloadReportParams {
   final String format;
   final double? pageWidth;
   final double? pageHeight;
+  final String? sheetId;
 
   const DownloadReportParams({
     this.reportType = 'dae',
@@ -471,6 +484,7 @@ class DownloadReportParams {
     this.format = 'xlsx',
     this.pageWidth,
     this.pageHeight,
+    this.sheetId,
   });
 
   Map<String, dynamic> toJson() => {
@@ -481,6 +495,7 @@ class DownloadReportParams {
     'format': format,
     if (pageWidth != null) 'pageWidth': pageWidth,
     if (pageHeight != null) 'pageHeight': pageHeight,
+    if (sheetId != null) 'sheetId': sheetId,
   };
 }
 
@@ -523,6 +538,17 @@ class ReportService extends BaseApi {
     final data =
         list.map((r) => ReportBatch.fromJson(r as Map<String, dynamic>)).toList();
     return (data: data, totalCount: totalCount, pageCount: pageCount);
+  }
+
+  /// Fetches the selectable account (sheet) list for DAE / VAR 1 reports.
+  Future<List<ReportSheetOption>> getReportSheets(String reportType) async {
+    final uri = Uri.parse('/api/admin/reports/sheets')
+        .replace(queryParameters: {'reportType': reportType});
+    final response = await get(uri.toString());
+    final body = handleResponse(response) as List;
+    return body
+        .map((e) => ReportSheetOption.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   /// Creates a new report batch (no file generation).
