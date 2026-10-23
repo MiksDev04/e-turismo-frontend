@@ -1839,7 +1839,7 @@ class _TableRow extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
-                item.status == AttractionStatus.pending
+                item.activityStatus == ActivityStatus.noActivity
                     ? '—'
                     : formatRelativeDate(item.lastActivity),
                 style: const TextStyle(color: AppColors.textGray, fontSize: 13),
@@ -1988,7 +1988,7 @@ class _AttractionCard extends StatelessWidget {
           const SizedBox(height: 6),
           _CardDetail(
             label: 'Last Activity',
-            value: item.status == AttractionStatus.pending
+            value: item.activityStatus == ActivityStatus.noActivity
                 ? '—'
                 : formatRelativeDate(item.lastActivity),
           ),
