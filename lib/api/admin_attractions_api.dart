@@ -3,6 +3,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:app/api/base_api.dart';
 import 'package:app/ui/admin/models/attraction_models.dart';
+import 'package:app/ui/admin/models/daily_tourist_models.dart';
 
 // ─── Result wrapper ───────────────────────────────────────────────────────────
 
@@ -162,6 +163,29 @@ class AdminAttractionApi extends BaseApi {
     } catch (e) {
       debugPrint('❌ fetchRankings error: $e');
       rethrow;
+    }
+  }
+
+  // ── Fetch per-day visitor counts for an attraction in a month ─────────────
+  //
+  // Returns null on any error so the UI can render an error + retry state.
+  Future<DailyTouristsResult?> fetchDailyTourists(
+    String attractionId,
+    int month,
+    int year,
+  ) async {
+    try {
+      final response = await get(
+        '/api/admin/attractions/$attractionId/daily-tourists?month=$month&year=$year',
+      );
+      final body = handleResponse(response) as Map<String, dynamic>;
+      return DailyTouristsResult.fromMap(body);
+    } on ApiException catch (e) {
+      debugPrint('❌ fetchDailyTourists error: ${e.statusCode} ${e.message}');
+      return null;
+    } catch (e) {
+      debugPrint('❌ fetchDailyTourists unexpected error: $e');
+      return null;
     }
   }
 

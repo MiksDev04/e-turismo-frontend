@@ -12,6 +12,7 @@ import '../../../core/services/attraction_export_service.dart';
 import '../../shared/layouts/admin_layout.dart';
 import '../../shared/widgets/paginator.dart';
 import '../widgets/attraction_details_modal.dart';
+import '../widgets/daily_tourist_calendar_dialog.dart';
 import '../widgets/status_change_dialog.dart';
 import '../models/activity_models.dart';
 import '../models/attraction_models.dart';
@@ -323,12 +324,21 @@ class _AdminAttractionsPageState extends State<AdminAttractionsPage> {
           AttractionStatus.warning => Icons.warning_amber_rounded,
         },
         canSetWarning: item.status == AttractionStatus.approved &&
-            (item.activityStatus == ActivityStatus.inactive ||
-                item.activityStatus == ActivityStatus.noActivity),
+            item.activityStatus.isOverdue,
         canSetApproved: item.status == AttractionStatus.warning,
         onConfirm: (newStatus, reason) =>
             _handleStatusChange(item, newStatus, reason),
       ),
+    );
+  }
+
+  // ── Daily tourist record ──────────────────────────────────────────────────
+
+  void _openDailyRecord(Attraction item) {
+    showDailyTouristCalendarDialog(
+      context: context,
+      title: 'Daily Tourist Record',
+      fetch: (m, y) => _api.fetchDailyTourists(item.id, m, y),
     );
   }
 
@@ -475,12 +485,14 @@ class _AdminAttractionsPageState extends State<AdminAttractionsPage> {
                             rows: _attractions,
                             onStatusUpdate: _updateStatus,
                             onManage: _openStatusDialog,
+                            onViewDailyRecord: _openDailyRecord,
                           )
                         else
                           _AttractionTable(
                             rows: _attractions,
                             onStatusUpdate: _updateStatus,
                             onManage: _openStatusDialog,
+                            onViewDailyRecord: _openDailyRecord,
                           ),
                         if (!_isLoading) ...[
                           const SizedBox(height: 12),
@@ -1603,12 +1615,14 @@ class _AttractionTable extends StatelessWidget {
     required this.rows,
     required this.onStatusUpdate,
     required this.onManage,
+    required this.onViewDailyRecord,
   });
 
   final List<Attraction> rows;
   final Function(Attraction, AttractionStatus, {String? remarks})
   onStatusUpdate;
   final ValueChanged<Attraction> onManage;
+  final ValueChanged<Attraction> onViewDailyRecord;
 
   @override
   Widget build(BuildContext context) {
@@ -1641,6 +1655,7 @@ class _AttractionTable extends StatelessWidget {
                 item: rows[i],
                 onStatusUpdate: onStatusUpdate,
                 onManage: onManage,
+                onViewDailyRecord: onViewDailyRecord,
               ),
             ),
         ],
@@ -1733,12 +1748,14 @@ class _TableRow extends StatelessWidget {
     required this.item,
     required this.onStatusUpdate,
     required this.onManage,
+    required this.onViewDailyRecord,
   });
 
   final Attraction item;
   final Function(Attraction, AttractionStatus, {String? remarks})
   onStatusUpdate;
   final ValueChanged<Attraction> onManage;
+  final ValueChanged<Attraction> onViewDailyRecord;
 
   @override
   Widget build(BuildContext context) {
@@ -1850,6 +1867,7 @@ class _TableRow extends StatelessWidget {
                   item: item,
                   onStatusUpdate: onStatusUpdate,
                   onManage: onManage,
+                  onViewDailyRecord: onViewDailyRecord,
                 ),
               ),
             ),
@@ -1867,12 +1885,14 @@ class _AttractionCardList extends StatelessWidget {
     required this.rows,
     required this.onStatusUpdate,
     required this.onManage,
+    required this.onViewDailyRecord,
   });
 
   final List<Attraction> rows;
   final Function(Attraction, AttractionStatus, {String? remarks})
   onStatusUpdate;
   final ValueChanged<Attraction> onManage;
+  final ValueChanged<Attraction> onViewDailyRecord;
 
   @override
   Widget build(BuildContext context) {
@@ -1893,6 +1913,7 @@ class _AttractionCardList extends StatelessWidget {
         item: rows[i],
         onStatusUpdate: onStatusUpdate,
         onManage: onManage,
+        onViewDailyRecord: onViewDailyRecord,
       ),
     );
   }
@@ -1903,12 +1924,14 @@ class _AttractionCard extends StatelessWidget {
     required this.item,
     required this.onStatusUpdate,
     required this.onManage,
+    required this.onViewDailyRecord,
   });
 
   final Attraction item;
   final Function(Attraction, AttractionStatus, {String? remarks})
   onStatusUpdate;
   final ValueChanged<Attraction> onManage;
+  final ValueChanged<Attraction> onViewDailyRecord;
 
   @override
   Widget build(BuildContext context) {
@@ -1974,6 +1997,7 @@ class _AttractionCard extends StatelessWidget {
             item: item,
             onStatusUpdate: onStatusUpdate,
             onManage: onManage,
+            onViewDailyRecord: onViewDailyRecord,
           ),
         ],
       ),
@@ -2088,6 +2112,21 @@ String _formatRegisteredDate(String? rawValue) {
   return '${monthNames[parsed.month - 1]} ${parsed.day}, ${parsed.year}';
 }
 
+/// Whether the "Manage" action applies to this attraction.
+///
+/// An approved attraction can be flagged to Warning once it has been inactive
+/// for 90+ days or has no visit records on file. An attraction already under
+/// Warning is still shown so it can be reverted to Approved.
+bool _canManageAttraction(Attraction item) =>
+    (item.status == AttractionStatus.approved &&
+        item.activityStatus.isOverdue) ||
+    item.status == AttractionStatus.warning;
+
+/// Whether the "Records" (daily tourist record) action applies to this attraction.
+bool _canViewRecords(Attraction item) =>
+    item.status == AttractionStatus.approved ||
+    item.status == AttractionStatus.warning;
+
 // ─── Action Buttons ───────────────────────────────────────────────────────────
 
 class _ActionButtons extends StatelessWidget {
@@ -2095,12 +2134,14 @@ class _ActionButtons extends StatelessWidget {
     required this.item,
     required this.onStatusUpdate,
     required this.onManage,
+    required this.onViewDailyRecord,
   });
 
   final Attraction item;
   final Function(Attraction, AttractionStatus, {String? remarks})
   onStatusUpdate;
   final ValueChanged<Attraction> onManage;
+  final ValueChanged<Attraction> onViewDailyRecord;
 
   Future<void> _showRemarksModal(
     BuildContext context, {
@@ -2290,6 +2331,8 @@ class _ActionButtons extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPending = item.status == AttractionStatus.pending;
+    final canManage = _canManageAttraction(item);
+    final canViewRecords = _canViewRecords(item);
     return Wrap(
       spacing: 6,
       runSpacing: 6,
@@ -2318,6 +2361,14 @@ class _ActionButtons extends StatelessWidget {
             );
           },
         ),
+        if (canViewRecords)
+          _ActionButton(
+            icon: Icons.calendar_month_rounded,
+            tooltip: 'Daily Tourist Record',
+            color: AppColors.accentPurple,
+            label: 'Records',
+            onTap: () => onViewDailyRecord(item),
+          ),
         if (isPending) ...[
           _ActionButton(
             icon: Icons.check_circle_outline_rounded,
@@ -2340,13 +2391,14 @@ class _ActionButtons extends StatelessWidget {
             ),
           ),
         ],
-        _ActionButton(
-          icon: Icons.manage_accounts_rounded,
-          tooltip: 'Manage Status',
-          color: AppColors.accentOrange,
-          label: 'Manage',
-          onTap: () => onManage(item),
-        ),
+        if (canManage)
+          _ActionButton(
+            icon: Icons.manage_accounts_rounded,
+            tooltip: 'Manage Status',
+            color: AppColors.accentOrange,
+            label: 'Manage',
+            onTap: () => onManage(item),
+          ),
       ],
     );
   }

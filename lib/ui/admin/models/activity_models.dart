@@ -19,3 +19,13 @@ ActivityStatus parseActivityStatus(String? raw) {
       return ActivityStatus.noActivity;
   }
 }
+
+extension ActivityStatusX on ActivityStatus {
+  /// True when the account has passed the 90-day activity threshold, or has
+  /// never recorded any guest / visit activity at all.
+  ///
+  /// These are the only two states eligible for a Warning status, so the
+  /// "Manage" action is offered to them alone.
+  bool get isOverdue =>
+      this == ActivityStatus.inactive || this == ActivityStatus.noActivity;
+}
