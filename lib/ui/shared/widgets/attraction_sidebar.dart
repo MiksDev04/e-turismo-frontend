@@ -72,6 +72,12 @@ class _AttractionSidebarState extends State<AttractionSidebar> {
           badge: unreadCount > 0 ? unreadCount : null,
           route: AppRoutes.attractionMessages,
         ),
+        AttrNavItem(
+          icon: Icons.history_rounded,
+          label: 'Activity Logs',
+          index: 4,
+          route: AppRoutes.attractionActivityLogs,
+        ),
       ];
 
   @override

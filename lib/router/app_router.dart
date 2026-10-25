@@ -14,17 +14,20 @@ import 'package:app/ui/admin/pages/admin_accommodations_page.dart';
 import 'package:app/ui/admin/pages/admin_attractions_page.dart';
 import 'package:app/ui/admin/pages/admin_reports_page.dart';
 import 'package:app/ui/admin/pages/admin_messages_page.dart';
+import 'package:app/ui/admin/pages/admin_activity_logs_page.dart';
 import 'package:app/ui/admin/pages/admin_profile_page.dart';
 import 'package:app/ui/business/pages/business_dashboard_page.dart';
 import 'package:app/ui/business/pages/business_guest_entry_page.dart';
 import 'package:app/ui/business/pages/business_guest_records_page.dart';
 import 'package:app/ui/business/pages/business_rooms_page.dart';
 import 'package:app/ui/business/pages/business_messages_page.dart';
+import 'package:app/ui/business/pages/business_activity_logs_page.dart';
 import 'package:app/ui/business/pages/business_profile_page.dart';
 
 import 'package:app/ui/attraction/pages/attraction_dashboard_page.dart';
 import 'package:app/ui/attraction/pages/attraction_visit_entry_page.dart';
 import 'package:app/ui/attraction/pages/attraction_visit_records_page.dart';
+import 'package:app/ui/attraction/pages/attraction_activity_logs_page.dart';
 import 'package:app/ui/attraction/pages/attraction_messages_page.dart';
 import 'package:app/ui/attraction/pages/attraction_profile_page.dart';
 
@@ -61,7 +64,8 @@ const _adminRouteMeta = {
   AppRoutes.adminAttractions: _RouteMeta('Attractions', 2),
   AppRoutes.adminReports: _RouteMeta('Reports', 3),
   AppRoutes.adminMessages: _RouteMeta('Messages', 4),
-  AppRoutes.adminProfile: _RouteMeta('Profile', 5),
+  AppRoutes.adminActivityLogs: _RouteMeta('Activity Logs', 5),
+  AppRoutes.adminProfile: _RouteMeta('Profile', 6),
 };
 
 const _businessRouteMeta = {
@@ -69,7 +73,8 @@ const _businessRouteMeta = {
   AppRoutes.businessGuestEntry: _RouteMeta('Guest Entry', 1),
   AppRoutes.businessGuestRecord: _RouteMeta('Guest Records', 2),
   AppRoutes.businessRooms: _RouteMeta('Rooms', 3),
-  AppRoutes.businessMessages: _RouteMeta('Messages', 5),
+  AppRoutes.businessMessages: _RouteMeta('Messages', 4),
+  AppRoutes.businessActivityLogs: _RouteMeta('Activity Logs', 5),
   AppRoutes.businessProfile: _RouteMeta('Profile', 6),
 };
 
@@ -78,7 +83,8 @@ const _attractionRouteMeta = {
   AppRoutes.attractionVisitEntry: _RouteMeta('Visit Entry', 1),
   AppRoutes.attractionVisitRecord: _RouteMeta('Visit Records', 2),
   AppRoutes.attractionMessages: _RouteMeta('Messages', 3),
-  AppRoutes.attractionProfile: _RouteMeta('Profile', 4),
+  AppRoutes.attractionActivityLogs: _RouteMeta('Activity Logs', 4),
+  AppRoutes.attractionProfile: _RouteMeta('Profile', 5),
 };
 
 // ─── Route Permissions ────────────────────────────────────────────────────────
@@ -93,17 +99,20 @@ abstract final class _RoutePermissions {
     AppRoutes.adminAttractions: {'admin'},
     AppRoutes.adminMessages: {'admin'},
     AppRoutes.adminReports: {'admin'},
+    AppRoutes.adminActivityLogs: {'admin'},
     AppRoutes.adminProfile: {'admin'},
     AppRoutes.businessDashboard: {'business'},
     AppRoutes.businessGuestEntry: {'business'},
     AppRoutes.businessGuestRecord: {'business'},
     AppRoutes.businessRooms: {'business'},
     AppRoutes.businessMessages: {'business'},
+    AppRoutes.businessActivityLogs: {'business'},
     AppRoutes.businessProfile: {'business'},
     AppRoutes.attractionDashboard: {'attraction'},
     AppRoutes.attractionVisitEntry: {'attraction'},
     AppRoutes.attractionVisitRecord: {'attraction'},
     AppRoutes.attractionMessages: {'attraction'},
+    AppRoutes.attractionActivityLogs: {'attraction'},
     AppRoutes.attractionProfile: {'attraction'},
   };
 
@@ -208,6 +217,7 @@ abstract final class AppRouter {
       ),
       AppRoutes.adminMessages => _fade(const AdminMessagesPage(), settings),
       AppRoutes.adminReports => _fade(const AdminReportsPage(), settings),
+      AppRoutes.adminActivityLogs => _fade(const AdminActivityLogsPage(), settings),
       AppRoutes.adminProfile => _fade(const AdminProfilePage(), settings),
       AppRoutes.businessDashboard => _fade(
         const BusinessDashboardPage(),
@@ -229,6 +239,10 @@ abstract final class AppRouter {
         const BusinessMessagesPage(),
         settings,
       ),
+      AppRoutes.businessActivityLogs => _fade(
+        const BusinessActivityLogsPage(),
+        settings,
+      ),
       AppRoutes.businessProfile => _fade(const BusinessProfilePage(), settings),
       AppRoutes.attractionDashboard => _fade(
         const AttractionDashboardPage(),
@@ -244,6 +258,10 @@ abstract final class AppRouter {
       ),
       AppRoutes.attractionMessages => _fade(
         const AttractionMessagesPage(),
+        settings,
+      ),
+      AppRoutes.attractionActivityLogs => _fade(
+        const AttractionActivityLogsPage(),
         settings,
       ),
       AppRoutes.attractionProfile => _fade(
