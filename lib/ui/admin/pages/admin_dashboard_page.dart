@@ -2894,7 +2894,7 @@ class _DonutTooltip extends StatelessWidget {
             ),
           ),
           Text(
-            segment.percentage!,
+            '${segment.percentage!} (${(segment.value * 100).toStringAsFixed(1)}%)',
             style: const TextStyle(color: Colors.white70, fontSize: 10),
           ),
         ],

@@ -3042,8 +3042,8 @@ class _DonutTooltip extends StatelessWidget {
           ),
           Text(
             segment.count != null
-                ? '${segment.count} guests'
-                : segment.percentage!,
+                ? '${segment.count} guests (${(segment.value * 100).toStringAsFixed(1)}%)'
+                : '${segment.percentage!} (${(segment.value * 100).toStringAsFixed(1)}%)',
             style: const TextStyle(color: Colors.white70, fontSize: 10),
           ),
         ],
