@@ -202,8 +202,10 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
     // Only fetch what wasn't already populated from cache in initState.
     final preferOnline = ConnectivityService.instance.isOnline;
     final futures = <Future>[];
-    if (_loadingDash) futures.add(_loadDashboard(preferOnline: preferOnline));
-    if (_loadingTrend) futures.add(_loadTrend(preferOnline: preferOnline));
+    if (_businessId != null) {
+      if (_loadingDash) futures.add(_loadDashboard(preferOnline: preferOnline));
+      if (_loadingTrend) futures.add(_loadTrend(preferOnline: preferOnline));
+    }
     if (futures.isNotEmpty) await Future.wait(futures);
   }
 
@@ -212,36 +214,63 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
         SessionService.instance.current ??
         await SessionService.instance.loadAndCache();
 
-    final resolvedBusinessId =
-        await _api.resolveBusinessId(preferOnline: preferOnline) ??
-        session?.businessId;
+    final sessionBusinessId = session?.businessId;
+    if (sessionBusinessId != null && sessionBusinessId.isNotEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _businessId   = sessionBusinessId;
+        _businessName = session?.businessName ?? '';
+        _businessLine = session?.businessLine ?? const [];
+        _address      = '${session?.street ?? ''}, ${session?.barangay ?? ''}';
+      });
 
-    if (!mounted) return;
-    setState(() {
-      _businessId   = resolvedBusinessId;
-      _businessName = session?.businessName ?? '';
-      _businessLine = session?.businessLine ?? const [];
-      _address      = '${session?.street ?? ''}, ${session?.barangay ?? ''}';
-    });
+      // Correct a stale id in the background without blocking data loads.
+      unawaited(
+        _api.resolveBusinessId(preferOnline: preferOnline).then((resolved) {
+          if (!mounted) return;
+          if (resolved != null && resolved.isNotEmpty && resolved != _businessId) {
+            setState(() => _businessId = resolved);
+          }
+        }),
+      );
 
-    if (_businessId != null) {
-      try {
-        final details = await _api.fetchBusinessDetails(
-          _businessId!,
-          preferOnline: preferOnline,
-        );
-        if (!mounted) return;
-        setState(() {
-          _address      = '${details.address}, ${details.barangay}';
-          _totalRooms   = details.totalRooms;
-          _businessLine = details.businessLine.isNotEmpty
-              ? details.businessLine
-              : (session?.businessLine ?? const []);
-        });
-      } catch (_) {
-        // Keep defaults if the lookup fails.
-      }
+      // Fetch details without awaiting; update the UI when they finish.
+      unawaited(
+        _api
+            .fetchBusinessDetails(
+              sessionBusinessId,
+              preferOnline: preferOnline,
+            )
+            .then((details) {
+          if (!mounted) return;
+          setState(() {
+            _address    = '${details.address}, ${details.barangay}';
+            _totalRooms = details.totalRooms;
+            if (details.businessLine.isNotEmpty) {
+              _businessLine = details.businessLine;
+            }
+          });
+          _loadDashboard(silent: true);
+        }).catchError((_) {
+          // Keep defaults if the lookup fails.
+        }),
+      );
+      return;
     }
+
+    // Fallback for a missing cached id: resolve in the background and load
+    // when an id becomes available.
+    unawaited(
+      _api.resolveBusinessId(preferOnline: preferOnline).then((resolved) {
+        if (!mounted) return;
+        if (resolved == null || resolved.isEmpty) return;
+        setState(() => _businessId = resolved);
+        if (_businessId != null) {
+          unawaited(_loadDashboard(preferOnline: preferOnline));
+          unawaited(_loadTrend(preferOnline: preferOnline));
+        }
+      }),
+    );
   }
 
   Future<void> _loadDashboard({
