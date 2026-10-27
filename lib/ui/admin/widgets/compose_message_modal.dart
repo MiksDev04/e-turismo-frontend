@@ -351,11 +351,11 @@ class _ComposeMessageDialogState extends State<ComposeMessageDialog>
           : 'Please select at least one business',
     );
     final typeErr    = _err('messageType', _draft.messageType == null,
-                            'Please select a message type');
+                            'Please select a notice type');
     final subjectErr = _err('subject', _draft.subject.trim().isEmpty,
                             'Subject is required');
     final contentErr = _err('content', _draft.messageContent.trim().isEmpty,
-                            'Message content is required');
+                            'Notice content is required');
 
     // Block sending until the admin profile is resolved — we must not send
     // a letter with placeholder values.
@@ -523,7 +523,7 @@ class _Header extends StatelessWidget {
       child: Row(
         children: [
           const Text(
-            'Compose Message',
+            'Compose Notice',
             style: TextStyle(
               color:         AppColors.textWhite,
               fontSize:      16,
@@ -715,7 +715,7 @@ class _Form extends StatelessWidget {
             _BroadcastNotice(isAttraction: isAttraction),
           ],
           const SizedBox(height: 18),
-          const _Label('Message Type'),
+          const _Label('Notice Type'),
           const SizedBox(height: 10),
           _TypeSelector(
             selected:  draft.messageType,
@@ -740,11 +740,11 @@ class _Form extends StatelessWidget {
             onEditingComplete: () => onTouch('subject'),
           ),
           const SizedBox(height: 18),
-          const _Label('Message Content'),
+          const _Label('Notice Content'),
           const SizedBox(height: 10),
           _StyledTextField(
             controller: contentCtrl,
-            hint:       'Write your message here...',
+            hint:       'Write your notice here...',
             maxLines:   6,
             errorText:  contentErr,
             onChanged: (v) {
@@ -1537,7 +1537,7 @@ class _Footer extends StatelessWidget {
                             color: Colors.white, size: 15),
                       const SizedBox(width: 8),
                       Text(
-                        sending ? 'Sending...' : 'Send Message',
+                        sending ? 'Sending...' : 'Send Notice',
                         style: const TextStyle(
                           color:      Colors.white,
                           fontSize:   13.5,

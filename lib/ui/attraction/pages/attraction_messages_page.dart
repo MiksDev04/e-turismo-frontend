@@ -211,7 +211,7 @@ class _AttractionMessagesPageState extends State<AttractionMessagesPage> {
         setState(() { _errorCode = code; _isLoading = false; });
       } else {
         setState(() {
-          _error     = 'Failed to load messages. Please try again.';
+          _error     = 'Failed to load notices. Please try again.';
           _isLoading = false;
         });
       }
@@ -842,7 +842,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           const Text(
-            'No messages found.',
+            'No notices found.',
             style: TextStyle(color: AppColors.textSubtle, fontSize: 14),
           ),
         ],

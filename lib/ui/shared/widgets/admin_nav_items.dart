@@ -52,7 +52,7 @@ abstract final class AdminNavItems {
     ),
     NavItem(
       icon: Icons.chat_bubble_outline_rounded,
-      label: 'Messages',
+      label: 'Notices',
       index: 4,
       route: AppRoutes.adminMessages,
     ),
