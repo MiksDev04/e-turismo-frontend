@@ -234,7 +234,8 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
         }),
       );
 
-      // Fetch details without awaiting; update the UI when they finish.
+      // Resolve business details without blocking dashboard load; update the
+      // room count asynchronously when it becomes available.
       unawaited(
         _api
             .fetchBusinessDetails(
@@ -244,15 +245,26 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
             .then((details) {
           if (!mounted) return;
           setState(() {
-            _address    = '${details.address}, ${details.barangay}';
-            _totalRooms = details.totalRooms;
+            _address = '${details.address}, ${details.barangay}';
             if (details.businessLine.isNotEmpty) {
               _businessLine = details.businessLine;
             }
           });
-          _loadDashboard(silent: true);
         }).catchError((_) {
           // Keep defaults if the lookup fails.
+        }),
+      );
+      unawaited(
+        _api
+            .getTotalRooms(
+              sessionBusinessId,
+              preferOnline: preferOnline,
+            )
+            .then((rooms) {
+          if (!mounted) return;
+          setState(() => _totalRooms = rooms);
+        }).catchError((_) {
+          // Keep current value if the lookup fails.
         }),
       );
       return;
@@ -268,6 +280,14 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
         if (_businessId != null) {
           unawaited(_loadDashboard(preferOnline: preferOnline));
           unawaited(_loadTrend(preferOnline: preferOnline));
+          unawaited(
+            _api
+                .getTotalRooms(resolved, preferOnline: preferOnline)
+                .then((rooms) {
+              if (!mounted) return;
+              setState(() => _totalRooms = rooms);
+            }).catchError((_) {}),
+          );
         }
       }),
     );
@@ -286,6 +306,7 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
     }
     try {
       if (_businessId == null) throw Exception('Business account not found.');
+
       final data = await _api.fetchDashboardData(
         businessId: _businessId!,
         totalRooms: _totalRooms,
@@ -358,6 +379,12 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
   Future<void> _exportCsv() async {
     setState(() => _exporting = true);
     try {
+      if (_totalRooms == 0 && _businessId != null) {
+        try {
+          final rooms = await _api.getTotalRooms(_businessId!, preferOnline: true);
+          if (mounted) setState(() => _totalRooms = rooms);
+        } catch (_) {}
+      }
       final d = _dashData;
       if (d == null) return;
 
@@ -381,7 +408,7 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
       buf.writeln(
         'Avg. Length of Stay,${d.stats.avgLengthOfStay.toStringAsFixed(1)} nights',
       );
-      buf.writeln('Total Rooms,${d.stats.totalRooms}');
+      buf.writeln('Total Rooms,$_totalRooms');
       buf.writeln();
 
       buf.writeln('SEX DISTRIBUTION');
@@ -489,6 +516,12 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
   Future<void> _exportPdf() async {
     setState(() => _exporting = true);
     try {
+      if (_totalRooms == 0 && _businessId != null) {
+        try {
+          final rooms = await _api.getTotalRooms(_businessId!, preferOnline: true);
+          if (mounted) setState(() => _totalRooms = rooms);
+        } catch (_) {}
+      }
       final d = _dashData;
       if (d == null) return;
 
@@ -552,7 +585,7 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
                   'Avg. Length of Stay',
                   '${d.stats.avgLengthOfStay.toStringAsFixed(1)} nights',
                 ],
-                ['Total Rooms', '${d.stats.totalRooms}'],
+                ['Total Rooms', '$_totalRooms'],
               ],
               cellStyle: const pw.TextStyle(fontSize: 10),
               headerStyle: pw.TextStyle(
@@ -958,6 +991,7 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
                           else ...[
                             _StatCards(
                               stats:         _dashData!.stats,
+                              totalRooms:    _totalRooms,
                               selectedMonth: _selectedMonth,
                               selectedYear:  _selectedYear,
                             ),
@@ -1474,9 +1508,15 @@ class _ReloadButton extends StatelessWidget {
 // ─── Stat Cards ───────────────────────────────────────────────────────────────
 
 class _StatCards extends StatelessWidget {
-  const _StatCards({required this.stats, required this.selectedMonth, required this.selectedYear});
+  const _StatCards({
+    required this.stats,
+    required this.totalRooms,
+    required this.selectedMonth,
+    required this.selectedYear,
+  });
 
   final DashboardStats stats;
+  final int totalRooms;
   final int selectedMonth;
   final int selectedYear;
 
@@ -1518,7 +1558,7 @@ class _StatCards extends StatelessWidget {
       _StatCard(
         icon:      Icons.bed_rounded,
         iconColor: AppColors.accentOrange,
-        value:     '${stats.totalRooms}',
+        value:     '$totalRooms',
         label:     'Total Rooms',
       ),
     ];

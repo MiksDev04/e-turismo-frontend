@@ -312,6 +312,26 @@ class BusinessDashboardApi extends BaseApi {
     );
   }
 
+  /// Authoritative room count for a business.
+  ///
+  /// Prefers the online detail value when it is greater than zero, but always
+  /// falls back to the locally cached `rooms` table so offline changes (or a
+  /// backend that reports `0`/omits the field) never leave the dashboard
+  /// showing a missing room count.
+  Future<int> getTotalRooms(String businessId, {bool preferOnline = false}) async {
+    try {
+      final details = await fetchBusinessDetails(businessId, preferOnline: preferOnline);
+      if (details.totalRooms > 0) return details.totalRooms;
+    } catch (_) {
+      // Fall through to the local count.
+    }
+    try {
+      return await _localRoomCount(businessId);
+    } catch (_) {
+      return 0;
+    }
+  }
+
   /// Total rooms for a business, counted from the cached `local_rooms` table.
   /// `local_businesses.total_rooms` was dropped in DB v9 — the count is now
   /// always derived from the rooms table, same as the backend's
