@@ -1705,13 +1705,56 @@ class _DonutChartsRow extends StatelessWidget {
           sexDist: sexDist,
           ageGroups: ageGroups,
         );
-        final countriesCard = _CountriesCard(
-          topCountries: topCountries,
-          provinces: provinces,
+        final countriesCard = _ListToggleDonutCard(
+          firstLabel: 'Country',
+          secondLabel: 'Purpose',
+          firstItems: topCountries
+              .map((c) => (label: c.country, count: c.count))
+              .toList(),
+          secondItems: purposeOfVisit
+              .map((p) => (label: p.purpose, count: p.count))
+              .toList(),
+          firstColors: const [
+            AppColors.chartGreen,
+            AppColors.chartBlue,
+            AppColors.chartOrange,
+            AppColors.chartPurple,
+            AppColors.chartGray,
+          ],
+          secondColors: const [
+            AppColors.chartPurple,
+            AppColors.chartOrange,
+            AppColors.chartBlue,
+            AppColors.chartGreen,
+            AppColors.chartCyan,
+            AppColors.chartGray,
+          ],
         );
-        final purposeCard = _PurposeOfVisitCard(
-          purposeOfVisit: purposeOfVisit,
-          cityMunicipalities: cityMunicipalities,
+        final purposeCard = _ListToggleDonutCard(
+          firstLabel: 'Province',
+          secondLabel: 'City / Municipality',
+          firstItems: provinces
+              .map((p) => (label: p.province, count: p.count))
+              .toList(),
+          secondItems: cityMunicipalities
+              .map((c) => (label: c.cityMunicipality, count: c.count))
+              .toList(),
+          firstColors: const [
+            AppColors.chartBlue,
+            AppColors.chartGreen,
+            AppColors.chartOrange,
+            AppColors.chartPurple,
+            AppColors.chartCyan,
+            AppColors.chartGray,
+          ],
+          secondColors: const [
+            AppColors.chartBlue,
+            AppColors.chartGreen,
+            AppColors.chartOrange,
+            AppColors.chartPurple,
+            AppColors.chartCyan,
+            AppColors.chartGray,
+          ],
         );
 
         if (isNarrow) {
@@ -2167,6 +2210,102 @@ class _PurposeOfVisitCardState extends State<_PurposeOfVisitCard> {
         children: [
           _ToggleCardTitle(
             options: const ['Purpose', 'City / Municipality'],
+            selectedIndex: _tab,
+            onChanged: (i) => setState(() => _tab = i),
+          ),
+          if (_emptyHint != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              _emptyHint!,
+              style: const TextStyle(color: AppColors.textSubtle, fontSize: 11),
+            ),
+          ],
+          const SizedBox(height: 16),
+          _DonutContent(
+            key: ValueKey(_tab),
+            segments: _segments,
+            legend: _legend,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── List Toggle Donut Card ───────────────────────────────────────────────────
+
+class _ListToggleDonutCard extends StatefulWidget {
+  const _ListToggleDonutCard({
+    required this.firstLabel,
+    required this.secondLabel,
+    required this.firstItems,
+    required this.secondItems,
+    required this.firstColors,
+    required this.secondColors,
+  });
+
+  final String firstLabel;
+  final String secondLabel;
+  final List<({String label, int count})> firstItems;
+  final List<({String label, int count})> secondItems;
+  final List<Color> firstColors;
+  final List<Color> secondColors;
+
+  @override
+  State<_ListToggleDonutCard> createState() => _ListToggleDonutCardState();
+}
+
+class _ListToggleDonutCardState extends State<_ListToggleDonutCard> {
+  int _tab = 0;
+
+  List<({String label, int count})> get _list =>
+      _tab == 0 ? widget.firstItems : widget.secondItems;
+
+  List<Color> get _colors => _tab == 0 ? widget.firstColors : widget.secondColors;
+
+  List<_Segment> get _segments {
+    final list = _list;
+    if (list.isEmpty) {
+      return List.generate(
+        5,
+        (i) => _Segment(
+          value: 0.2,
+          color: _colors[i % _colors.length],
+          isEmpty: true,
+        ),
+      );
+    }
+    final total = list.fold<int>(0, (s, n) => s + n.count);
+    return list.asMap().entries.map((e) {
+      final ratio = total == 0 ? 1 / list.length : e.value.count / total;
+      return _Segment(
+        value: ratio,
+        color: _colors[e.key % _colors.length],
+        label: e.value.label,
+        count: e.value.count,
+      );
+    }).toList();
+  }
+
+  List<_LegendItem> get _legend => _list
+      .asMap()
+      .entries
+      .map((e) => _LegendItem(
+            label: e.value.label,
+            color: _colors[e.key % _colors.length],
+          ))
+      .toList();
+
+  String? get _emptyHint => _list.isEmpty ? 'No data for this period' : null;
+
+  @override
+  Widget build(BuildContext context) {
+    return _DashCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _ToggleCardTitle(
+            options: [widget.firstLabel, widget.secondLabel],
             selectedIndex: _tab,
             onChanged: (i) => setState(() => _tab = i),
           ),
