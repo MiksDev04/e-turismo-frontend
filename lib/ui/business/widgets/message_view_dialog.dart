@@ -103,7 +103,7 @@ class _ModalHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Message Letter',
+                  'Notice Letter',
                   style: TextStyle(
                     color:         AppColors.textWhite,
                     fontSize:      16,

@@ -442,7 +442,7 @@ class _AttractionProfilePageState extends State<AttractionProfilePage> {
   Widget build(BuildContext context) {
     return AttractionLayout(
       title: 'Profile',
-      selectedIndex: 4,
+      selectedIndex: 5,
       onNavSelected: (_) {},
       child: _errorCode != null
           ? ErrorPage(statusCode: _errorCode!, onRetry: _loadData)

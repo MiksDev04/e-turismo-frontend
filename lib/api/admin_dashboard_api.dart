@@ -640,6 +640,38 @@ class AdminDashboardApi extends BaseApi {
   Future<Map<int, List<MonthlyCount>>> fetchYearlyComparison({
     required List<int> years,
   }) async {
+    try {
+      final response = await get(
+        '/api/dashboard/trend?years=${years.join(',')}',
+      );
+      final data = handleResponse(response) as Map<String, dynamic>? ?? {};
+      final result = <int, List<MonthlyCount>>{};
+
+      for (final year in years) {
+        final raw = data[year.toString()];
+        final numbers = (raw as List?)
+                ?.map((value) => (value as num).toInt())
+                .toList() ??
+            const <int>[];
+
+        result[year] = List.generate(
+          12,
+          (index) => MonthlyCount(
+            month: index + 1,
+            count: index < numbers.length ? numbers[index] : 0,
+          ),
+        );
+      }
+
+      return result;
+    } catch (_) {
+      return _fetchYearlyComparisonLegacy(years: years);
+    }
+  }
+
+  Future<Map<int, List<MonthlyCount>>> _fetchYearlyComparisonLegacy({
+    required List<int> years,
+  }) async {
     final result = <int, List<MonthlyCount>>{};
 
     for (final year in years) {

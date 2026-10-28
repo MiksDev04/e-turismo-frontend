@@ -80,9 +80,15 @@ class _BusinessSidebarState extends State<BusinessSidebar> {
     BizNavItem(
       icon: Icons.chat_bubble_outline_rounded,
       label: 'Notices',
-      index: 5,
+      index: 4,
       badge: unreadCount > 0 ? unreadCount : null,
       route: AppRoutes.businessMessages,
+    ),
+    BizNavItem(
+      icon: Icons.history_rounded,
+      label: 'Activity Logs',
+      index: 5,
+      route: AppRoutes.businessActivityLogs,
     ),
   ];
 

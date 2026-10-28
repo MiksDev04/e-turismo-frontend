@@ -202,8 +202,10 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
     // Only fetch what wasn't already populated from cache in initState.
     final preferOnline = ConnectivityService.instance.isOnline;
     final futures = <Future>[];
-    if (_loadingDash) futures.add(_loadDashboard(preferOnline: preferOnline));
-    if (_loadingTrend) futures.add(_loadTrend(preferOnline: preferOnline));
+    if (_businessId != null) {
+      if (_loadingDash) futures.add(_loadDashboard(preferOnline: preferOnline));
+      if (_loadingTrend) futures.add(_loadTrend(preferOnline: preferOnline));
+    }
     if (futures.isNotEmpty) await Future.wait(futures);
   }
 
@@ -212,36 +214,83 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
         SessionService.instance.current ??
         await SessionService.instance.loadAndCache();
 
-    final resolvedBusinessId =
-        await _api.resolveBusinessId(preferOnline: preferOnline) ??
-        session?.businessId;
+    final sessionBusinessId = session?.businessId;
+    if (sessionBusinessId != null && sessionBusinessId.isNotEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _businessId   = sessionBusinessId;
+        _businessName = session?.businessName ?? '';
+        _businessLine = session?.businessLine ?? const [];
+        _address      = '${session?.street ?? ''}, ${session?.barangay ?? ''}';
+      });
 
-    if (!mounted) return;
-    setState(() {
-      _businessId   = resolvedBusinessId;
-      _businessName = session?.businessName ?? '';
-      _businessLine = session?.businessLine ?? const [];
-      _address      = '${session?.street ?? ''}, ${session?.barangay ?? ''}';
-    });
+      // Correct a stale id in the background without blocking data loads.
+      unawaited(
+        _api.resolveBusinessId(preferOnline: preferOnline).then((resolved) {
+          if (!mounted) return;
+          if (resolved != null && resolved.isNotEmpty && resolved != _businessId) {
+            setState(() => _businessId = resolved);
+          }
+        }),
+      );
 
-    if (_businessId != null) {
-      try {
-        final details = await _api.fetchBusinessDetails(
-          _businessId!,
-          preferOnline: preferOnline,
-        );
-        if (!mounted) return;
-        setState(() {
-          _address      = '${details.address}, ${details.barangay}';
-          _totalRooms   = details.totalRooms;
-          _businessLine = details.businessLine.isNotEmpty
-              ? details.businessLine
-              : (session?.businessLine ?? const []);
-        });
-      } catch (_) {
-        // Keep defaults if the lookup fails.
-      }
+      // Resolve business details without blocking dashboard load; update the
+      // room count asynchronously when it becomes available.
+      unawaited(
+        _api
+            .fetchBusinessDetails(
+              sessionBusinessId,
+              preferOnline: preferOnline,
+            )
+            .then((details) {
+          if (!mounted) return;
+          setState(() {
+            _address = '${details.address}, ${details.barangay}';
+            if (details.businessLine.isNotEmpty) {
+              _businessLine = details.businessLine;
+            }
+          });
+        }).catchError((_) {
+          // Keep defaults if the lookup fails.
+        }),
+      );
+      unawaited(
+        _api
+            .getTotalRooms(
+              sessionBusinessId,
+              preferOnline: preferOnline,
+            )
+            .then((rooms) {
+          if (!mounted) return;
+          setState(() => _totalRooms = rooms);
+        }).catchError((_) {
+          // Keep current value if the lookup fails.
+        }),
+      );
+      return;
     }
+
+    // Fallback for a missing cached id: resolve in the background and load
+    // when an id becomes available.
+    unawaited(
+      _api.resolveBusinessId(preferOnline: preferOnline).then((resolved) {
+        if (!mounted) return;
+        if (resolved == null || resolved.isEmpty) return;
+        setState(() => _businessId = resolved);
+        if (_businessId != null) {
+          unawaited(_loadDashboard(preferOnline: preferOnline));
+          unawaited(_loadTrend(preferOnline: preferOnline));
+          unawaited(
+            _api
+                .getTotalRooms(resolved, preferOnline: preferOnline)
+                .then((rooms) {
+              if (!mounted) return;
+              setState(() => _totalRooms = rooms);
+            }).catchError((_) {}),
+          );
+        }
+      }),
+    );
   }
 
   Future<void> _loadDashboard({
@@ -257,6 +306,7 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
     }
     try {
       if (_businessId == null) throw Exception('Business account not found.');
+
       final data = await _api.fetchDashboardData(
         businessId: _businessId!,
         totalRooms: _totalRooms,
@@ -329,6 +379,12 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
   Future<void> _exportCsv() async {
     setState(() => _exporting = true);
     try {
+      if (_totalRooms == 0 && _businessId != null) {
+        try {
+          final rooms = await _api.getTotalRooms(_businessId!, preferOnline: true);
+          if (mounted) setState(() => _totalRooms = rooms);
+        } catch (_) {}
+      }
       final d = _dashData;
       if (d == null) return;
 
@@ -352,7 +408,7 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
       buf.writeln(
         'Avg. Length of Stay,${d.stats.avgLengthOfStay.toStringAsFixed(1)} nights',
       );
-      buf.writeln('Total Rooms,${d.stats.totalRooms}');
+      buf.writeln('Total Rooms,$_totalRooms');
       buf.writeln();
 
       buf.writeln('SEX DISTRIBUTION');
@@ -460,6 +516,12 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
   Future<void> _exportPdf() async {
     setState(() => _exporting = true);
     try {
+      if (_totalRooms == 0 && _businessId != null) {
+        try {
+          final rooms = await _api.getTotalRooms(_businessId!, preferOnline: true);
+          if (mounted) setState(() => _totalRooms = rooms);
+        } catch (_) {}
+      }
       final d = _dashData;
       if (d == null) return;
 
@@ -523,7 +585,7 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
                   'Avg. Length of Stay',
                   '${d.stats.avgLengthOfStay.toStringAsFixed(1)} nights',
                 ],
-                ['Total Rooms', '${d.stats.totalRooms}'],
+                ['Total Rooms', '$_totalRooms'],
               ],
               cellStyle: const pw.TextStyle(fontSize: 10),
               headerStyle: pw.TextStyle(
@@ -929,6 +991,7 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
                           else ...[
                             _StatCards(
                               stats:         _dashData!.stats,
+                              totalRooms:    _totalRooms,
                               selectedMonth: _selectedMonth,
                               selectedYear:  _selectedYear,
                             ),
@@ -1445,9 +1508,15 @@ class _ReloadButton extends StatelessWidget {
 // ─── Stat Cards ───────────────────────────────────────────────────────────────
 
 class _StatCards extends StatelessWidget {
-  const _StatCards({required this.stats, required this.selectedMonth, required this.selectedYear});
+  const _StatCards({
+    required this.stats,
+    required this.totalRooms,
+    required this.selectedMonth,
+    required this.selectedYear,
+  });
 
   final DashboardStats stats;
+  final int totalRooms;
   final int selectedMonth;
   final int selectedYear;
 
@@ -1489,7 +1558,7 @@ class _StatCards extends StatelessWidget {
       _StatCard(
         icon:      Icons.bed_rounded,
         iconColor: AppColors.accentOrange,
-        value:     '${stats.totalRooms}',
+        value:     '$totalRooms',
         label:     'Total Rooms',
       ),
     ];
@@ -1676,13 +1745,56 @@ class _DonutChartsRow extends StatelessWidget {
           sexDist: sexDist,
           ageGroups: ageGroups,
         );
-        final countriesCard = _CountriesCard(
-          topCountries: topCountries,
-          provinces: provinces,
+        final countriesCard = _ListToggleDonutCard(
+          firstLabel: 'Country',
+          secondLabel: 'Purpose',
+          firstItems: topCountries
+              .map((c) => (label: c.country, count: c.count))
+              .toList(),
+          secondItems: purposeOfVisit
+              .map((p) => (label: p.purpose, count: p.count))
+              .toList(),
+          firstColors: const [
+            AppColors.chartGreen,
+            AppColors.chartBlue,
+            AppColors.chartOrange,
+            AppColors.chartPurple,
+            AppColors.chartGray,
+          ],
+          secondColors: const [
+            AppColors.chartPurple,
+            AppColors.chartOrange,
+            AppColors.chartBlue,
+            AppColors.chartGreen,
+            AppColors.chartCyan,
+            AppColors.chartGray,
+          ],
         );
-        final purposeCard = _PurposeOfVisitCard(
-          purposeOfVisit: purposeOfVisit,
-          cityMunicipalities: cityMunicipalities,
+        final purposeCard = _ListToggleDonutCard(
+          firstLabel: 'Province',
+          secondLabel: 'City / Municipality',
+          firstItems: provinces
+              .map((p) => (label: p.province, count: p.count))
+              .toList(),
+          secondItems: cityMunicipalities
+              .map((c) => (label: c.cityMunicipality, count: c.count))
+              .toList(),
+          firstColors: const [
+            AppColors.chartBlue,
+            AppColors.chartGreen,
+            AppColors.chartOrange,
+            AppColors.chartPurple,
+            AppColors.chartCyan,
+            AppColors.chartGray,
+          ],
+          secondColors: const [
+            AppColors.chartBlue,
+            AppColors.chartGreen,
+            AppColors.chartOrange,
+            AppColors.chartPurple,
+            AppColors.chartCyan,
+            AppColors.chartGray,
+          ],
         );
 
         if (isNarrow) {
@@ -2138,6 +2250,102 @@ class _PurposeOfVisitCardState extends State<_PurposeOfVisitCard> {
         children: [
           _ToggleCardTitle(
             options: const ['Purpose', 'City / Municipality'],
+            selectedIndex: _tab,
+            onChanged: (i) => setState(() => _tab = i),
+          ),
+          if (_emptyHint != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              _emptyHint!,
+              style: const TextStyle(color: AppColors.textSubtle, fontSize: 11),
+            ),
+          ],
+          const SizedBox(height: 16),
+          _DonutContent(
+            key: ValueKey(_tab),
+            segments: _segments,
+            legend: _legend,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── List Toggle Donut Card ───────────────────────────────────────────────────
+
+class _ListToggleDonutCard extends StatefulWidget {
+  const _ListToggleDonutCard({
+    required this.firstLabel,
+    required this.secondLabel,
+    required this.firstItems,
+    required this.secondItems,
+    required this.firstColors,
+    required this.secondColors,
+  });
+
+  final String firstLabel;
+  final String secondLabel;
+  final List<({String label, int count})> firstItems;
+  final List<({String label, int count})> secondItems;
+  final List<Color> firstColors;
+  final List<Color> secondColors;
+
+  @override
+  State<_ListToggleDonutCard> createState() => _ListToggleDonutCardState();
+}
+
+class _ListToggleDonutCardState extends State<_ListToggleDonutCard> {
+  int _tab = 0;
+
+  List<({String label, int count})> get _list =>
+      _tab == 0 ? widget.firstItems : widget.secondItems;
+
+  List<Color> get _colors => _tab == 0 ? widget.firstColors : widget.secondColors;
+
+  List<_Segment> get _segments {
+    final list = _list;
+    if (list.isEmpty) {
+      return List.generate(
+        5,
+        (i) => _Segment(
+          value: 0.2,
+          color: _colors[i % _colors.length],
+          isEmpty: true,
+        ),
+      );
+    }
+    final total = list.fold<int>(0, (s, n) => s + n.count);
+    return list.asMap().entries.map((e) {
+      final ratio = total == 0 ? 1 / list.length : e.value.count / total;
+      return _Segment(
+        value: ratio,
+        color: _colors[e.key % _colors.length],
+        label: e.value.label,
+        count: e.value.count,
+      );
+    }).toList();
+  }
+
+  List<_LegendItem> get _legend => _list
+      .asMap()
+      .entries
+      .map((e) => _LegendItem(
+            label: e.value.label,
+            color: _colors[e.key % _colors.length],
+          ))
+      .toList();
+
+  String? get _emptyHint => _list.isEmpty ? 'No data for this period' : null;
+
+  @override
+  Widget build(BuildContext context) {
+    return _DashCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _ToggleCardTitle(
+            options: [widget.firstLabel, widget.secondLabel],
             selectedIndex: _tab,
             onChanged: (i) => setState(() => _tab = i),
           ),
@@ -3013,8 +3221,8 @@ class _DonutTooltip extends StatelessWidget {
           ),
           Text(
             segment.count != null
-                ? '${segment.count} guests'
-                : segment.percentage!,
+                ? '${segment.count} guests (${(segment.value * 100).toStringAsFixed(1)}%)'
+                : '${segment.percentage!} (${(segment.value * 100).toStringAsFixed(1)}%)',
             style: const TextStyle(color: Colors.white70, fontSize: 10),
           ),
         ],

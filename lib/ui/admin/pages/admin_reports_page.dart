@@ -30,9 +30,11 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
   bool _loadingReports = false;
   int? _errorCode;
   String? _fetchError;
-  String _filterYear = '';
-  String _filterMonth = '';
   String _filterType = '';
+  String _filterFromMonth = '';
+  String _filterFromYear = '';
+  String _filterToMonth = '';
+  String _filterToYear = '';
   int _currentPage = 0;
   int _pageSize = 10;
   int _totalPages = 0;
@@ -65,12 +67,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     '2022',
   ];
 
-  static const List<String> _types = [
-    'All Types',
-    'DAE',
-    'VAR 1',
-    'VAR 2',
-  ];
+  static const List<String> _types = ['All Types', 'DAE', 'VAR 1', 'VAR 2'];
 
   static String? _typeCode(String label) {
     switch (label) {
@@ -102,9 +99,20 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       final result = await _reportService.fetchReportBatches(
         page: _currentPage + 1,
         pageSize: _pageSize,
-        year: _filterYear.isNotEmpty ? _filterYear : null,
-        month: _filterMonth.isNotEmpty ? _filterMonth : null,
         type: _typeCode(_filterType),
+        fromMonth:
+            _filterFromMonth.isNotEmpty && _filterFromMonth != 'All Months'
+            ? _filterFromMonth
+            : null,
+        fromYear: _filterFromYear.isNotEmpty && _filterFromYear != 'All Years'
+            ? _filterFromYear
+            : null,
+        toMonth: _filterToMonth.isNotEmpty && _filterToMonth != 'All Months'
+            ? _filterToMonth
+            : null,
+        toYear: _filterToYear.isNotEmpty && _filterToYear != 'All Years'
+            ? _filterToYear
+            : null,
       );
 
       if (!mounted) return;
@@ -137,15 +145,21 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
       builder: (_) => _CreateBatchDialog(
         months: _months.where((m) => m != 'All Months').toList(),
         years: _years.where((y) => y != 'All Years').toList(),
-        onCreate: ({
-          required String reportType,
-          required String variant,
-          required int year,
-          required List<int> months,
-        }) {
-          Navigator.pop(context);
-          _onCreateBatch(reportType: reportType, variant: variant, year: year, months: months);
-        },
+        onCreate:
+            ({
+              required String reportType,
+              required String variant,
+              required int year,
+              required List<int> months,
+            }) {
+              Navigator.pop(context);
+              _onCreateBatch(
+                reportType: reportType,
+                variant: variant,
+                year: year,
+                months: months,
+              );
+            },
       ),
     );
   }
@@ -157,12 +171,14 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     required List<int> months,
   }) async {
     try {
-      final result = await _reportService.createBatch(CreateBatchParams(
-        reportType: reportType,
-        reportVariant: variant,
-        periodYear: year,
-        periodMonths: months,
-      ));
+      final result = await _reportService.createBatch(
+        CreateBatchParams(
+          reportType: reportType,
+          reportVariant: variant,
+          periodYear: year,
+          periodMonths: months,
+        ),
+      );
       await _fetchBatches();
       if (!mounted) return;
       if (result.alreadyExisted) {
@@ -183,26 +199,32 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     showDialog(
       context: context,
       barrierColor: Colors.black87,
-      builder: (_) => ReportViewerModal(
-        batch: batch,
-      ),
+      builder: (_) => ReportViewerModal(batch: batch),
     );
   }
 
-  Future<void> _downloadReport(ReportBatch batch, {String format = 'xlsx'}) async {
+  Future<void> _downloadReport(
+    ReportBatch batch, {
+    String format = 'xlsx',
+  }) async {
     try {
       AppToast.success(context, 'Downloading $format...');
-      final bytes = await _reportService.downloadReport(DownloadReportParams(
-        reportType: batch.reportType,
-        reportVariant: batch.reportVariant,
-        periodYear: batch.periodYear,
-        periodMonths: batch.periodMonths,
-        format: format,
-      ));
+      final bytes = await _reportService.downloadReport(
+        DownloadReportParams(
+          reportType: batch.reportType,
+          reportVariant: batch.reportVariant,
+          periodYear: batch.periodYear,
+          periodMonths: batch.periodMonths,
+          format: format,
+        ),
+      );
 
       final typePrefix = batch.reportType.toUpperCase();
-      final periodSlug = batch.displayPeriod.replaceAll(', ', '_').replaceAll(' ', '');
-      final fileName = '${typePrefix}_${batch.reportVariant}_${periodSlug}.$format';
+      final periodSlug = batch.displayPeriod
+          .replaceAll(', ', '_')
+          .replaceAll(' ', '');
+      final fileName =
+          '${typePrefix}_${batch.reportVariant}_${periodSlug}.$format';
       final savedPath = await _saveFile(fileName, bytes);
       if (!mounted) return;
       if (savedPath != null) {
@@ -220,9 +242,11 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
 
   void _clearFilters() {
     setState(() {
-      _filterYear = '';
-      _filterMonth = '';
       _filterType = '';
+      _filterFromMonth = '';
+      _filterFromYear = '';
+      _filterToMonth = '';
+      _filterToYear = '';
       _currentPage = 0;
     });
     _fetchBatches();
@@ -259,26 +283,126 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
                           months: _months,
                           years: _years,
                           types: _types,
-                          selectedMonth: _filterMonth,
-                          selectedYear: _filterYear,
                           selectedType: _filterType,
-                          onMonthChanged: (v) {
-                            setState(() {
-                              _filterMonth = v ?? '';
-                              _currentPage = 0;
-                            });
-                            _fetchBatches();
-                          },
-                          onYearChanged: (v) {
-                            setState(() {
-                              _filterYear = v ?? '';
-                              _currentPage = 0;
-                            });
-                            _fetchBatches();
-                          },
+                          selectedFromMonth: _filterFromMonth,
+                          selectedFromYear: _filterFromYear,
+                          selectedToMonth: _filterToMonth,
+                          selectedToYear: _filterToYear,
                           onTypeChanged: (v) {
                             setState(() {
                               _filterType = v ?? '';
+                              _currentPage = 0;
+                            });
+                            _fetchBatches();
+                          },
+                          onFromMonthChanged: (v) {
+                            setState(() {
+                              _filterFromMonth = v ?? '';
+                              if (_filterToMonth.isEmpty ||
+                                  _filterToMonth == 'All Months') {
+                                _filterToMonth = _filterFromMonth;
+                              }
+                              if (_filterFromYear.isNotEmpty &&
+                                  _filterFromYear != 'All Years' &&
+                                  _filterToYear.isNotEmpty &&
+                                  _filterToYear != 'All Years' &&
+                                  _filterFromMonth.isNotEmpty &&
+                                  _filterFromMonth != 'All Months' &&
+                                  _filterToMonth.isNotEmpty &&
+                                  _filterToMonth != 'All Months') {
+                                final fromVal =
+                                    (int.parse(_filterFromYear) * 12 +
+                                    _months.indexOf(_filterFromMonth));
+                                final toVal =
+                                    (int.parse(_filterToYear) * 12 +
+                                    _months.indexOf(_filterToMonth));
+                                if (toVal < fromVal) {
+                                  _filterToMonth = _filterFromMonth;
+                                  _filterToYear = _filterFromYear;
+                                }
+                              }
+                              _currentPage = 0;
+                            });
+                            _fetchBatches();
+                          },
+                          onFromYearChanged: (v) {
+                            setState(() {
+                              _filterFromYear = v ?? '';
+                              if (_filterToYear.isEmpty ||
+                                  _filterToYear == 'All Years') {
+                                _filterToYear = _filterFromYear;
+                              }
+                              if (_filterFromYear.isNotEmpty &&
+                                  _filterFromYear != 'All Years' &&
+                                  _filterToYear.isNotEmpty &&
+                                  _filterToYear != 'All Years' &&
+                                  _filterFromMonth.isNotEmpty &&
+                                  _filterFromMonth != 'All Months' &&
+                                  _filterToMonth.isNotEmpty &&
+                                  _filterToMonth != 'All Months') {
+                                final fromVal =
+                                    (int.parse(_filterFromYear) * 12 +
+                                    _months.indexOf(_filterFromMonth));
+                                final toVal =
+                                    (int.parse(_filterToYear) * 12 +
+                                    _months.indexOf(_filterToMonth));
+                                if (toVal < fromVal) {
+                                  _filterToMonth = _filterFromMonth;
+                                  _filterToYear = _filterFromYear;
+                                }
+                              }
+                              _currentPage = 0;
+                            });
+                            _fetchBatches();
+                          },
+                          onToMonthChanged: (v) {
+                            setState(() {
+                              _filterToMonth = v ?? '';
+                              if (_filterFromYear.isNotEmpty &&
+                                  _filterFromYear != 'All Years' &&
+                                  _filterToYear.isNotEmpty &&
+                                  _filterToYear != 'All Years' &&
+                                  _filterFromMonth.isNotEmpty &&
+                                  _filterFromMonth != 'All Months' &&
+                                  _filterToMonth.isNotEmpty &&
+                                  _filterToMonth != 'All Months') {
+                                final fromVal =
+                                    (int.parse(_filterFromYear) * 12 +
+                                    _months.indexOf(_filterFromMonth));
+                                final toVal =
+                                    (int.parse(_filterToYear) * 12 +
+                                    _months.indexOf(_filterToMonth));
+                                if (toVal < fromVal) {
+                                  _filterToMonth = _filterFromMonth;
+                                  _filterToYear = _filterFromYear;
+                                }
+                              }
+                              _currentPage = 0;
+                            });
+                            _fetchBatches();
+                          },
+                          onToYearChanged: (v) {
+                            setState(() {
+                              _filterToYear = v ?? '';
+                              if (_filterFromYear.isNotEmpty &&
+                                  _filterFromYear != 'All Years' &&
+                                  _filterToYear.isNotEmpty &&
+                                  _filterToYear != 'All Years' &&
+                                  _filterFromMonth.isNotEmpty &&
+                                  _filterFromMonth != 'All Months' &&
+                                  _filterToMonth.isNotEmpty &&
+                                  _filterToMonth != 'All Months') {
+                                final fromVal =
+                                    (int.parse(_filterFromYear) * 12 +
+                                    _months.indexOf(_filterFromMonth));
+                                final toVal =
+                                    (int.parse(_filterToYear) * 12 +
+                                    _months.indexOf(_filterToMonth));
+                                if (toVal < fromVal) {
+                                  _filterToMonth = _filterFromMonth;
+                                  _filterToYear = _filterFromYear;
+                                }
+                              }
                               _currentPage = 0;
                             });
                             _fetchBatches();
@@ -384,7 +508,10 @@ class _SectionLabel extends StatelessWidget {
               if (subtitle.isNotEmpty)
                 Text(
                   subtitle,
-                  style: const TextStyle(color: AppColors.textGray, fontSize: 12),
+                  style: const TextStyle(
+                    color: AppColors.textGray,
+                    fontSize: 12,
+                  ),
                 ),
             ],
           ),
@@ -585,10 +712,7 @@ class _TableRow extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: actions,
-            ),
+            Align(alignment: Alignment.centerRight, child: actions),
           ],
         ),
       );
@@ -598,10 +722,7 @@ class _TableRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       child: Row(
         children: [
-          Expanded(
-            flex: 1,
-            child: _TypeBadge(type: batch.reportType),
-          ),
+          Expanded(flex: 1, child: _TypeBadge(type: batch.reportType)),
           Expanded(
             flex: 2,
             child: Text(
@@ -616,10 +737,7 @@ class _TableRow extends StatelessWidget {
               style: const TextStyle(color: AppColors.textGray, fontSize: 13),
             ),
           ),
-          SizedBox(
-            width: 210,
-            child: actions,
-          ),
+          SizedBox(width: 210, child: actions),
         ],
       ),
     );
@@ -776,12 +894,16 @@ class _TypeBadge extends StatelessWidget {
     final typeKey = type.toLowerCase();
     final isDae = typeKey == 'dae';
     final isVar1 = typeKey == 'var1';
-    final label = isDae ? 'DAE' : isVar1 ? 'VAR 1' : 'VAR 2';
+    final label = isDae
+        ? 'DAE'
+        : isVar1
+        ? 'VAR 1'
+        : 'VAR 2';
     final color = isDae
         ? const Color(0xFF00C48C)
         : isVar1
-            ? const Color(0xFF7C4DFF)
-            : const Color(0xFFFFCA28);
+        ? const Color(0xFF7C4DFF)
+        : const Color(0xFFFFCA28);
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
@@ -839,7 +961,8 @@ class _CreateBatchDialog extends StatefulWidget {
     required String variant,
     required int year,
     required List<int> months,
-  }) onCreate;
+  })
+  onCreate;
 
   @override
   State<_CreateBatchDialog> createState() => _CreateBatchDialogState();
@@ -878,8 +1001,18 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
 
   static int _monthIndex(String name) {
     const names = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return names.indexOf(name) + 1;
   }
@@ -909,7 +1042,8 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
   }
 
   String get _dialogSubtitle {
-    if (_isVar2) return 'Combined attractions and accommodations \u2014 one row each';
+    if (_isVar2)
+      return 'Combined attractions and accommodations \u2014 one row each';
     if (_isVar1) return 'Daily visitor breakdown for tourist attractions';
     return 'Daily, monthly totals, and monthly series';
   }
@@ -948,8 +1082,13 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
               LayoutBuilder(
                 builder: (context, constraints) {
                   final isNarrow = constraints.maxWidth < 400;
-                  Widget card(IconData icon, String label, String subtitle,
-                      bool selected, VoidCallback onTap) {
+                  Widget card(
+                    IconData icon,
+                    String label,
+                    String subtitle,
+                    bool selected,
+                    VoidCallback onTap,
+                  ) {
                     return SizedBox(
                       width: isNarrow ? double.infinity : null,
                       child: _TypeCard(
@@ -1022,7 +1161,8 @@ class _CreateBatchDialogState extends State<_CreateBatchDialog> {
                     children: [
                       _VariantOption(
                         label: 'Daily Breakdown',
-                        subtitle: 'Sheet 1 \u2014 Per-day columns for one month',
+                        subtitle:
+                            'Sheet 1 \u2014 Per-day columns for one month',
                         selected: _variant == 'daily',
                         onTap: () => setState(() {
                           _variant = 'daily';
@@ -1171,10 +1311,7 @@ class _DialogHeader extends StatelessWidget {
               ),
               Text(
                 subtitle,
-                style: const TextStyle(
-                  color: AppColors.textGray,
-                  fontSize: 11,
-                ),
+                style: const TextStyle(color: AppColors.textGray, fontSize: 11),
               ),
             ],
           ),
@@ -1253,7 +1390,9 @@ class _TypeCard extends StatelessWidget {
                   Text(
                     label,
                     style: TextStyle(
-                      color: selected ? AppColors.primaryCyan : AppColors.textWhite,
+                      color: selected
+                          ? AppColors.primaryCyan
+                          : AppColors.textWhite,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1262,7 +1401,9 @@ class _TypeCard extends StatelessWidget {
                   Text(
                     subtitle,
                     style: TextStyle(
-                      color: selected ? AppColors.textGray : AppColors.textSubtle,
+                      color: selected
+                          ? AppColors.textGray
+                          : AppColors.textSubtle,
                       fontSize: 11,
                     ),
                   ),
@@ -1285,10 +1426,7 @@ class _TypeCard extends StatelessWidget {
 // ─── Create Button ─────────────────────────────────────────────────────────
 
 class _CreateButton extends StatelessWidget {
-  const _CreateButton({
-    required this.enabled,
-    required this.onPressed,
-  });
+  const _CreateButton({required this.enabled, required this.onPressed});
 
   final bool enabled;
   final VoidCallback onPressed;
@@ -1377,7 +1515,9 @@ class _VariantOption extends StatelessWidget {
                   Text(
                     label,
                     style: TextStyle(
-                      color: selected ? AppColors.textWhite : AppColors.textGray,
+                      color: selected
+                          ? AppColors.textWhite
+                          : AppColors.textGray,
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
                     ),
@@ -1385,7 +1525,9 @@ class _VariantOption extends StatelessWidget {
                   Text(
                     subtitle,
                     style: TextStyle(
-                      color: selected ? AppColors.textGray : AppColors.textSubtle,
+                      color: selected
+                          ? AppColors.textGray
+                          : AppColors.textSubtle,
                       fontSize: 11,
                     ),
                   ),
@@ -1431,7 +1573,8 @@ class _MonthRangeGrid extends StatelessWidget {
 
   String get _rangeLabel {
     if (rangeStart == null) return 'Tap a month to start';
-    if (rangeEnd == null) return '${months[rangeStart! - 1]} \u2014 tap end month';
+    if (rangeEnd == null)
+      return '${months[rangeStart! - 1]} \u2014 tap end month';
     final lo = rangeStart! <= rangeEnd! ? rangeStart! : rangeEnd!;
     final hi = rangeStart! <= rangeEnd! ? rangeEnd! : rangeStart!;
     if (lo == hi) return months[lo - 1];
@@ -1464,24 +1607,35 @@ class _MonthRangeGrid extends StatelessWidget {
                 onTap: () => onMonthTap(monthNum),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: inRange
-                        ? AppColors.primaryCyan.withOpacity(isEdge ? 0.25 : 0.12)
+                        ? AppColors.primaryCyan.withOpacity(
+                            isEdge ? 0.25 : 0.12,
+                          )
                         : AppColors.cardBackground,
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(
                       color: inRange
-                          ? AppColors.primaryCyan.withOpacity(isEdge ? 0.8 : 0.4)
+                          ? AppColors.primaryCyan.withOpacity(
+                              isEdge ? 0.8 : 0.4,
+                            )
                           : AppColors.cardBorder,
                     ),
                   ),
                   child: Text(
                     months[i].substring(0, 3),
                     style: TextStyle(
-                      color: inRange ? AppColors.primaryCyan : AppColors.textGray,
+                      color: inRange
+                          ? AppColors.primaryCyan
+                          : AppColors.textGray,
                       fontSize: 12,
-                      fontWeight: isEdge ? FontWeight.w700 : (inRange ? FontWeight.w600 : FontWeight.w400),
+                      fontWeight: isEdge
+                          ? FontWeight.w700
+                          : (inRange ? FontWeight.w600 : FontWeight.w400),
                     ),
                   ),
                 ),
@@ -1492,8 +1646,12 @@ class _MonthRangeGrid extends StatelessWidget {
           Row(
             children: [
               Icon(
-                rangeEnd != null ? Icons.check_circle_rounded : Icons.touch_app_rounded,
-                color: rangeEnd != null ? AppColors.primaryCyan : AppColors.textSubtle,
+                rangeEnd != null
+                    ? Icons.check_circle_rounded
+                    : Icons.touch_app_rounded,
+                color: rangeEnd != null
+                    ? AppColors.primaryCyan
+                    : AppColors.textSubtle,
                 size: 14,
               ),
               const SizedBox(width: 6),
@@ -1501,9 +1659,13 @@ class _MonthRangeGrid extends StatelessWidget {
                 child: Text(
                   _rangeLabel,
                   style: TextStyle(
-                    color: rangeEnd != null ? AppColors.primaryCyan : AppColors.textSubtle,
+                    color: rangeEnd != null
+                        ? AppColors.primaryCyan
+                        : AppColors.textSubtle,
                     fontSize: 12,
-                    fontWeight: rangeEnd != null ? FontWeight.w600 : FontWeight.w400,
+                    fontWeight: rangeEnd != null
+                        ? FontWeight.w600
+                        : FontWeight.w400,
                   ),
                 ),
               ),
@@ -1511,7 +1673,10 @@ class _MonthRangeGrid extends StatelessWidget {
                 GestureDetector(
                   onTap: onReset,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.cardBackground,
                       borderRadius: BorderRadius.circular(4),
@@ -1621,12 +1786,16 @@ class _FilterSection extends StatelessWidget {
     required this.months,
     required this.years,
     required this.types,
-    required this.selectedMonth,
-    required this.selectedYear,
     required this.selectedType,
-    required this.onMonthChanged,
-    required this.onYearChanged,
+    required this.selectedFromMonth,
+    required this.selectedFromYear,
+    required this.selectedToMonth,
+    required this.selectedToYear,
     required this.onTypeChanged,
+    required this.onFromMonthChanged,
+    required this.onFromYearChanged,
+    required this.onToMonthChanged,
+    required this.onToYearChanged,
     required this.onClear,
   });
 
@@ -1634,25 +1803,36 @@ class _FilterSection extends StatelessWidget {
   final List<String> months;
   final List<String> years;
   final List<String> types;
-  final String selectedMonth;
-  final String selectedYear;
   final String selectedType;
-  final void Function(String?) onMonthChanged;
-  final void Function(String?) onYearChanged;
+  final String selectedFromMonth;
+  final String selectedFromYear;
+  final String selectedToMonth;
+  final String selectedToYear;
   final void Function(String?) onTypeChanged;
+  final void Function(String?) onFromMonthChanged;
+  final void Function(String?) onFromYearChanged;
+  final void Function(String?) onToMonthChanged;
+  final void Function(String?) onToYearChanged;
   final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
-    final monthValue = selectedMonth.isEmpty ? 'All Months' : selectedMonth;
-    final yearValue = selectedYear.isEmpty ? 'All Years' : selectedYear;
     final typeValue = selectedType.isEmpty ? 'All Types' : selectedType;
+    final fromMonthValue = selectedFromMonth.isEmpty
+        ? 'All Months'
+        : selectedFromMonth;
+    final fromYearValue = selectedFromYear.isEmpty
+        ? 'All Years'
+        : selectedFromYear;
+    final toMonthValue = selectedToMonth.isEmpty
+        ? 'All Months'
+        : selectedToMonth;
+    final toYearValue = selectedToYear.isEmpty ? 'All Years' : selectedToYear;
 
     final clearButton = GestureDetector(
       onTap: onClear,
       child: Container(
-        height: 38,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: AppColors.cardBackground,
           borderRadius: BorderRadius.circular(8),
@@ -1661,8 +1841,8 @@ class _FilterSection extends StatelessWidget {
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.clear_rounded, color: AppColors.textGray, size: 14),
-            SizedBox(width: 4),
+            Icon(Icons.clear_rounded, color: AppColors.textGray, size: 15),
+            SizedBox(width: 5),
             Text(
               'Clear',
               style: TextStyle(color: AppColors.textGray, fontSize: 12),
@@ -1672,33 +1852,107 @@ class _FilterSection extends StatelessWidget {
       ),
     );
 
+    final typeField = _FilterDropdown(
+      label: 'Report Type',
+      value: typeValue,
+      items: types,
+      onChanged: onTypeChanged,
+    );
+
+    final fromFields = [
+      _FilterDropdown(
+        label: 'From Month',
+        value: fromMonthValue,
+        items: months,
+        onChanged: onFromMonthChanged,
+      ),
+      const SizedBox(width: 6),
+      _FilterDropdown(
+        label: 'From Year',
+        value: fromYearValue,
+        items: years,
+        onChanged: onFromYearChanged,
+      ),
+    ];
+
+    final toFields = [
+      _FilterDropdown(
+        label: 'To Month',
+        value: toMonthValue,
+        items: months,
+        onChanged: onToMonthChanged,
+      ),
+      const SizedBox(width: 6),
+      _FilterDropdown(
+        label: 'To Year',
+        value: toYearValue,
+        items: years,
+        onChanged: onToYearChanged,
+      ),
+    ];
+
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          typeField,
+          const SizedBox(height: 10),
+          Row(
+            children: fromFields
+                .map((w) => w is SizedBox ? w : Expanded(child: w))
+                .toList(),
+          ),
+          const SizedBox(height: 6),
+          const Center(
+            child: Icon(
+              Icons.arrow_forward_rounded,
+              color: AppColors.textSubtle,
+              size: 14,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: toFields
+                .map((w) => w is SizedBox ? w : Expanded(child: w))
+                .toList(),
+          ),
+          const SizedBox(height: 10),
+          Align(alignment: Alignment.centerRight, child: clearButton),
+        ],
+      );
+    }
+
     if (isNarrow) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          typeField,
+          const SizedBox(height: 10),
           Row(
+            children: fromFields
+                .map((w) => w is SizedBox ? w : Expanded(child: w))
+                .toList(),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Expanded(
-                child: _FilterDropdown(
-                  value: typeValue,
-                  items: types,
-                  onChanged: onTypeChanged,
+              const Padding(
+                padding: EdgeInsets.only(bottom: 11),
+                child: Icon(
+                  Icons.arrow_forward_rounded,
+                  color: AppColors.textSubtle,
+                  size: 14,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 6),
               Expanded(
-                child: _FilterDropdown(
-                  value: monthValue,
-                  items: months,
-                  onChanged: onMonthChanged,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _FilterDropdown(
-                  value: yearValue,
-                  items: years,
-                  onChanged: onYearChanged,
+                child: Row(
+                  children: toFields
+                      .map((w) => w is SizedBox ? w : Expanded(child: w))
+                      .toList(),
                 ),
               ),
             ],
@@ -1710,30 +1964,22 @@ class _FilterSection extends StatelessWidget {
     }
 
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Expanded(
-          child: _FilterDropdown(
-            value: typeValue,
-            items: types,
-            onChanged: onTypeChanged,
-          ),
-        ),
+        Expanded(child: typeField),
         const SizedBox(width: 10),
-        Expanded(
-          child: _FilterDropdown(
-            value: monthValue,
-            items: months,
-            onChanged: onMonthChanged,
+        ...fromFields.map((w) => w is SizedBox ? w : Expanded(child: w)),
+        const SizedBox(width: 6),
+        const Padding(
+          padding: EdgeInsets.only(bottom: 11),
+          child: Icon(
+            Icons.arrow_forward_rounded,
+            color: AppColors.textSubtle,
+            size: 14,
           ),
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _FilterDropdown(
-            value: yearValue,
-            items: years,
-            onChanged: onYearChanged,
-          ),
-        ),
+        const SizedBox(width: 6),
+        ...toFields.map((w) => w is SizedBox ? w : Expanded(child: w)),
         const SizedBox(width: 10),
         clearButton,
       ],
@@ -1743,54 +1989,73 @@ class _FilterSection extends StatelessWidget {
 
 class _FilterDropdown extends StatelessWidget {
   const _FilterDropdown({
+    required this.label,
     required this.value,
     required this.items,
     required this.onChanged,
   });
 
+  final String label;
   final String value;
   final List<String> items;
   final void Function(String?) onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.cardBorder),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          isExpanded: true,
-          isDense: true,
-          iconEnabledColor: AppColors.textGray,
-          style: const TextStyle(color: AppColors.textGray, fontSize: 13),
-          dropdownColor: AppColors.cardBackground,
-          items: items
-              .map((item) => DropdownMenuItem(
-                    value: item,
-                    child: Text(
-                      item,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ))
-              .toList(),
-          onChanged: onChanged,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textGray,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
         ),
-      ),
+        const SizedBox(height: 4),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.cardBackground,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.cardBorder),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: value,
+              isExpanded: true,
+              isDense: true,
+              iconEnabledColor: AppColors.textGray,
+              style: const TextStyle(color: AppColors.textWhite, fontSize: 12.5),
+              dropdownColor: AppColors.cardBackground,
+              items: items
+                  .map(
+                    (item) => DropdownMenuItem(
+                      value: item,
+                      child: Text(
+                        item,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textGray,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
 
 // ─── Page Header ──────────────────────────────────────────────────────────────
 class _PageHeader extends StatelessWidget {
-  const _PageHeader({
-    required this.isNarrow,
-    required this.onGenerateTap,
-  });
+  const _PageHeader({required this.isNarrow, required this.onGenerateTap});
 
   final bool isNarrow;
   final VoidCallback onGenerateTap;

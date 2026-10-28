@@ -125,6 +125,8 @@ class BusinessDetails {
 class BusinessDashboardApi extends BaseApi {
   BusinessDashboardApi();
 
+  final Map<String, Future<List<Map<String, dynamic>>>> _inflight = {};
+
   // ── Date helpers ─────────────────────────────────────────────────────────────
 
   (String start, String end) _dateRange(int month, int year) {
@@ -310,6 +312,26 @@ class BusinessDashboardApi extends BaseApi {
     );
   }
 
+  /// Authoritative room count for a business.
+  ///
+  /// Prefers the online detail value when it is greater than zero, but always
+  /// falls back to the locally cached `rooms` table so offline changes (or a
+  /// backend that reports `0`/omits the field) never leave the dashboard
+  /// showing a missing room count.
+  Future<int> getTotalRooms(String businessId, {bool preferOnline = false}) async {
+    try {
+      final details = await fetchBusinessDetails(businessId, preferOnline: preferOnline);
+      if (details.totalRooms > 0) return details.totalRooms;
+    } catch (_) {
+      // Fall through to the local count.
+    }
+    try {
+      return await _localRoomCount(businessId);
+    } catch (_) {
+      return 0;
+    }
+  }
+
   /// Total rooms for a business, counted from the cached `local_rooms` table.
   /// `local_businesses.total_rooms` was dropped in DB v9 — the count is now
   /// always derived from the rooms table, same as the backend's
@@ -431,9 +453,18 @@ class BusinessDashboardApi extends BaseApi {
     required String businessId,
     required String startDate,
     required String endDate,
-  }) async {
-    final response = await get('/api/dashboard/guest-records?businessId=$businessId&startDate=$startDate&endDate=$endDate');
-    return List<Map<String, dynamic>>.from(handleResponse(response) as List? ?? []);
+  }) {
+    final key = '$businessId|$startDate|$endDate';
+    final pending = _inflight[key];
+    if (pending != null) return pending;
+
+    final future = get(
+      '/api/dashboard/guest-records?businessId=$businessId&startDate=$startDate&endDate=$endDate',
+    ).then((response) => List<Map<String, dynamic>>.from(handleResponse(response) as List? ?? []));
+
+    _inflight[key] = future;
+    future.whenComplete(() => _inflight.remove(key));
+    return future;
   }
 
   Future<List<Map<String, dynamic>>> _fetchBreakdownsOnline(
@@ -848,38 +879,36 @@ class BusinessDashboardApi extends BaseApi {
     required String businessId,
     required List<int> years,
   }) async {
-    final result = <int, List<MonthlyCount>>{};
-
-    for (final year in years) {
+    final futures = years.map((year) async {
       final (start, end) = _dateRange(0, year);
       final records = await _fetchGuestRecordsOnline(
         businessId: businessId,
         startDate: start,
         endDate: end,
       );
-      result[year] = _recordsToMonthly(records, year);
-    }
+      return MapEntry(year, _recordsToMonthly(records, year));
+    }).toList();
 
-    return result;
+    final entries = await Future.wait(futures);
+    return Map.fromEntries(entries);
   }
 
   Future<Map<int, List<MonthlyCount>>> _fetchYearlyComparisonOffline({
     required String businessId,
     required List<int> years,
   }) async {
-    final result = <int, List<MonthlyCount>>{};
-
-    for (final year in years) {
+    final futures = years.map((year) async {
       final (start, end) = _dateRange(0, year);
       final records = await _fetchGuestRecordsOffline(
         businessId: businessId,
         startDate: start,
         endDate: end,
       );
-      result[year] = _recordsToMonthly(records, year);
-    }
+      return MapEntry(year, _recordsToMonthly(records, year));
+    }).toList();
 
-    return result;
+    final entries = await Future.wait(futures);
+    return Map.fromEntries(entries);
   }
 
   List<MonthlyCount> _recordsToMonthly(

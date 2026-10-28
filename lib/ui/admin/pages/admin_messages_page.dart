@@ -129,7 +129,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
     if (sent == true && mounted) {
       await _loadMessages();
       if (mounted) {
-        AppToast.success(context, 'Message sent.');
+        AppToast.success(context, 'Notice sent.');
       }
     }
   }
@@ -139,7 +139,7 @@ class _AdminMessagesPageState extends State<AdminMessagesPage> {
   @override
 Widget build(BuildContext context) {
   return AdminLayout(
-    title: 'Messages',
+    title: 'Notices',
     selectedIndex: 4,
     onNavSelected: (_) {},
     child: _fetchError != null
@@ -258,7 +258,7 @@ class _PageHeader extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Messages & Announcements',
+                    'Notices & Announcements',
                     style: TextStyle(
                       color: AppColors.textWhite,
                       fontSize: isMobile ? 16 : (isSmall ? 18 : 22),
@@ -305,7 +305,7 @@ class _PageHeader extends StatelessWidget {
                     const Icon(Icons.send_rounded, color: Colors.white, size: 15),
                     const SizedBox(width: 7),
                     Text(
-                      isSmall ? 'Compose' : 'Compose Message',
+                      isSmall ? 'Compose' : 'Compose Notice',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 13.5,
@@ -542,7 +542,7 @@ class _MessagesTable extends StatelessWidget {
                     child: Padding(
                       padding: EdgeInsets.all(32),
                       child: Text(
-                        'No messages found.',
+                        'No notices found.',
                         style: TextStyle(color: AppColors.textGray),
                       ),
                     ),

@@ -1495,13 +1495,35 @@ class _DonutChartsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final genderCityCard = _GenderCityCard(
+    final countrySexCard = _CountrySexCard(
       genderDist: genderDist,
-      cityMunicipalities: cityMunicipalities,
-    );
-    final countriesCard = _CountriesCard(
       topNationalities: topNationalities,
-      provinces: provinces,
+    );
+    final provinceCityCard = _ListToggleDonutCard(
+      firstLabel: 'Province',
+      secondLabel: 'City / Municipality',
+      firstItems: provinces
+          .map((p) => (label: p.province, count: p.count))
+          .toList(),
+      secondItems: cityMunicipalities
+          .map((c) => (label: c.cityMunicipality, count: c.count))
+          .toList(),
+      firstColors: const [
+        AppColors.chartBlue,
+        AppColors.chartGreen,
+        AppColors.chartOrange,
+        AppColors.chartPurple,
+        AppColors.chartCyan,
+        AppColors.chartGray,
+      ],
+      secondColors: const [
+        AppColors.chartBlue,
+        AppColors.chartGreen,
+        AppColors.chartOrange,
+        AppColors.chartPurple,
+        AppColors.chartCyan,
+        AppColors.chartGray,
+      ],
     );
     final accommodationPurposeCard = _AccommodationAttractionCard(
       accommodationTypes: accommodationTypes,
@@ -1511,9 +1533,9 @@ class _DonutChartsRow extends StatelessWidget {
     if (isNarrow) {
       return Column(
         children: [
-          genderCityCard,
+          countrySexCard,
           const SizedBox(height: 14),
-          countriesCard,
+          provinceCityCard,
           const SizedBox(height: 14),
           accommodationPurposeCard,
         ],
@@ -1523,12 +1545,12 @@ class _DonutChartsRow extends StatelessWidget {
     if (isMedium) {
       return Column(
         children: [
-          genderCityCard,
+          countrySexCard,
           const SizedBox(height: 14),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: countriesCard),
+              Expanded(child: provinceCityCard),
               const SizedBox(width: 14),
               Expanded(child: accommodationPurposeCard),
             ],
@@ -1540,9 +1562,9 @@ class _DonutChartsRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: genderCityCard),
+        Expanded(child: countrySexCard),
         const SizedBox(width: 14),
-        Expanded(child: countriesCard),
+        Expanded(child: provinceCityCard),
         const SizedBox(width: 14),
         Expanded(child: accommodationPurposeCard),
       ],
@@ -1615,6 +1637,145 @@ class _ToggleCardTitle extends StatelessWidget {
       );
     }
     return Row(mainAxisSize: MainAxisSize.min, children: widgets);
+  }
+}
+
+// ─── Country / Sex Card ───────────────────────────────────────────────────────
+
+class _CountrySexCard extends StatefulWidget {
+  const _CountrySexCard({
+    required this.genderDist,
+    required this.topNationalities,
+  });
+
+  final GenderDistribution genderDist;
+  final List<NationalityCount> topNationalities;
+
+  @override
+  State<_CountrySexCard> createState() => _CountrySexCardState();
+}
+
+class _CountrySexCardState extends State<_CountrySexCard> {
+  int _tab = 0; // 0 = Country, 1 = Sex
+
+  static const _countryColors = [
+    AppColors.chartGreen,
+    AppColors.chartBlue,
+    AppColors.chartOrange,
+    AppColors.chartPurple,
+    AppColors.chartGray,
+  ];
+
+  List<_Segment> get _segments {
+    if (_tab == 0) {
+      final list = widget.topNationalities;
+      if (list.isEmpty) {
+        return List.generate(
+          5,
+          (i) => _Segment(
+            value: 0.2,
+            color: _countryColors[i % _countryColors.length],
+            isEmpty: true,
+          ),
+        );
+      }
+      final total = list.fold<int>(0, (s, n) => s + n.count);
+      return list.asMap().entries.map((e) {
+        final ratio = total == 0 ? 1 / list.length : e.value.count / total;
+        return _Segment(
+          value: ratio,
+          color: _countryColors[e.key % _countryColors.length],
+          label: e.value.nationality,
+          percentage: '${e.value.count}',
+        );
+      }).toList();
+    } else {
+      final d = widget.genderDist;
+      final isEmpty = d.total == 0;
+      return [
+        _Segment(
+          value: isEmpty ? 1 / 3 : d.maleRatio,
+          color: AppColors.chartCyan,
+          label: 'Male',
+          percentage: '${d.male} tourists',
+          isEmpty: isEmpty,
+        ),
+        _Segment(
+          value: isEmpty ? 1 / 3 : d.femaleRatio,
+          color: AppColors.chartPurple,
+          label: 'Female',
+          percentage: '${d.female} tourists',
+          isEmpty: isEmpty,
+        ),
+        _Segment(
+          value: isEmpty ? 1 / 3 : d.otherRatio,
+          color: AppColors.chartGray,
+          label: 'Unspecified',
+          percentage: '${d.other} tourists',
+          isEmpty: isEmpty,
+        ),
+      ];
+    }
+  }
+
+  List<_LegendItem> get _legend {
+    if (_tab == 0) {
+      return widget.topNationalities
+          .asMap()
+          .entries
+          .map((e) => _LegendItem(
+                label: e.value.nationality,
+                color: _countryColors[e.key % _countryColors.length],
+              ))
+          .toList();
+    }
+    return const [
+      _LegendItem(label: 'Male', color: AppColors.chartCyan),
+      _LegendItem(label: 'Female', color: AppColors.chartPurple),
+      _LegendItem(label: 'Unspecified', color: AppColors.chartGray),
+    ];
+  }
+
+  String? get _emptyHint {
+    if (_tab == 0 && widget.topNationalities.isEmpty)
+      return 'No data for this period';
+    if (_tab == 1 && widget.genderDist.total == 0)
+      return 'No data for this period';
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _DashCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _ToggleCardTitle(
+            options: const ['Country', 'Sex'],
+            selectedIndex: _tab,
+            onChanged: (i) => setState(() => _tab = i),
+          ),
+          if (_emptyHint != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              _emptyHint!,
+              style: const TextStyle(color: AppColors.textSubtle, fontSize: 11),
+            ),
+          ],
+          const SizedBox(height: 16),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            transitionBuilder: (child, animation) =>
+                FadeTransition(opacity: animation, child: child),
+            child: _DonutContent(
+              key: ValueKey(_tab),
+              segments: _segments,
+              legend: _legend,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -2040,6 +2201,102 @@ class _AccommodationAttractionCardState
               segments: _segments,
               legend: _legend,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── List Toggle Donut Card ───────────────────────────────────────────────────
+
+class _ListToggleDonutCard extends StatefulWidget {
+  const _ListToggleDonutCard({
+    required this.firstLabel,
+    required this.secondLabel,
+    required this.firstItems,
+    required this.secondItems,
+    required this.firstColors,
+    required this.secondColors,
+  });
+
+  final String firstLabel;
+  final String secondLabel;
+  final List<({String label, int count})> firstItems;
+  final List<({String label, int count})> secondItems;
+  final List<Color> firstColors;
+  final List<Color> secondColors;
+
+  @override
+  State<_ListToggleDonutCard> createState() => _ListToggleDonutCardState();
+}
+
+class _ListToggleDonutCardState extends State<_ListToggleDonutCard> {
+  int _tab = 0;
+
+  List<({String label, int count})> get _list =>
+      _tab == 0 ? widget.firstItems : widget.secondItems;
+
+  List<Color> get _colors => _tab == 0 ? widget.firstColors : widget.secondColors;
+
+  List<_Segment> get _segments {
+    final list = _list;
+    if (list.isEmpty) {
+      return List.generate(
+        5,
+        (i) => _Segment(
+          value: 0.2,
+          color: _colors[i % _colors.length],
+          isEmpty: true,
+        ),
+      );
+    }
+    final total = list.fold<int>(0, (s, n) => s + n.count);
+    return list.asMap().entries.map((e) {
+      final ratio = total == 0 ? 1 / list.length : e.value.count / total;
+      return _Segment(
+        value: ratio,
+        color: _colors[e.key % _colors.length],
+        label: e.value.label,
+        percentage: '${e.value.count}',
+      );
+    }).toList();
+  }
+
+  List<_LegendItem> get _legend => _list
+      .asMap()
+      .entries
+      .map((e) => _LegendItem(
+            label: e.value.label,
+            color: _colors[e.key % _colors.length],
+          ))
+      .toList();
+
+  String? get _emptyHint => _list.isEmpty ? 'No data for this period' : null;
+
+  @override
+  Widget build(BuildContext context) {
+    return _DashCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _ToggleCardTitle(
+            options: [widget.firstLabel, widget.secondLabel],
+            selectedIndex: _tab,
+            onChanged: (i) => setState(() => _tab = i),
+          ),
+          if (_emptyHint != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              _emptyHint!,
+              style: const TextStyle(color: AppColors.textSubtle, fontSize: 11),
+            ),
+          ],
+          const SizedBox(height: 16),
+          _DonutContent(
+            key: ValueKey(_tab),
+            segments: _segments,
+            legend: _legend,
           ),
         ],
       ),
@@ -2894,7 +3151,7 @@ class _DonutTooltip extends StatelessWidget {
             ),
           ),
           Text(
-            segment.percentage!,
+            '${segment.percentage!} (${(segment.value * 100).toStringAsFixed(1)}%)',
             style: const TextStyle(color: Colors.white70, fontSize: 10),
           ),
         ],

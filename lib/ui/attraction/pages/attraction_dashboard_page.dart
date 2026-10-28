@@ -1579,11 +1579,33 @@ class _DonutChartsRow extends StatelessWidget {
         final isMedium = constraints.maxWidth < 900;
 
         final genderCard = _GenderCard(genderDist: genderDist);
-        final countriesCard = _CountriesCard(
-          topCountries: topCountries,
-          provinces: provinces,
+        final countriesCard = _CountryCard(topCountries: topCountries);
+        final citiesCard = _ListToggleDonutCard(
+          firstLabel: 'Province',
+          secondLabel: 'City / Municipality',
+          firstItems: provinces
+              .map((p) => (label: p.province, count: p.count))
+              .toList(),
+          secondItems: cities
+              .map((c) => (label: c.cityMunicipality, count: c.count))
+              .toList(),
+          firstColors: const [
+            AppColors.chartBlue,
+            AppColors.chartGreen,
+            AppColors.chartOrange,
+            AppColors.chartPurple,
+            AppColors.chartCyan,
+            AppColors.chartGray,
+          ],
+          secondColors: const [
+            AppColors.chartOrange,
+            AppColors.chartBlue,
+            AppColors.chartGreen,
+            AppColors.chartPurple,
+            AppColors.chartCyan,
+            AppColors.chartGray,
+          ],
         );
-        final citiesCard = _CitiesCard(cities: cities);
 
         if (isNarrow) {
           return Column(
@@ -1749,6 +1771,72 @@ class _GenderCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _CardTitle(title: 'Sex'),
+          if (isEmpty) ...[
+            const SizedBox(height: 6),
+            const Text(
+              'No data for this period',
+              style: TextStyle(color: AppColors.textSubtle, fontSize: 11),
+            ),
+          ],
+          const SizedBox(height: 16),
+          _DonutContent(segments: segments, legend: legend),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Country Card ─────────────────────────────────────────────────────────────
+
+class _CountryCard extends StatelessWidget {
+  const _CountryCard({required this.topCountries});
+
+  final List<CountryCount> topCountries;
+
+  static const _colors = [
+    AppColors.chartGreen,
+    AppColors.chartBlue,
+    AppColors.chartOrange,
+    AppColors.chartPurple,
+    AppColors.chartGray,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final isEmpty = topCountries.isEmpty;
+    final total = topCountries.fold<int>(0, (s, c) => s + c.count);
+    final segments = isEmpty
+        ? List.generate(
+            5,
+            (i) => _Segment(
+              value: 0.2,
+              color: _colors[i % _colors.length],
+              isEmpty: true,
+            ),
+          )
+        : topCountries.asMap().entries.map((e) {
+            final ratio =
+                total == 0 ? 1 / topCountries.length : e.value.count / total;
+            return _Segment(
+              value: ratio,
+              color: _colors[e.key % _colors.length],
+              label: e.value.country,
+              count: e.value.count,
+            );
+          }).toList();
+    final legend = topCountries
+        .asMap()
+        .entries
+        .map((e) => _LegendItem(
+              label: e.value.country,
+              color: _colors[e.key % _colors.length],
+            ))
+        .toList();
+    return _DashCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardTitle(title: 'Country'),
           if (isEmpty) ...[
             const SizedBox(height: 6),
             const Text(
@@ -1942,6 +2030,102 @@ class _CitiesCard extends StatelessWidget {
           ],
           const SizedBox(height: 16),
           _DonutContent(segments: segments, legend: legend),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── List Toggle Donut Card ───────────────────────────────────────────────────
+
+class _ListToggleDonutCard extends StatefulWidget {
+  const _ListToggleDonutCard({
+    required this.firstLabel,
+    required this.secondLabel,
+    required this.firstItems,
+    required this.secondItems,
+    required this.firstColors,
+    required this.secondColors,
+  });
+
+  final String firstLabel;
+  final String secondLabel;
+  final List<({String label, int count})> firstItems;
+  final List<({String label, int count})> secondItems;
+  final List<Color> firstColors;
+  final List<Color> secondColors;
+
+  @override
+  State<_ListToggleDonutCard> createState() => _ListToggleDonutCardState();
+}
+
+class _ListToggleDonutCardState extends State<_ListToggleDonutCard> {
+  int _tab = 0;
+
+  List<({String label, int count})> get _list =>
+      _tab == 0 ? widget.firstItems : widget.secondItems;
+
+  List<Color> get _colors => _tab == 0 ? widget.firstColors : widget.secondColors;
+
+  List<_Segment> get _segments {
+    final list = _list;
+    if (list.isEmpty) {
+      return List.generate(
+        5,
+        (i) => _Segment(
+          value: 0.2,
+          color: _colors[i % _colors.length],
+          isEmpty: true,
+        ),
+      );
+    }
+    final total = list.fold<int>(0, (s, n) => s + n.count);
+    return list.asMap().entries.map((e) {
+      final ratio = total == 0 ? 1 / list.length : e.value.count / total;
+      return _Segment(
+        value: ratio,
+        color: _colors[e.key % _colors.length],
+        label: e.value.label,
+        count: e.value.count,
+      );
+    }).toList();
+  }
+
+  List<_LegendItem> get _legend => _list
+      .asMap()
+      .entries
+      .map((e) => _LegendItem(
+            label: e.value.label,
+            color: _colors[e.key % _colors.length],
+          ))
+      .toList();
+
+  String? get _emptyHint => _list.isEmpty ? 'No data for this period' : null;
+
+  @override
+  Widget build(BuildContext context) {
+    return _DashCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _ToggleCardTitle(
+            options: [widget.firstLabel, widget.secondLabel],
+            selectedIndex: _tab,
+            onChanged: (i) => setState(() => _tab = i),
+          ),
+          if (_emptyHint != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              _emptyHint!,
+              style: const TextStyle(color: AppColors.textSubtle, fontSize: 11),
+            ),
+          ],
+          const SizedBox(height: 16),
+          _DonutContent(
+            key: ValueKey(_tab),
+            segments: _segments,
+            legend: _legend,
+          ),
         ],
       ),
     );
@@ -2802,8 +2986,8 @@ class _DonutTooltip extends StatelessWidget {
           ),
           Text(
             segment.count != null
-                ? '${segment.count} visitors'
-                : segment.percentage!,
+                ? '${segment.count} visitors (${(segment.value * 100).toStringAsFixed(1)}%)'
+                : '${segment.percentage!} (${(segment.value * 100).toStringAsFixed(1)}%)',
             style: const TextStyle(color: Colors.white70, fontSize: 10),
           ),
         ],

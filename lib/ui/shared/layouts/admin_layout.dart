@@ -6,6 +6,13 @@ import 'package:app/api/admin_dashboard_api.dart';
 import 'package:app/ui/shared/widgets/admin_sidebar.dart';
 import 'package:app/ui/shared/widgets/admin_header.dart';
 import 'package:app/ui/shared/widgets/admin_nav_items.dart';
+
+int? _badgeForIndex(int index, PendingCounts counts) => switch (index) {
+  1 => counts.pendingAccommodations > 0 ? counts.pendingAccommodations : null,
+  2 => counts.pendingAttractions > 0 ? counts.pendingAttractions : null,
+  _ => null,
+};
+
 // ─── Admin Layout ─────────────────────────────────────────────────────────────
 //
 // Usage:
@@ -109,11 +116,8 @@ class _AdminBottomNavBarState extends State<AdminBottomNavBar> {
     unawaited(PendingBadgeController.instance.refresh());
   }
 
-  int? _badgeFor(int index, PendingCounts counts) => switch (index) {
-    1 => counts.pendingAccommodations > 0 ? counts.pendingAccommodations : null,
-    2 => counts.pendingAttractions > 0 ? counts.pendingAttractions : null,
-    _ => null,
-  };
+  int? _badgeFor(int index, PendingCounts counts) =>
+      _badgeForIndex(index, counts);
 
   @override
   Widget build(BuildContext context) {
@@ -128,18 +132,29 @@ class _AdminBottomNavBarState extends State<AdminBottomNavBar> {
           child: SafeArea(
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: AdminNavItems.items.map((item) {
-                final isSelected = widget.selectedIndex == item.index;
-                return _BottomNavTile(
-                  item: item,
-                  badge: _badgeFor(item.index, counts),
-                  isSelected: isSelected,
-                  onTap: () {
+              children: [
+                ...AdminNavItems.items.take(4).map((item) {
+                  final isSelected = widget.selectedIndex == item.index;
+                  return _BottomNavTile(
+                    item: item,
+                    badge: _badgeFor(item.index, counts),
+                    isSelected: isSelected,
+                    onTap: () {
+                      widget.onItemSelected(item.index);
+                      Navigator.pushReplacementNamed(context, item.route);
+                    },
+                  );
+                }),
+                _MoreNavButton(
+                  moreItems: AdminNavItems.items.skip(4).toList(),
+                  counts: counts,
+                  selectedIndex: widget.selectedIndex,
+                  onSelected: (item) {
                     widget.onItemSelected(item.index);
                     Navigator.pushReplacementNamed(context, item.route);
                   },
-                );
-              }).toList(),
+                ),
+              ],
             ),
           ),
         );
@@ -227,6 +242,161 @@ class _BottomNavTile extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── More Nav Button (Mobile) ─────────────────────────────────────────────────
+
+class _MoreNavButton extends StatelessWidget {
+  const _MoreNavButton({
+    required this.moreItems,
+    required this.counts,
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  final List<NavItem> moreItems;
+  final PendingCounts counts;
+  final int selectedIndex;
+  final ValueChanged<NavItem> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final isSelected = moreItems.any((item) => selectedIndex == item.index);
+
+    int? moreBadge;
+    var badgeSum = 0;
+    var hasBadge = false;
+    for (final item in moreItems) {
+      final badge = _badgeForIndex(item.index, counts);
+      if (badge != null) {
+        hasBadge = true;
+        badgeSum += badge;
+      }
+    }
+    if (hasBadge) moreBadge = badgeSum;
+
+    return PopupMenuButton<NavItem>(
+      padding: EdgeInsets.zero,
+      tooltip: 'More',
+      offset: Offset.zero,
+      color: AppColors.sidebarBg,
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: AppColors.cardBorder),
+      ),
+      onSelected: onSelected,
+      itemBuilder: (context) => moreItems.map((item) {
+        final itemSelected = selectedIndex == item.index;
+        final badge = _badgeForIndex(item.index, counts);
+        return PopupMenuItem<NavItem>(
+          value: item,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Row(
+            children: [
+              Icon(
+                item.icon,
+                size: 20,
+                color: itemSelected
+                    ? AppColors.primaryCyan
+                    : AppColors.textGray,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                item.label,
+                style: TextStyle(
+                  color: itemSelected
+                      ? AppColors.textWhite
+                      : AppColors.textGray,
+                  fontSize: 13.5,
+                  fontWeight: itemSelected ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+              if (badge != null) ...[
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryCyan,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  constraints: const BoxConstraints(minWidth: 16),
+                  child: Text(
+                    '$badge',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      }).toList(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  Icons.more_horiz_rounded,
+                  size: 22,
+                  color: isSelected
+                      ? AppColors.primaryCyan
+                      : AppColors.textGray,
+                ),
+                if (moreBadge != null)
+                  Positioned(
+                    right: -8,
+                    top: -6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryCyan,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      constraints: const BoxConstraints(minWidth: 16),
+                      child: Text(
+                        '$moreBadge',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'More',
+              style: TextStyle(
+                color: isSelected ? AppColors.primaryCyan : AppColors.textGray,
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -211,7 +211,7 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
         setState(() { _errorCode = code; _isLoading = false; });
       } else {
         setState(() {
-          _error     = 'Failed to load messages. Please try again.';
+          _error     = 'Failed to load notices. Please try again.';
           _isLoading = false;
         });
       }
@@ -246,7 +246,7 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
   Widget build(BuildContext context) {
     return BusinessLayout(
       title:         'Notices',
-      selectedIndex: 5,
+      selectedIndex: 4,
       onNavSelected: (_) {},
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -842,7 +842,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           const Text(
-            'No messages found.',
+            'No notices found.',
             style: TextStyle(color: AppColors.textSubtle, fontSize: 14),
           ),
         ],

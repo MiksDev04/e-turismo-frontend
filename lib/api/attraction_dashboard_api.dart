@@ -101,6 +101,8 @@ class AttractionDetails {
 class AttractionDashboardApi extends BaseApi {
   AttractionDashboardApi();
 
+  final Map<String, Future<List<Map<String, dynamic>>>> _inflight = {};
+
   // ── Date helpers ─────────────────────────────────────────────────────────────
 
   (String start, String end) _dateRange(int month, int year) {
@@ -125,6 +127,16 @@ class AttractionDashboardApi extends BaseApi {
   // ===========================================================================
 
   Future<String?> resolveAttractionId({bool preferOnline = false}) async {
+    final cachedSession =
+        SessionService.instance.current ??
+        await SessionService.instance.loadAndCache();
+
+    if ((preferOnline || ConnectivityService.instance.isOnline) &&
+        hasToken &&
+        (cachedSession?.attractionId?.isNotEmpty ?? false)) {
+      return cachedSession!.attractionId;
+    }
+
     if ((preferOnline || ConnectivityService.instance.isOnline) && hasToken) {
       try {
         final online = await _resolveAttractionIdOnline();
@@ -138,9 +150,6 @@ class AttractionDashboardApi extends BaseApi {
       }
     }
 
-    final cachedSession =
-        SessionService.instance.current ??
-        await SessionService.instance.loadAndCache();
     return cachedSession?.attractionId;
   }
 
@@ -222,9 +231,16 @@ class AttractionDashboardApi extends BaseApi {
             .toList();
 
     final now = DateTime.now();
-    final visitorsToday = (year == now.year)
-        ? await _fetchVisitorsToday(attractionId)
-        : 0;
+    int visitorsToday = 0;
+    if (year == now.year) {
+      final today = _todayDb();
+      for (final r in allRecords) {
+        final date = _stringValue(r, 'visit_date') ?? '';
+        if (date.startsWith(today)) {
+          visitorsToday += _intValue(r, 'guest_count') ?? 0;
+        }
+      }
+    }
 
     final stats = _computeStats(
       periodRecords: periodRecords,
@@ -244,18 +260,30 @@ class AttractionDashboardApi extends BaseApi {
     bool preferOnline = false,
   }) async {
     if ((preferOnline || ConnectivityService.instance.isOnline) && hasToken) {
-      try {
-        final response = await get(
+      final key = '$attractionId|$startDate|$endDate';
+      final pending = _inflight[key];
+      if (pending != null) {
+        try {
+          return await pending;
+        } catch (_) {
+          // Fall through to local.
+        }
+      } else {
+        final future = get(
           '/api/dashboard/attraction/visit-logs'
           '?attractionId=$attractionId&startDate=$startDate&endDate=$endDate',
-        );
-        return List<Map<String, dynamic>>.from(
-          handleResponse(response) as List? ?? [],
-        );
-      } catch (e) {
-        debugPrint(
-          '⚠️ _fetchVisitLogs: online fetch failed — falling back to local ($e)',
-        );
+        ).then((response) => List<Map<String, dynamic>>.from(
+              handleResponse(response) as List? ?? [],
+            ));
+        _inflight[key] = future;
+        future.whenComplete(() => _inflight.remove(key));
+        try {
+          return await future;
+        } catch (e) {
+          debugPrint(
+            '⚠️ _fetchVisitLogs: online fetch failed — falling back to local ($e)',
+          );
+        }
       }
     }
     return _fetchVisitLogsLocal(attractionId, startDate, endDate);
@@ -293,19 +321,6 @@ class AttractionDashboardApi extends BaseApi {
     }
   }
 
-  Future<int> _fetchVisitorsToday(String attractionId) async {
-    final today = _todayDb();
-    final records = await _fetchVisitLogs(
-      attractionId: attractionId,
-      startDate: today,
-      endDate: today,
-    );
-    int sum = 0;
-    for (final r in records) {
-      sum += _intValue(r, 'guest_count') ?? 0;
-    }
-    return sum;
-  }
 
   // ===========================================================================
   // SHARED — pure computation
@@ -443,9 +458,7 @@ class AttractionDashboardApi extends BaseApi {
     required List<int> years,
     bool preferOnline = false,
   }) async {
-    final result = <int, List<MonthlyCount>>{};
-
-    for (final year in years) {
+    final futures = years.map((year) async {
       final (start, end) = _dateRange(0, year);
       final records = await _fetchVisitLogs(
         attractionId: attractionId,
@@ -453,10 +466,11 @@ class AttractionDashboardApi extends BaseApi {
         endDate: end,
         preferOnline: preferOnline,
       );
-      result[year] = _recordsToMonthly(records);
-    }
+      return MapEntry(year, _recordsToMonthly(records));
+    }).toList();
 
-    return result;
+    final entries = await Future.wait(futures);
+    return Map.fromEntries(entries);
   }
 
   List<MonthlyCount> _recordsToMonthly(List<Map<String, dynamic>> records) {

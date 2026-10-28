@@ -9,16 +9,19 @@ abstract final class AppRoutes {
   static const adminAttractions = '/admin/attractions';
   static const adminMessages = '/admin/messages';
   static const adminReports = '/admin/reports';
+  static const adminActivityLogs = '/admin/activity-logs';
   static const adminProfile = '/admin/profile';
   static const businessDashboard = '/business/dashboard';
   static const businessGuestEntry = '/business/guest-entry';
   static const businessGuestRecord = '/business/guest-records';
   static const businessRooms = '/business/rooms';
   static const businessMessages = '/business/messages';
+  static const businessActivityLogs = '/business/activity-logs';
   static const businessProfile = '/business/profile';
   static const attractionDashboard = '/attraction/dashboard';
   static const attractionVisitEntry = '/attraction/visit-entry';
   static const attractionVisitRecord = '/attraction/visit-records';
   static const attractionMessages = '/attraction/messages';
+  static const attractionActivityLogs = '/attraction/activity-logs';
   static const attractionProfile = '/attraction/profile';
 }

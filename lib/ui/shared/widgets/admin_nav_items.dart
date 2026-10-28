@@ -52,13 +52,19 @@ abstract final class AdminNavItems {
     ),
     NavItem(
       icon: Icons.chat_bubble_outline_rounded,
-      label: 'Messages',
+      label: 'Notices',
       index: 4,
       route: AppRoutes.adminMessages,
+    ),
+    NavItem(
+      icon: Icons.history_rounded,
+      label: 'Activity Logs',
+      index: 5,
+      route: AppRoutes.adminActivityLogs,
     ),
   ];
 
   /// Profile is only reachable via the header, so it is not part of the
-  /// sidebar/bottom nav — but it keeps a reserved index for highlight logic.
-  static const int profileIndex = 5;
+  /// sidebar/bottom nav �?" but it keeps a reserved index for highlight logic.
+  static const int profileIndex = 6;
 }
