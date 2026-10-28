@@ -512,8 +512,10 @@ class ReportService extends BaseApi {
     int pageSize = 10,
     String? type,
     String? variant,
-    String? year,
-    String? month,
+    String? fromMonth,
+    String? fromYear,
+    String? toMonth,
+    String? toYear,
   }) async {
     final queryParams = <String, String>{
       'page': page.toString(),
@@ -521,11 +523,17 @@ class ReportService extends BaseApi {
     };
     if (type != null && type != 'all') queryParams['type'] = type;
     if (variant != null && variant != 'all') queryParams['variant'] = variant;
-    if (year != null && year != 'all' && year != 'All Years') {
-      queryParams['year'] = year;
+    if (fromMonth != null && fromMonth != 'All Months') {
+      queryParams['fromMonth'] = fromMonth;
     }
-    if (month != null && month != 'all' && month != 'All Months') {
-      queryParams['month'] = month;
+    if (fromYear != null && fromYear != 'All Years') {
+      queryParams['fromYear'] = fromYear;
+    }
+    if (toMonth != null && toMonth != 'All Months') {
+      queryParams['toMonth'] = toMonth;
+    }
+    if (toYear != null && toYear != 'All Years') {
+      queryParams['toYear'] = toYear;
     }
 
     final uri =
