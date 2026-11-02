@@ -52,6 +52,7 @@ class _AdminActivityLogsPageState extends State<AdminActivityLogsPage> {
     'visit_log_created',
     'profile_updated',
     'report_generated',
+    'notice_sent',
   ];
 
   static const _friendlyLabels = {
@@ -61,7 +62,7 @@ class _AdminActivityLogsPageState extends State<AdminActivityLogsPage> {
     'email_changed': 'Email changed',
     'password_reset_requested': 'Password reset requested',
     'password_reset_completed': 'Password reset completed',
-    'business_status_changed': 'Business registration reviewed',
+    'business_status_changed': 'Accommodation registration reviewed',
     'attraction_status_changed': 'Attraction registration reviewed',
     'guest_record_created': 'Guest record created (accommodation)',
     'guest_record_updated': 'Guest record updated (accommodation)',
@@ -69,6 +70,7 @@ class _AdminActivityLogsPageState extends State<AdminActivityLogsPage> {
     'visit_log_created': 'Visit log created (attraction)',
     'profile_updated': 'Account info updated',
     'report_generated': 'Report generated',
+    'notice_sent': 'Notice sent',
   };
 
   @override
@@ -144,12 +146,12 @@ class _AdminActivityLogsPageState extends State<AdminActivityLogsPage> {
       case 'business_status_changed':
         if (target != null && target.isNotEmpty) {
           return details.isEmpty
-              ? 'Reviewed business registration: $target'
-              : 'Reviewed business registration: $target ($details)';
+              ? 'Reviewed accommodation registration: $target'
+              : 'Reviewed accommodation registration: $target ($details)';
         }
         return details.isEmpty
-            ? 'Reviewed business registration'
-            : 'Reviewed business registration ($details)';
+            ? 'Reviewed accommodation registration'
+            : 'Reviewed accommodation registration ($details)';
       case 'attraction_status_changed':
         if (target != null && target.isNotEmpty) {
           return details.isEmpty
@@ -183,6 +185,8 @@ class _AdminActivityLogsPageState extends State<AdminActivityLogsPage> {
         return details.isEmpty
             ? 'Generated a report'
             : 'Generated a report: $details';
+      case 'notice_sent':
+        return details.isEmpty ? 'Sent a notice' : details;
       default:
         final label = _friendlyLabels[type] ?? type;
         return details.isEmpty ? label : '$label $details';

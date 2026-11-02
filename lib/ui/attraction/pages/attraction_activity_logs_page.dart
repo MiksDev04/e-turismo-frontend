@@ -48,14 +48,8 @@ class _AttractionActivityLogsPageState extends State<AttractionActivityLogsPage>
     'email_changed',
     'password_reset_requested',
     'password_reset_completed',
-    'business_status_changed',
-    'attraction_status_changed',
-    'guest_record_created',
-    'guest_record_updated',
-    'guest_record_checked_out',
     'visit_log_created',
     'profile_updated',
-    'report_generated',
   ];
 
   static const _friendlyLabels = {
@@ -65,12 +59,12 @@ class _AttractionActivityLogsPageState extends State<AttractionActivityLogsPage>
     'email_changed': 'Email changed',
     'password_reset_requested': 'Password reset requested',
     'password_reset_completed': 'Password reset completed',
-    'business_status_changed': 'Business registration reviewed',
+    'business_status_changed': 'Accommodation registration reviewed',
     'attraction_status_changed': 'Attraction registration reviewed',
     'guest_record_created': 'Guest record created (accommodation)',
     'guest_record_updated': 'Guest record updated (accommodation)',
     'guest_record_checked_out': 'Guest checked out (accommodation)',
-    'visit_log_created': 'Visit log created (attraction)',
+    'visit_log_created': 'Visit log created',
     'profile_updated': 'Account info updated',
     'report_generated': 'Report generated',
   };
@@ -207,12 +201,12 @@ class _AttractionActivityLogsPageState extends State<AttractionActivityLogsPage>
       case 'business_status_changed':
         if (target != null && target.isNotEmpty) {
           return details.isEmpty
-              ? 'Reviewed business registration: $target'
-              : 'Reviewed business registration: $target ($details)';
+              ? 'Reviewed accommodation registration: $target'
+              : 'Reviewed accommodation registration: $target ($details)';
         }
         return details.isEmpty
-            ? 'Reviewed business registration'
-            : 'Reviewed business registration ($details)';
+            ? 'Reviewed accommodation registration'
+            : 'Reviewed accommodation registration ($details)';
       case 'attraction_status_changed':
         if (target != null && target.isNotEmpty) {
           return details.isEmpty

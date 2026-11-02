@@ -546,7 +546,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
 
     final updated = GuestRecord(
       id: widget.record.id,
-      checkIn: _isPostCheckout ? widget.record.checkIn : _checkInCtrl.text.trim(),
+      checkIn: widget.record.checkIn,
       checkOut: _isPostCheckout ? widget.record.checkOut : _checkOutCtrl.text.trim(),
       actualCheckOut: widget.record.actualCheckOut,
       nights: _lengthOfStay,
@@ -733,19 +733,7 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                                   child: _FieldCol(
                                     label: 'Check-in Date *',
                                     errorText: _isPostCheckout ? null : _errors['checkIn'],
-                                    child: _isPostCheckout
-                                        ? _ReadOnlyField(value: _checkInCtrl.text)
-                                        : _DateField(
-                                            controller: _checkInCtrl,
-                                            hint: 'yyyy-mm-dd',
-                                            hasError: _errors['checkIn'] != null,
-                                            lastDate: DateTime.now(),
-                                            onPicked: () {
-                                              _recalcNights();
-                                              _clearFieldError('checkIn');
-                                              _clearFieldError('checkOut');
-                                            },
-                                          ),
+                                    child: _ReadOnlyField(value: _checkInCtrl.text),
                                   ),
                                 ),
                                 const SizedBox(width: 12),

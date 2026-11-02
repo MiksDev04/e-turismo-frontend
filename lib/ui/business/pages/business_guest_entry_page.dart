@@ -461,7 +461,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
     final result = await _api.saveGuestEntry(
       GuestEntryData(
         businessId: _businessId!,
-        checkIn: _checkIn!,
+        checkIn: DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day),
         checkOut: _checkOut!,
         totalGuests: hasGroups ? (_groupMaleSum + _groupFemaleSum) : _totalGuests,
         roomIds: _selectedRoomIds.toList(),
@@ -628,7 +628,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                     maleFemaleLocked: _hasOriginGroups,
                     lockedMaleCount: _groupMaleSum,
                     lockedFemaleCount: _groupFemaleSum,
-                    onPickCheckIn: () => _pickDate(context, true),
+                    onPickCheckIn: () {},
                     onPickCheckOut: () => _pickDate(context, false),
                     onPurposeChanged: (v) {
                       setState(() {
@@ -948,11 +948,7 @@ class _StayInfoCard extends StatelessWidget {
                 child: _FieldCol(
                   label: 'Check-in Date *',
                   errorText: errors['checkIn'],
-                  child: _EntryDateField(
-                    value: _fmt(checkIn),
-                    hasError: errors['checkIn'] != null,
-                    onTap: onPickCheckIn,
-                  ),
+                  child: _EntryReadOnlyField(value: _fmt(checkIn)),
                 ),
               ),
               const SizedBox(width: 12),
