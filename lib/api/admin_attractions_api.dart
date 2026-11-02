@@ -247,7 +247,7 @@ class AdminAttractionApi extends BaseApi {
   Future<AttractionResult> updateStatus(
     String attractionId,
     String newStatus, {
-    required String reason,
+    String reason = '',
     required String messageContent,
   }) async {
     try {

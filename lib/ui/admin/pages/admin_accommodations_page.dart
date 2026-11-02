@@ -326,6 +326,11 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
         canSetWarning: item.status == AccommodationStatus.approved &&
             item.activityStatus.isOverdue,
         canSetApproved: item.status == AccommodationStatus.warning,
+        previewMessage: (status) => buildStatusChangeMessage(
+          newStatus: status,
+          isAttraction: false,
+          lastActivity: item.lastActivity,
+        ),
         onConfirm: (newStatus, reason) =>
             _handleStatusChange(item, newStatus, reason),
       ),
@@ -348,10 +353,18 @@ class _AdminAccommodationsPageState extends State<AdminAccommodationsPage> {
     String reason,
   ) async {
     final session = SessionService.instance.current;
+    final body = buildStatusChangeMessage(
+      newStatus: newStatus,
+      isAttraction: false,
+      lastActivity: item.lastActivity,
+      remarks: reason,
+    );
     final messageContent = buildOfficialMessageLetter(
       recipient: item.name,
-      subject: 'Business Status Update',
-      messageContent: reason,
+      subject: newStatus == 'warning'
+          ? 'Account Status Update: Warning'
+          : 'Account Status Update: Restored to Approved',
+      messageContent: body,
       senderFullName: session?.fullName ?? 'Tourism Officer',
       senderEmail: session?.email ?? '',
       senderPhone: session?.phone ?? '',

@@ -103,6 +103,64 @@ San Pablo City Tourism Office
 This is an official communication from the San Pablo City Tourism Office.''';
 }
 
+String buildStatusChangeMessage({
+  required String newStatus, // 'warning' | 'approved'
+  required bool isAttraction,
+  DateTime? lastActivity,
+  String remarks = '',
+  DateTime? now,
+}) {
+  const months = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  final current = now ?? DateTime.now();
+  final records = isAttraction ? 'visitor records' : 'guest records';
+
+  String body;
+  if (newStatus == 'warning') {
+    if (lastActivity == null) {
+      body =
+          'Your account status has been changed from Approved to Warning '
+          'because no tourist record has been added or saved in your account so far. '
+          'Please start encoding your $records in the E-Turismo system. Once your '
+          'records are updated, the Tourism Office may restore your account to Approved.';
+    } else {
+      final days = current.difference(lastActivity).inDays;
+      final date =
+          '${months[lastActivity.month - 1]} ${lastActivity.day}, ${lastActivity.year}';
+      body =
+          'Your account status has been changed from Approved to Warning '
+          'because no tourist record has been added or saved for $days days '
+          '(last $records entry: $date). Please resume encoding your '
+          '$records in the E-Turismo system. Once your records are updated, '
+          'the Tourism Office may restore your account to Approved.';
+    }
+  } else {
+    body =
+        'Your account status has been restored from Warning to Approved. '
+        'Thank you for updating your $records. Please continue to add and '
+        'save your tourist records regularly to keep your account in good '
+        'standing.';
+  }
+
+  final r = remarks.trim();
+  if (r.isNotEmpty) {
+    body = '$body\n\nRemarks from the Tourism Office: $r';
+  }
+  return body;
+}
+
 /// Shared unread-count cache for business/attraction navigation badges.
 class MessageBadgeController {
   MessageBadgeController._();

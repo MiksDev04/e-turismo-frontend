@@ -18,6 +18,7 @@ class StatusChangeDialog extends StatefulWidget {
     required this.canSetWarning,
     required this.canSetApproved,
     required this.onConfirm,
+    this.previewMessage,
   });
 
   final String title;
@@ -28,6 +29,7 @@ class StatusChangeDialog extends StatefulWidget {
   final bool canSetWarning;
   final bool canSetApproved;
   final Future<void> Function(String status, String reason) onConfirm;
+  final String Function(String status)? previewMessage;
 
   @override
   State<StatusChangeDialog> createState() => _StatusChangeDialogState();
@@ -67,7 +69,7 @@ class _StatusChangeDialogState extends State<StatusChangeDialog> {
   Future<void> _confirm() async {
     final reason = _reasonCtrl.text.trim();
     final selected = _selected;
-    if (reason.isEmpty || selected == null) return;
+    if (selected == null) return;
     setState(() => _isSaving = true);
     await widget.onConfirm(selected, reason);
     if (mounted) Navigator.of(context).pop();
@@ -300,9 +302,42 @@ class _StatusChangeDialogState extends State<StatusChangeDialog> {
                     icon: Icons.check_circle_outline_rounded,
                     color: AppColors.accentGreen,
                   ),
+                if (widget.previewMessage != null && _selected != null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardBackground,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.cardBorder),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Default message that will be sent',
+                          style: TextStyle(
+                            color: AppColors.textGray,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          widget.previewMessage!(_selected!),
+                          style: const TextStyle(
+                            color: AppColors.textWhite,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 const SizedBox(height: 16),
                 Text(
-                  'Reason for change *',
+                  'Remarks (optional)',
                   style: TextStyle(
                     color: AppColors.textGray,
                     fontSize: 12,
@@ -317,7 +352,7 @@ class _StatusChangeDialogState extends State<StatusChangeDialog> {
                   textCapitalization: TextCapitalization.sentences,
                   style: const TextStyle(color: AppColors.textWhite, fontSize: 13),
                   decoration: InputDecoration(
-                    hintText: 'Explain why this status is being changed...',
+                    hintText: 'Add remarks for the owner (optional)...',
                     hintStyle: const TextStyle(
                       color: AppColors.textSubtle, fontSize: 13,
                     ),
@@ -364,9 +399,7 @@ class _StatusChangeDialogState extends State<StatusChangeDialog> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: FilledButton(
-                        onPressed: (_isSaving || _reasonCtrl.text.trim().isEmpty)
-                            ? null
-                            : _confirm,
+                        onPressed: _isSaving ? null : _confirm,
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.primaryCyan,
                           foregroundColor: Colors.black,

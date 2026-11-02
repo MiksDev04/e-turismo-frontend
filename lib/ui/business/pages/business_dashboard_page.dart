@@ -401,7 +401,7 @@ class _BusinessDashboardPageState extends State<BusinessDashboardPage> {
       buf.writeln('Period,${_csvCell(periodLabel)}');
       buf.writeln();
 
-      buf.writeln('SUMMARY');
+      buf.writeln('SUMMARY'); 
       buf.writeln('Metric,Value');
       buf.writeln('Guests This Month/Period,${d.stats.guestsThisMonth}');
       buf.writeln('Guests This Year,${d.stats.guestsThisYear}');

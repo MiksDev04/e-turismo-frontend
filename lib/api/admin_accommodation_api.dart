@@ -286,7 +286,7 @@ class AdminAccommodationApi extends BaseApi {
   Future<AccommodationResult> updateStatus(
     String businessId,
     String newStatus, {
-    required String reason,
+    String reason = '',
     required String messageContent,
   }) async {
     try {
