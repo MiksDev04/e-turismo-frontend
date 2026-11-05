@@ -371,8 +371,7 @@ class _DailyTouristCalendarDialogState
     // The 1st of the month falls on a weekday; blank cells are added before it
     // so every date lines up under the right weekday column.
     final leadingCells = DateTime(_year, _month, 1).weekday % 7;
-    final trailingCells =
-        (7 - ((leadingCells + daysInMonth) % 7)) % 7;
+    final trailingCells = (7 - ((leadingCells + daysInMonth) % 7)) % 7;
     final cellCount = leadingCells + daysInMonth + trailingCells;
 
     return Column(
@@ -397,13 +396,12 @@ class _DailyTouristCalendarDialogState
                 GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 7,
-                        crossAxisSpacing: 8,
-                        mainAxisSpacing: 8,
-                        childAspectRatio: 1.0,
-                      ),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 7,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                    childAspectRatio: 1.0,
+                  ),
                   itemCount: cellCount,
                   itemBuilder: (context, index) {
                     if (index < leadingCells) return const SizedBox.shrink();
@@ -413,11 +411,7 @@ class _DailyTouristCalendarDialogState
                     // Only the real current date carries the "Today" pill, and
                     // only while the current month is on screen.
                     final isToday = _isCurrentMonth && day == _now.day;
-                    return _DayCell(
-                      day: day,
-                      count: count,
-                      isToday: isToday,
-                    );
+                    return _DayCell(day: day, count: count, isToday: isToday);
                   },
                 ),
               ],
@@ -493,10 +487,7 @@ class _Dropdown extends StatelessWidget {
           isDense: true,
           dropdownColor: AppColors.cardBackground,
           menuMaxHeight: 240,
-          style: const TextStyle(
-            color: AppColors.textWhite,
-            fontSize: 13,
-          ),
+          style: const TextStyle(color: AppColors.textWhite, fontSize: 13),
           icon: const Icon(
             Icons.keyboard_arrow_down_rounded,
             color: AppColors.textGray,
@@ -578,6 +569,11 @@ class _DayCellState extends State<_DayCell> {
     final isToday = widget.isToday;
     final hasData = count > 0;
 
+    final isMobile = MediaQuery.of(context).size.width < 640;
+    final badgeWidth = isMobile ? 18.0 : _TodayBadge.width;
+    final badgeHeight = isMobile ? 9.0 : _TodayBadge.height;
+    final cornerOffset = isMobile ? 0.0 : _cornerOffset;
+
     // Hovering lifts the accent; today's cell keeps its orange identity.
     final Color borderColor;
     final Color background;
@@ -634,64 +630,63 @@ class _DayCellState extends State<_DayCell> {
           scale: _pressed ? 0.94 : 1.0,
           duration: const Duration(milliseconds: 110),
           curve: Curves.easeOut,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOut,
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          // Painted on top of the content so the diagonal tag of today's
-          // cell cannot cover the border.
-          foregroundDecoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: borderColor,
-              width: isToday ? 1.6 : 1,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOut,
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(10),
             ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return Stack(
-                  children: [
-                    Positioned.fill(
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.topCenter,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              dayText,
-                              const SizedBox(height: 2),
-                              countText,
-                            ],
+            // Painted on top of the content so the diagonal tag of today's
+            // cell cannot cover the border.
+            foregroundDecoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: borderColor, width: isToday ? 1.6 : 1),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return Stack(
+                    children: [
+                      Positioned.fill(
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.topCenter,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                dayText,
+                                const SizedBox(height: 2),
+                                countText,
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    if (isToday)
-                      Positioned(
-                        left: constraints.maxWidth -
-                            _TodayBadge.width / 2 -
-                            _cornerOffset,
-                        top: constraints.maxHeight -
-                            _TodayBadge.height / 2 -
-                            _cornerOffset,
-                        child: Transform.rotate(
-                          angle: -math.pi / 4,
-                          child: const _TodayBadge(),
+                      if (isToday)
+                        Positioned(
+                          left:
+                              constraints.maxWidth -
+                              badgeWidth / 2 -
+                              cornerOffset,
+                          top:
+                              constraints.maxHeight -
+                              badgeHeight / 2 -
+                              cornerOffset,
+                          child: Transform.rotate(
+                            angle: -math.pi / 4,
+                            child: _TodayBadge(compact: isMobile),
+                          ),
                         ),
-                      ),
-                  ],
-                );
-              },
+                    ],
+                  );
+                },
+              ),
             ),
           ),
-        ),
         ),
       ),
     );
@@ -700,21 +695,26 @@ class _DayCellState extends State<_DayCell> {
 
 /// Diagonal corner tag that marks the current date.
 class _TodayBadge extends StatelessWidget {
-  const _TodayBadge();
+  const _TodayBadge({this.compact = false});
+
+  final bool compact;
 
   /// Fixed size so the tag can be centred on the cell corner precisely.
   static const double width = 30;
   static const double height = 14;
 
+  double get _width => compact ? 18.0 : width;
+  double get _height => compact ? 9.0 : height;
+
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: width,
-      height: height,
+      width: _width,
+      height: _height,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: AppColors.accentOrange,
-        borderRadius: BorderRadius.circular(height / 2),
+        borderRadius: BorderRadius.circular(_height / 2),
       ),
       child: FittedBox(
         fit: BoxFit.scaleDown,
