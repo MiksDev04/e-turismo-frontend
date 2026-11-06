@@ -36,8 +36,8 @@ class AdminSetupApi extends BaseApi {
     await prefs.remove(_cacheKey);
   }
 
-  Future<AdminSetupStatus> getStatus() async {
-    final response = await get('/api/auth/admin-setup/status');
+  Future<AdminSetupStatus> getStatus({Duration? timeout}) async {
+    final response = await get('/api/auth/admin-setup/status', timeout: timeout);
     final data = handleResponse(response) as Map<String, dynamic>;
     return AdminSetupStatus.fromJson(data);
   }

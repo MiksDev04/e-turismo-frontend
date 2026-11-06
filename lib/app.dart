@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app/core/constants/app_colors.dart';
 import 'package:app/router/app_router.dart';
+import 'package:app/router/app_routes.dart';
 import 'package:app/core/services/offline_service.dart';
 import 'package:app/core/services/session_service.dart';
 import 'package:app/core/widgets/app_toast.dart';
@@ -8,13 +9,49 @@ import 'dart:async';
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
-class App extends StatelessWidget {
+class App extends StatefulWidget {
   const App({super.key});
 
   // The sync listener lives in MaterialApp.builder, which is a *sibling* of
   // the Navigator — there is no Overlay above it for AppToast to find. This
   // key is how the sync banner reaches the root overlay.
-  static final _navigatorKey = GlobalKey<NavigatorState>();
+  static final navigatorKey = GlobalKey<NavigatorState>();
+
+  @override
+  State<App> createState() => _AppState();
+}
+
+class _AppState extends State<App> {
+  SessionData? _lastSession;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastSession = SessionService.instance.current;
+    SessionService.instance.addListener(_handleSessionChanged);
+  }
+
+  @override
+  void dispose() {
+    SessionService.instance.removeListener(_handleSessionChanged);
+    super.dispose();
+  }
+
+  void _handleSessionChanged() {
+    final current = SessionService.instance.current;
+    // When an authenticated session is cleared (e.g. an expired token that
+    // could not be refreshed), send the user to the login screen instead of
+    // leaving them on a now-unauthenticated dashboard.
+    if (_lastSession != null && current == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final nav = App.navigatorKey.currentState;
+        if (nav != null) {
+          nav.pushNamedAndRemoveUntil(AppRoutes.login, (route) => false);
+        }
+      });
+    }
+    _lastSession = current;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +61,7 @@ class App extends StatelessWidget {
         return MaterialApp(
           title: _getDynamicTitle(),
           debugShowCheckedModeBanner: false,
-          navigatorKey: _navigatorKey,
+          navigatorKey: App.navigatorKey,
 
           // ── Theme ──────────────────────────────────────────────────────────────
           theme: _buildTheme(),
@@ -144,7 +181,7 @@ class _SyncBannerOverlayState extends State<SyncBannerOverlay> {
     // Null before the Navigator has mounted — e.g. the currentState re-read
     // in initState landing ahead of the first frame. The cycle flag is
     // already set, so the follow-up state still reports itself.
-    final overlay = App._navigatorKey.currentState?.overlay;
+    final overlay = App.navigatorKey.currentState?.overlay;
     if (overlay == null) return;
     show(ToastAnchor(overlay, MediaQuery.of(context).padding.top), message);
   }

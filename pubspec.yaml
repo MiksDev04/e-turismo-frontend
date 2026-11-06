@@ -98,7 +98,7 @@ flutter:
   uses-material-design: true
   
   assets:
-    - .env
+    # - .env
     - assets/logo/
     - assets/images/tourism_office_logo.jpg
     - assets/images/qr-pic.png

@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/session_service.dart';
-import '../../../router/app_routes.dart';
 
 // =============================================================================
 // PUBLIC HELPER
@@ -18,11 +17,10 @@ Future<void> showLogoutConfirmDialog(BuildContext context) async {
     builder: (_) => const _LogoutConfirmDialog(),
   );
 
-  if (confirmed == true && context.mounted) {
+  if (confirmed == true) {
     await SessionService.instance.clear();
-    if (context.mounted) {
-      Navigator.pushReplacementNamed(context, AppRoutes.login);
-    }
+    // Navigation to the login screen is handled centrally by App's
+    // SessionService listener once the session becomes null.
   }
 }
 

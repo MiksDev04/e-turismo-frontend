@@ -337,7 +337,7 @@ class _InitialRouterState extends State<_InitialRouter> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _resolve());
   }
 
-  static const _minSplashDuration = Duration(milliseconds: 1500);
+  static const _minSplashDuration = Duration(milliseconds: 700);
 
   Future<void> _ensureMinElapsed(DateTime startTime) async {
     final elapsed = DateTime.now().difference(startTime);
@@ -356,7 +356,7 @@ class _InitialRouterState extends State<_InitialRouter> {
     // If cache says admin exists, verify with backend before trusting it.
     if (await AdminSetupApi.isCachedAdminExists()) {
       try {
-        final status = await AdminSetupApi().getStatus();
+        final status = await AdminSetupApi().getStatus(timeout: const Duration(seconds: 8));
         if (!mounted) return;
 
         if (status.adminExists) {
@@ -380,7 +380,7 @@ class _InitialRouterState extends State<_InitialRouter> {
     }
 
     try {
-      final status = await AdminSetupApi().getStatus();
+      final status = await AdminSetupApi().getStatus(timeout: const Duration(seconds: 8));
       if (!mounted) return;
 
       if (status.adminExists) {

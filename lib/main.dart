@@ -71,7 +71,7 @@ void main() async {
   SyncService.instance.listenForConnectivity();
 
   // ── Step 5: Preload PSGC reference data ──────────────────────────────────
-  await PsgcRepository.instance.load();
+  unawaited(PsgcRepository.instance.load().catchError((_) {}));
 
   // ── Step 6: Window constraints (desktop only) ──────────────────────────────
   // No maximum size — the window must be free to fill the whole monitor.
