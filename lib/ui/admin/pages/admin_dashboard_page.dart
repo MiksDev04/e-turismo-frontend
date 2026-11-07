@@ -153,8 +153,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       // ── Summary ────────────────────────────────────────────────────────────
       buf.writeln('SUMMARY');
       buf.writeln('Metric,Value');
-      buf.writeln('Active Accommodations,${d.stats.activeAccommodations}');
-      buf.writeln('Active Attractions,${d.stats.activeAttractions}');
+      buf.writeln('Accredited Accommodations,${d.stats.activeAccommodations}');
+      buf.writeln('Attractions,${d.stats.activeAttractions}');
       buf.writeln('Tourists This Period,${d.stats.touristsThisPeriod}');
       buf.writeln('Total Tourists This Year,${d.stats.touristsThisYear}');
       buf.writeln();
@@ -319,8 +319,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             pw.Table.fromTextArray(
               headers: ['Metric', 'Value'],
               data: [
-                ['Active Accommodations', '${d.stats.activeAccommodations}'],
-                ['Active Attractions', '${d.stats.activeAttractions}'],
+                ['Accredited Accommodations', '${d.stats.activeAccommodations}'],
+                ['Attractions', '${d.stats.activeAttractions}'],
                 ['Tourists This Period', '${d.stats.touristsThisPeriod}'],
                 ['Total Tourists This Year', '${d.stats.touristsThisYear}'],
               ],
@@ -1253,7 +1253,7 @@ class _StatCards extends StatelessWidget {
         icon: Icons.assignment_rounded,
         iconColor: AppColors.primaryCyan,
         value: '${stats.activeAccommodations}',
-        label: 'Active Accommodations',
+        label: 'Accredited Accommodations',
         pending: stats.pendingAccommodations,
         onTap: () =>
             Navigator.pushReplacementNamed(context, AppRoutes.adminAccommodations),
@@ -1262,7 +1262,7 @@ class _StatCards extends StatelessWidget {
         icon: Icons.attractions_rounded,
         iconColor: AppColors.accentOrange,
         value: '${stats.activeAttractions}',
-        label: 'Active Attractions',
+        label: 'Attractions',
         pending: stats.pendingAttractions,
         onTap: () =>
             Navigator.pushReplacementNamed(context, AppRoutes.adminAttractions),
