@@ -165,10 +165,11 @@ class _StatusChangeDialogState extends State<StatusChangeDialog> {
         constraints: const BoxConstraints(maxWidth: 400),
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               Row(
                 children: [
                   Container(
@@ -302,39 +303,6 @@ class _StatusChangeDialogState extends State<StatusChangeDialog> {
                     icon: Icons.check_circle_outline_rounded,
                     color: AppColors.accentGreen,
                   ),
-                if (widget.previewMessage != null && _selected != null) ...[
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.cardBackground,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.cardBorder),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Default message that will be sent',
-                          style: TextStyle(
-                            color: AppColors.textGray,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          widget.previewMessage!(_selected!),
-                          style: const TextStyle(
-                            color: AppColors.textWhite,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
                 const SizedBox(height: 16),
                 Text(
                   'Remarks (optional)',
@@ -433,8 +401,9 @@ class _StatusChangeDialogState extends State<StatusChangeDialog> {
               ],
             ],
           ),
-        ),
-      ),
-    );
+          ), // SingleChildScrollView
+        ),   // Padding
+      ),     // ConstrainedBox
+    );       // Dialog
   }
 }
