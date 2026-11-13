@@ -31,35 +31,84 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  /// Width at which the layout switches from stacked (mobile)
+  /// to split-screen (web / Windows).
+  static const double _wideBreakpoint = 900;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SingleChildScrollView(
-        child: Container(
-          decoration: const BoxDecoration(
-            gradient: RadialGradient(
-              center: Alignment(0.0, -0.3),
-              radius: 1.2,
-              colors: [AppColors.activeNavBg, AppColors.backgroundDark],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= _wideBreakpoint;
+          return isWide ? _buildSplit() : _buildStacked(constraints.maxHeight);
+        },
+      ),
+    );
+  }
+
+  // ── Split-screen (wide) ────────────────────────────────────────────────────
+
+  Widget _buildSplit() {
+    return Row(
+      children: [
+        const Expanded(flex: 11, child: _BrandPanel()),
+        Container(width: 1, color: AppColors.cardBorder),
+        Expanded(
+          flex: 9,
+          child: Container(
+            color: AppColors.backgroundDark,
+            child: const SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.symmetric(horizontal: 48, vertical: 40),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _LoginCard(embedded: true),
+                      SizedBox(height: 32),
+                      _FormFooter(),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
-          child: SafeArea(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 40,
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    _AppLogo(),
-                    SizedBox(height: 16),
-                    _AppTitle(),
-                    SizedBox(height: 40),
-                    _LoginCard(),
-                  ],
-                ),
+        ),
+      ],
+    );
+  }
+
+  // ── Stacked (mobile) ───────────────────────────────────────────────────────
+
+  Widget _buildStacked(double minHeight) {
+    return SingleChildScrollView(
+      child: Container(
+        constraints: BoxConstraints(minHeight: minHeight),
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0.0, -0.3),
+            radius: 1.2,
+            colors: [AppColors.activeNavBg, AppColors.backgroundDark],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: const [
+                  _AppLogo(),
+                  SizedBox(height: 16),
+                  _AppTitle(),
+                  SizedBox(height: 20),
+                  _FeatureChips(),
+                  SizedBox(height: 32),
+                  _LoginCard(),
+                  SizedBox(height: 24),
+                  _FormFooter(),
+                ],
               ),
             ),
           ),
@@ -70,19 +119,319 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Brand Panel (wide layout, left side)
+//  Logo + tagline + feature highlights. No image assets required.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _BrandPanel extends StatelessWidget {
+  const _BrandPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRect(
+      child: Container(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(-0.3, -0.4),
+            radius: 1.3,
+            colors: [AppColors.activeNavBg, AppColors.backgroundDark],
+          ),
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const Positioned(
+              top: -140,
+              right: -120,
+              child: _GlowOrb(
+                size: 420,
+                color: AppColors.primaryBlue,
+                opacity: 0.22,
+              ),
+            ),
+            const Positioned(
+              bottom: -160,
+              left: -120,
+              child: _GlowOrb(
+                size: 460,
+                color: AppColors.primaryCyan,
+                opacity: 0.12,
+              ),
+            ),
+            Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 56,
+                  vertical: 40,
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Logo + name
+                      Row(
+                        children: [
+                          const _AppLogo(size: 56),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text(
+                                  'San Pablo City',
+                                  style: TextStyle(
+                                    color: AppColors.textWhite,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'Tourism Record Management System',
+                                  style: TextStyle(
+                                    color: AppColors.primaryCyan,
+                                    fontSize: 12.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 56),
+
+                      // Tagline
+                      const Text.rich(
+                        TextSpan(
+                          style: TextStyle(
+                            color: AppColors.textWhite,
+                            fontSize: 40,
+                            fontWeight: FontWeight.w700,
+                            height: 1.25,
+                            letterSpacing: -0.5,
+                          ),
+                          children: [
+                            TextSpan(text: 'Every visitor counted,\n'),
+                            TextSpan(text: 'every record '),
+                            TextSpan(
+                              text: 'made simple',
+                              style: TextStyle(color: AppColors.primaryCyan),
+                            ),
+                            TextSpan(text: '.'),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'The platform for accommodations, attractions, and the '
+                        'City Tourism Office to log visitors and keep records '
+                        'in one place.',
+                        style: TextStyle(
+                          color: AppColors.textGray,
+                          fontSize: 15,
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 40),
+
+                      // Feature highlights
+                      const _FeatureItem(
+                        icon: Icons.groups_outlined,
+                        title: 'Visitor records, simplified',
+                        description:
+                            'Log guests and attraction visits in a few taps.',
+                      ),
+                      const SizedBox(height: 20),
+                      const _FeatureItem(
+                        icon: Icons.cloud_sync_outlined,
+                        title: 'Works offline',
+                        description:
+                            'Keep recording without a connection — everything '
+                            'syncs when you\'re back online.',
+                      ),
+                      const SizedBox(height: 20),
+                      const _FeatureItem(
+                        icon: Icons.assessment_outlined,
+                        title: 'Automated reports',
+                        description:
+                            'Generate tourism reports straight from your live '
+                            'records.',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GlowOrb extends StatelessWidget {
+  const _GlowOrb({
+    required this.size,
+    required this.color,
+    required this.opacity,
+  });
+
+  final double size;
+  final Color color;
+  final double opacity;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            colors: [color.withOpacity(opacity), color.withOpacity(0)],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FeatureItem extends StatelessWidget {
+  const _FeatureItem({
+    required this.icon,
+    required this.title,
+    required this.description,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(11),
+          decoration: BoxDecoration(
+            color: AppColors.primaryCyan.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.primaryCyan.withOpacity(0.25)),
+          ),
+          child: Icon(icon, color: AppColors.primaryCyan, size: 20),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.textWhite,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                description,
+                style: const TextStyle(
+                  color: AppColors.textGray,
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Compact feature pills shown on the stacked (mobile) layout.
+class _FeatureChips extends StatelessWidget {
+  const _FeatureChips();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _FeatureChip(icon: Icons.groups_outlined, label: 'Visitor records'),
+        _FeatureChip(icon: Icons.cloud_sync_outlined, label: 'Works offline'),
+        _FeatureChip(icon: Icons.assessment_outlined, label: 'Auto reports'),
+      ],
+    );
+  }
+}
+
+class _FeatureChip extends StatelessWidget {
+  const _FeatureChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppColors.primaryCyan.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primaryCyan.withOpacity(0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: AppColors.primaryCyan, size: 14),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(color: AppColors.textGray, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FormFooter extends StatelessWidget {
+  const _FormFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Text(
+      'Office of the City Tourism Officer · San Pablo City',
+      textAlign: TextAlign.center,
+      style: TextStyle(color: AppColors.textSubtle, fontSize: 11.5),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  App Logo & Title
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _AppLogo extends StatelessWidget {
-  const _AppLogo();
+  const _AppLogo({this.size = 96});
+
+  final double size;
 
   static const _logoAsset = 'assets/images/tourism_office_logo.jpg';
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 96,
-      height: 96,
+      width: size,
+      height: size,
       padding: const EdgeInsets.all(1),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
@@ -96,7 +445,7 @@ class _AppLogo extends StatelessWidget {
           ),
         ],
       ),
-     child: ClipOval(
+      child: ClipOval(
         child: Image.asset(
           _logoAsset,
           fit: BoxFit.cover,
@@ -140,10 +489,14 @@ class _AppTitle extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Login Card
+//  `embedded: true` renders the form flat (no card background/border/shadow),
+//  used in the split-screen layout where the right panel is the "card".
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _LoginCard extends StatefulWidget {
-  const _LoginCard();
+  const _LoginCard({this.embedded = false});
+
+  final bool embedded;
 
   @override
   State<_LoginCard> createState() => _LoginCardState();
@@ -268,21 +621,25 @@ class _LoginCardState extends State<_LoginCard> {
 
   @override
   Widget build(BuildContext context) {
+    final embedded = widget.embedded;
+
     return Container(
-      constraints: const BoxConstraints(maxWidth: 460),
-      padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.cardBorder, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.4),
-            blurRadius: 40,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
+      constraints: BoxConstraints(maxWidth: embedded ? 400 : 460),
+      padding: embedded ? EdgeInsets.zero : const EdgeInsets.all(28),
+      decoration: embedded
+          ? null
+          : BoxDecoration(
+              color: AppColors.cardBackground,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.cardBorder, width: 1),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.4),
+                  blurRadius: 40,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -291,11 +648,16 @@ class _LoginCardState extends State<_LoginCard> {
             'Sign In',
             style: TextStyle(
               color: AppColors.textWhite,
-              fontSize: 22,
+              fontSize: 24,
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 6),
+          const Text(
+            'Welcome back! Enter your details to continue.',
+            style: TextStyle(color: AppColors.textSubtle, fontSize: 13),
+          ),
+          const SizedBox(height: 28),
 
           // Username
           const _FieldLabel(label: 'Username'),
@@ -369,40 +731,47 @@ class _LoginCardState extends State<_LoginCard> {
 
           const SizedBox(height: 20),
 
-          const Text(
-            'Don\'t have an account?',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: AppColors.textSubtle,
-              fontSize: 12,
-            ),
+          // "OR" divider
+          Row(
+            children: const [
+              Expanded(child: Divider(color: AppColors.cardBorder)),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'OR',
+                  style: TextStyle(
+                    color: AppColors.textSubtle,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+              Expanded(child: Divider(color: AppColors.cardBorder)),
+            ],
           ),
-          const SizedBox(height: 8),
+
+          const SizedBox(height: 20),
 
           SizedBox(
             width: double.infinity,
-            height: 44,
-            child: OutlinedButton.icon(
+            height: 50,
+            child: OutlinedButton(
               onPressed: () =>
                   Navigator.pushReplacementNamed(context, AppRoutes.register),
-              icon: const Icon(
-                Icons.person_add_alt_1_outlined,
-                size: 18,
-                color: AppColors.primaryCyan,
-              ),
-              label: const Text(
-                'Create an account →',
-                style: TextStyle(
-                  color: AppColors.primaryCyan,
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.primaryCyan,
                 side: const BorderSide(color: AppColors.primaryCyan, width: 1),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(25),
+                ),
+              ),
+              child: const Text(
+                'Create new account',
+                style: TextStyle(
+                  color: AppColors.primaryCyan,
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -1144,7 +1513,7 @@ class _ResetPasswordModalState extends State<_ResetPasswordModal> {
     }
   }
 
-  @override
+  @override 
   Widget build(BuildContext context) {
     final isCompact = _fpIsCompactDialog(context);
 
@@ -1556,7 +1925,7 @@ double _fpDialogWidth(BuildContext context, double maxWidth) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Existing login-card private widgets (unchanged)
+//  Login-card private widgets (restyled: rounder fields, pill buttons)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _FieldLabel extends StatelessWidget {
@@ -1605,18 +1974,18 @@ class _InputField extends StatelessWidget {
         fillColor: AppColors.inputBackground,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
-          vertical: 14,
+          vertical: 16,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: AppColors.inputBorder),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: AppColors.inputBorder),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(
             color: AppColors.primaryCyan,
             width: 1.5,
@@ -1656,18 +2025,18 @@ class _PasswordField extends StatelessWidget {
         ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
-          vertical: 14,
+          vertical: 16,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: AppColors.inputBorder),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: AppColors.inputBorder),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(
             color: AppColors.primaryCyan,
             width: 1.5,
@@ -1700,7 +2069,7 @@ class _SignInButton extends StatelessWidget {
           gradient: const LinearGradient(
             colors: [AppColors.gradientStart, AppColors.gradientEnd],
           ),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(25),
           boxShadow: [
             BoxShadow(
               color: AppColors.primaryBlue.withOpacity(0.35),
@@ -1724,7 +2093,7 @@ class _SignInButton extends StatelessWidget {
             backgroundColor: Colors.transparent,
             shadowColor: Colors.transparent,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(25),
             ),
           ),
         ),
@@ -1745,7 +2114,7 @@ class _LoadingButton extends StatelessWidget {
         gradient: const LinearGradient(
           colors: [AppColors.gradientStart, AppColors.gradientEnd],
         ),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(25),
       ),
       child: const Center(
         child: SizedBox(
