@@ -1167,27 +1167,7 @@ class _RoleSelectionCard extends StatelessWidget {
             onTap: () => onSelect('attraction'),
           ),
           const SizedBox(height: 20),
-          Center(
-            child: GestureDetector(
-              onTap: () =>
-                  Navigator.pushReplacementNamed(context, AppRoutes.login),
-              child: RichText(
-                text: const TextSpan(
-                  text: 'Already registered? ',
-                  style: TextStyle(color: AppColors.textSubtle, fontSize: 13),
-                  children: [
-                    TextSpan(
-                      text: 'Sign in',
-                      style: TextStyle(
-                        color: AppColors.primaryCyan,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          const Center(child: _SignInLink()),
         ],
       ),
     );
@@ -1524,27 +1504,7 @@ class _FormCard extends StatelessWidget {
               onSubmit: onSubmit,
             ),
           const SizedBox(height: 16),
-          Center(
-            child: GestureDetector(
-              onTap: () =>
-                  Navigator.pushReplacementNamed(context, AppRoutes.login),
-              child: RichText(
-                text: const TextSpan(
-                  text: 'Already registered? ',
-                  style: TextStyle(color: AppColors.textSubtle, fontSize: 13),
-                  children: [
-                    TextSpan(
-                      text: 'Sign in',
-                      style: TextStyle(
-                        color: AppColors.primaryCyan,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          const Center(child: _SignInLink()),
         ],
       ),
     );
@@ -3715,6 +3675,63 @@ class _HoverButtonState extends State<_HoverButton> {
                   ),
                 ],
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Sign In Link ─────────────────────────────────────────────────────────────
+
+class _SignInLink extends StatefulWidget {
+  const _SignInLink();
+
+  @override
+  State<_SignInLink> createState() => _SignInLinkState();
+}
+
+class _SignInLinkState extends State<_SignInLink> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: () => Navigator.pushReplacementNamed(context, AppRoutes.login),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: _hovered
+                ? AppColors.primaryCyan.withOpacity(0.10)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text.rich(
+            TextSpan(
+              text: 'Already registered? ',
+              style: const TextStyle(
+                color: AppColors.textSubtle,
+                fontSize: 13,
+              ),
+              children: [
+                TextSpan(
+                  text: 'Sign in',
+                  style: TextStyle(
+                    color: AppColors.primaryCyan,
+                    fontWeight: FontWeight.w600,
+                    decoration: _hovered
+                        ? TextDecoration.underline
+                        : TextDecoration.none,
+                    decorationColor: AppColors.primaryCyan,
+                  ),
+                ),
+              ],
             ),
           ),
         ),

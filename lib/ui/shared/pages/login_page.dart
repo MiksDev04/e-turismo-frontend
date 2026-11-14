@@ -245,11 +245,10 @@ class _BrandPanel extends StatelessWidget {
                       ),
                       const SizedBox(height: 20),
                       const _FeatureItem(
-                        icon: Icons.cloud_sync_outlined,
-                        title: 'Works offline',
+                        icon: Icons.devices_outlined,
+                        title: 'On any device',
                         description:
-                            'Keep recording without a connection — everything '
-                            'syncs when you\'re back online.',
+                            'Use it on your phone, tablet, or computer, whichever is handy.',
                       ),
                       const SizedBox(height: 20),
                       const _FeatureItem(
@@ -366,7 +365,7 @@ class _FeatureChips extends StatelessWidget {
       runSpacing: 8,
       children: [
         _FeatureChip(icon: Icons.groups_outlined, label: 'Visitor records'),
-        _FeatureChip(icon: Icons.cloud_sync_outlined, label: 'Works offline'),
+        _FeatureChip(icon: Icons.devices_outlined, label: 'Any device'),
         _FeatureChip(icon: Icons.assessment_outlined, label: 'Auto reports'),
       ],
     );
@@ -505,6 +504,7 @@ class _LoginCard extends StatefulWidget {
 class _LoginCardState extends State<_LoginCard> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _passwordFocus = FocusNode();
   bool _obscurePassword = true;
   bool _isLoading = false;
   String? _errorMessage;
@@ -527,12 +527,16 @@ class _LoginCardState extends State<_LoginCard> {
     _connectivitySub?.cancel();
     _usernameController.dispose();
     _passwordController.dispose();
+    _passwordFocus.dispose();
     super.dispose();
   }
 
   // ── Sign In ────────────────────────────────────────────────────────────────
 
   Future<void> _handleSignIn() async {
+    if (_isLoading) return;
+    FocusScope.of(context).unfocus();
+
     final username = _usernameController.text.trim();
     final password = _passwordController.text;
 
@@ -667,6 +671,8 @@ class _LoginCardState extends State<_LoginCard> {
             hintText: 'Enter username',
             keyboardType: TextInputType.text,
             prefixIcon: Icons.person_outline_rounded,
+            textInputAction: TextInputAction.next,
+            onSubmitted: (_) => _passwordFocus.requestFocus(),
           ),
           const SizedBox(height: 18),
 
@@ -695,6 +701,9 @@ class _LoginCardState extends State<_LoginCard> {
             obscure: _obscurePassword,
             onToggle: () =>
                 setState(() => _obscurePassword = !_obscurePassword),
+            focusNode: _passwordFocus,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _handleSignIn(),
           ),
 
           const SizedBox(height: 18),
@@ -1951,18 +1960,24 @@ class _InputField extends StatelessWidget {
     required this.hintText,
     this.keyboardType = TextInputType.text,
     this.prefixIcon,
+    this.onSubmitted,
+    this.textInputAction = TextInputAction.next,
   });
 
   final TextEditingController controller;
   final String hintText;
   final TextInputType keyboardType;
   final IconData? prefixIcon;
+  final ValueChanged<String>? onSubmitted;
+  final TextInputAction textInputAction;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
+      onSubmitted: onSubmitted,
+      textInputAction: textInputAction,
       style: const TextStyle(color: AppColors.textWhite, fontSize: 14.5),
       decoration: InputDecoration(
         hintText: hintText,
@@ -2001,17 +2016,26 @@ class _PasswordField extends StatelessWidget {
     required this.controller,
     required this.obscure,
     required this.onToggle,
+    this.focusNode,
+    this.onSubmitted,
+    this.textInputAction = TextInputAction.done,
   });
 
   final TextEditingController controller;
   final bool obscure;
   final VoidCallback onToggle;
+  final FocusNode? focusNode;
+  final ValueChanged<String>? onSubmitted;
+  final TextInputAction textInputAction;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       obscureText: obscure,
+      focusNode: focusNode,
+      onSubmitted: onSubmitted,
+      textInputAction: textInputAction,
       style: const TextStyle(color: AppColors.textWhite, fontSize: 14.5),
       decoration: InputDecoration(
         filled: true,
