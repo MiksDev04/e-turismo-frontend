@@ -20,6 +20,15 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="e-Turismo">
 
+  <!--
+    Makes the browser use the real device width as the layout viewport.
+    Without this, mobile browsers fall back to a ~980px virtual viewport, so the
+    app renders as a shrunken desktop page and the `width < 600` layout
+    breakpoints never trigger. No maximum-scale / user-scalable=no on purpose:
+    those disable pinch-zoom, and browser Ctrl +/- zoom must keep working.
+  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
@@ -48,6 +57,20 @@
     // copy of pdf.js from unpkg.
     window.pdfjsLib = pdfjsLib;
     pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs";
+  </script>
+  <!--
+    Ctrl + mouse-wheel page zoom. Flutter's engine registers a 'wheel' listener
+    on the view root element and calls preventDefault() on it (Ctrl+wheel is
+    turned into a pinch/scale pointer signal), which also suppresses the
+    browser's Ctrl+wheel page zoom. Swallowing the event in the capture phase
+    means the engine never sees it and never cancels it, so Chrome/Edge/Firefox
+    zoom the whole page like they would on any other website. Unmodified wheel
+    events are untouched, so normal scrolling keeps working.
+  -->
+  <script>
+    window.addEventListener('wheel', function (e) {
+      if (e.ctrlKey) e.stopPropagation();
+    }, { capture: true, passive: true });
   </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
