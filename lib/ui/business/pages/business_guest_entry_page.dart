@@ -7,6 +7,7 @@ import '../../../core/services/offline_service.dart';
 import '../../../core/services/psgc_repository.dart';
 import '../../../core/models/psgc_models.dart';
 import '../../../core/widgets/app_toast.dart';
+import '../../../router/app_routes.dart';
 import '../../shared/layouts/business_layout.dart';
 import '../../../api/business_guest_entry_api.dart';
 import '../../../models/origin_group.dart';
@@ -116,23 +117,22 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
   // ── Connectivity subscription ─────────────────────────────────────────────
 
   void _subscribeToConnectivity() {
-    _connectivitySub = ConnectivityService.instance.onConnectivityChanged.listen(
-      (isOnline) {
-        if (!mounted) return;
+    _connectivitySub = ConnectivityService.instance.onConnectivityChanged
+        .listen((isOnline) {
+          if (!mounted) return;
 
-        if (isOnline && _isOffline) {
-          setState(() {
-            _isOffline = false;
-          });
-          _loadBusinessId();
-          SyncService.instance.sync();
-        } else if (!isOnline && !_isOffline) {
-          setState(() {
-            _isOffline = true;
-          });
-        }
-      },
-    );
+          if (isOnline && _isOffline) {
+            setState(() {
+              _isOffline = false;
+            });
+            _loadBusinessId();
+            SyncService.instance.sync();
+          } else if (!isOnline && !_isOffline) {
+            setState(() {
+              _isOffline = true;
+            });
+          }
+        });
   }
 
   // ── Business ID loading ───────────────────────────────────────────────────
@@ -162,6 +162,11 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
     }
   }
 
+  void _refreshRooms() {
+    final id = _businessId;
+    if (id != null) _loadVacantRooms(id);
+  }
+
   // ── Defaults ──────────────────────────────────────────────────────────────
 
   ({String? provinceCode, String? cityCode}) _defaultOrigin() {
@@ -171,9 +176,9 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
         .firstOrNull;
     final sanPablo = laguna != null
         ? repo
-            .citiesFor(laguna.code)
-            .where((c) => c.name.toLowerCase() == 'city of san pablo')
-            .firstOrNull
+              .citiesFor(laguna.code)
+              .where((c) => c.name.toLowerCase() == 'city of san pablo')
+              .firstOrNull
         : null;
     return (provinceCode: laguna?.code, cityCode: sanPablo?.code);
   }
@@ -203,12 +208,13 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
       .where((r) => _selectedRoomIds.contains(r.id))
       .fold<int>(0, (sum, r) => sum + r.capacity);
 
-  bool get _isPhilippines =>
-      !_leadIsOverseas && _leadCountry == 'Philippines';
+  bool get _isPhilippines => !_leadIsOverseas && _leadCountry == 'Philippines';
 
   bool get _hasOriginGroups => _originGroups.isNotEmpty;
-  int get _groupMaleSum => _originGroups.fold<int>(0, (s, g) => s + g.maleCount);
-  int get _groupFemaleSum => _originGroups.fold<int>(0, (s, g) => s + g.femaleCount);
+  int get _groupMaleSum =>
+      _originGroups.fold<int>(0, (s, g) => s + g.maleCount);
+  int get _groupFemaleSum =>
+      _originGroups.fold<int>(0, (s, g) => s + g.femaleCount);
 
   void _clearFieldError(String key) {
     if (_errors.containsKey(key)) {
@@ -228,8 +234,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
             'Total guests ($guests) exceeds selected room capacity ($cap pax).';
         e['rooms'] = 'Selected rooms can only accommodate $cap guests.';
       } else {
-        if (e['totalGuests']
-                ?.contains('exceeds selected room capacity') ==
+        if (e['totalGuests']?.contains('exceeds selected room capacity') ==
             true) {
           e.remove('totalGuests');
         }
@@ -376,9 +381,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
         errors['femaleGuests'] =
             'Female count ($female) exceeds total guests ($guests).';
         hasError = true;
-      } else if (male != null &&
-          female != null &&
-          male + female != guests) {
+      } else if (male != null && female != null && male + female != guests) {
         errors['maleGuests'] =
             'Male + female ($male + $female) must equal total guests ($guests).';
         errors['femaleGuests'] =
@@ -455,15 +458,25 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
     }
 
     final hasGroups = _hasOriginGroups;
-    final maleCount = hasGroups ? _groupMaleSum : int.tryParse(_maleGuestsCtrl.text);
-    final femaleCount = hasGroups ? _groupFemaleSum : int.tryParse(_femaleGuestsCtrl.text);
+    final maleCount = hasGroups
+        ? _groupMaleSum
+        : int.tryParse(_maleGuestsCtrl.text);
+    final femaleCount = hasGroups
+        ? _groupFemaleSum
+        : int.tryParse(_femaleGuestsCtrl.text);
 
     final result = await _api.saveGuestEntry(
       GuestEntryData(
         businessId: _businessId!,
-        checkIn: DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day),
+        checkIn: DateTime(
+          DateTime.now().year,
+          DateTime.now().month,
+          DateTime.now().day,
+        ),
         checkOut: _checkOut!,
-        totalGuests: hasGroups ? (_groupMaleSum + _groupFemaleSum) : _totalGuests,
+        totalGuests: hasGroups
+            ? (_groupMaleSum + _groupFemaleSum)
+            : _totalGuests,
         roomIds: _selectedRoomIds.toList(),
         purposeOfVisit: purposeValue,
         maleCount: maleCount,
@@ -484,6 +497,7 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
 
     if (result.success) {
       _clearForm();
+      _refreshRooms();
       if (result.syncedToCloud) {
         AppToast.success(context, 'Guest entry saved.');
       } else {
@@ -628,6 +642,11 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                     maleFemaleLocked: _hasOriginGroups,
                     lockedMaleCount: _groupMaleSum,
                     lockedFemaleCount: _groupFemaleSum,
+                    onRefreshRooms: _refreshRooms,
+                    onViewRooms: () => Navigator.pushReplacementNamed(
+                      context,
+                      AppRoutes.businessRooms,
+                    ),
                     onPickCheckIn: () {},
                     onPickCheckOut: () => _pickDate(context, false),
                     onPurposeChanged: (v) {
@@ -668,6 +687,12 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                       _clearFieldError('rooms');
                       _validateRoomCapacity();
                     },
+                    onClearRooms: () {
+                      if (_selectedRoomIds.isEmpty) return;
+                      setState(_selectedRoomIds.clear);
+                      _clearFieldError('rooms');
+                      _validateRoomCapacity();
+                    },
                     onPurposeOtherChanged: (_) =>
                         _clearFieldError('purposeOther'),
                   ),
@@ -679,7 +704,9 @@ class _BusinessGuestEntryPageState extends State<BusinessGuestEntryPage> {
                     selectedCityCode: _selectedCityCode,
                     provinces: PsgcRepository.instance.allProvinces,
                     cities: _selectedProvinceCode != null
-                        ? PsgcRepository.instance.citiesFor(_selectedProvinceCode!)
+                        ? PsgcRepository.instance.citiesFor(
+                            _selectedProvinceCode!,
+                          )
                         : [],
                     leadNationality: _leadNationality,
                     leadIsOverseas: _leadIsOverseas,
@@ -892,6 +919,9 @@ class _StayInfoCard extends StatelessWidget {
     required this.onMaleGuestsChanged,
     required this.onFemaleGuestsChanged,
     required this.onRoomToggled,
+    required this.onClearRooms,
+    required this.onRefreshRooms,
+    required this.onViewRooms,
     required this.onPurposeOtherChanged,
     this.maleFemaleLocked = false,
     this.lockedMaleCount = 0,
@@ -918,6 +948,9 @@ class _StayInfoCard extends StatelessWidget {
   final ValueChanged<String> onMaleGuestsChanged;
   final ValueChanged<String> onFemaleGuestsChanged;
   final ValueChanged<String> onRoomToggled;
+  final VoidCallback onClearRooms;
+  final VoidCallback onRefreshRooms;
+  final VoidCallback onViewRooms;
   final ValueChanged<String> onPurposeOtherChanged;
   final bool maleFemaleLocked;
   final int lockedMaleCount;
@@ -935,8 +968,24 @@ class _StayInfoCard extends StatelessWidget {
     final isMobile = MediaQuery.of(context).size.width < 600;
     final nightsLabel = '$nights night${nights == 1 ? '' : 's'}';
 
+    final availablePax = vacantRooms.fold<int>(0, (sum, r) => sum + r.capacity);
+    final vacantCount = vacantRooms.where((r) => !r.isReserved).length;
+    final reservedCount = vacantRooms.length - vacantCount;
+    final guests = int.tryParse(totalGuestsCtrl.text) ?? 0;
+
     return _SectionCard(
       title: 'Stay Information',
+      trailing: GestureDetector(
+        onTap: onViewRooms,
+        child: const Text(
+          'View all rooms →',
+          style: TextStyle(
+            color: AppColors.primaryCyan,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -977,6 +1026,15 @@ class _StayInfoCard extends StatelessWidget {
             _FieldCol(
               label: 'Total Guests *',
               errorText: errors['totalGuests'],
+              helper: _AvailabilityNote(
+                availablePax: availablePax,
+                vacantCount: vacantCount,
+                reservedCount: reservedCount,
+                guestCount: guests,
+                isLoading: isLoadingRooms,
+                showRefresh: true,
+                onRefresh: onRefreshRooms,
+              ),
               child: _EntryNumberField(
                 controller: totalGuestsCtrl,
                 hint: 'e.g. 10',
@@ -999,6 +1057,15 @@ class _StayInfoCard extends StatelessWidget {
                   child: _FieldCol(
                     label: 'Total Guests *',
                     errorText: errors['totalGuests'],
+                    helper: _AvailabilityNote(
+                      availablePax: availablePax,
+                      vacantCount: vacantCount,
+                      reservedCount: reservedCount,
+                      guestCount: guests,
+                      isLoading: isLoadingRooms,
+                      showRefresh: true,
+                      onRefresh: onRefreshRooms,
+                    ),
                     child: _EntryNumberField(
                       controller: totalGuestsCtrl,
                       hint: 'e.g. 10',
@@ -1023,6 +1090,7 @@ class _StayInfoCard extends StatelessWidget {
                 isLoading: isLoadingRooms,
                 hasError: errors['rooms'] != null,
                 onRoomToggled: onRoomToggled,
+                onClearRooms: onClearRooms,
               ),
             ),
             const SizedBox(height: 14),
@@ -1064,6 +1132,7 @@ class _StayInfoCard extends StatelessWidget {
                       isLoading: isLoadingRooms,
                       hasError: errors['rooms'] != null,
                       onRoomToggled: onRoomToggled,
+                      onClearRooms: onClearRooms,
                     ),
                   ),
                 ),
@@ -1145,6 +1214,97 @@ class _StayInfoCard extends StatelessWidget {
   }
 }
 
+// ─── Availability Note (under Total Guests) ───────────────────────────────────
+
+class _AvailabilityNote extends StatelessWidget {
+  const _AvailabilityNote({
+    required this.availablePax,
+    required this.vacantCount,
+    required this.reservedCount,
+    required this.guestCount,
+    required this.isLoading,
+    this.showRefresh = false,
+    this.onRefresh,
+  });
+
+  final int availablePax;
+  final int vacantCount;
+  final int reservedCount;
+  final int guestCount;
+  final bool isLoading;
+  final bool showRefresh;
+  final VoidCallback? onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasRooms = vacantCount + reservedCount > 0;
+    final isOver = hasRooms && guestCount > availablePax;
+
+    final String text;
+    final Color accent;
+    final IconData icon;
+
+    if (isLoading) {
+      text = 'Checking room availability…';
+      accent = AppColors.textGray;
+      icon = Icons.hourglass_empty_rounded;
+    } else if (!hasRooms) {
+      text = 'No rooms available right now';
+      accent = AppColors.textGray;
+      icon = Icons.meeting_room_outlined;
+    } else if (isOver) {
+      text = 'Only $availablePax pax available';
+      accent = AppColors.accentRed;
+      icon = Icons.warning_amber_rounded;
+    } else {
+      text =
+          '$vacantCount vacant room${vacantCount == 1 ? '' : 's'}'
+          '${reservedCount > 0 ? ' · $reservedCount reserved' : ''}'
+          ' · $availablePax pax';
+      accent = AppColors.accentGreen;
+      icon = Icons.meeting_room_rounded;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: accent.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: accent.withOpacity(0.30)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 12, color: accent),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isOver
+                    ? AppColors.accentRed
+                    : (hasRooms ? const Color(0xFF2E7D32) : AppColors.textGray),
+                fontSize: 11,
+                height: 1.25,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (showRefresh && onRefresh != null)
+            GestureDetector(
+              onTap: onRefresh,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Icon(Icons.refresh_rounded, size: 13, color: accent),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Room Selector (multi-select dropdown + dialog) ──────────────────────────
 
 class _RoomSelector extends StatelessWidget {
@@ -1154,6 +1314,7 @@ class _RoomSelector extends StatelessWidget {
     required this.isLoading,
     required this.hasError,
     required this.onRoomToggled,
+    required this.onClearRooms,
   });
 
   final List<RoomInfo> vacantRooms;
@@ -1161,6 +1322,7 @@ class _RoomSelector extends StatelessWidget {
   final bool isLoading;
   final bool hasError;
   final ValueChanged<String> onRoomToggled;
+  final VoidCallback onClearRooms;
 
   void _showRoomDialog(BuildContext context) {
     showDialog(
@@ -1168,7 +1330,9 @@ class _RoomSelector extends StatelessWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
           contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
           actionsPadding: const EdgeInsets.only(right: 12, bottom: 8),
           title: const Text(
@@ -1209,15 +1373,18 @@ class _RoomSelector extends StatelessWidget {
                         style: TextStyle(
                           color: _kInputText,
                           fontSize: 13.5,
-                          fontWeight:
-                              isSelected ? FontWeight.w600 : FontWeight.normal,
+                          fontWeight: isSelected
+                              ? FontWeight.w600
+                              : FontWeight.normal,
                         ),
                       ),
                       if (room.isReserved) ...[
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.accentPurple.withOpacity(0.12),
                             borderRadius: BorderRadius.circular(4),
@@ -1240,8 +1407,7 @@ class _RoomSelector extends StatelessWidget {
                   ),
                   subtitle: Text(
                     '${room.capacity} pax',
-                    style:
-                        const TextStyle(color: _kInputHint, fontSize: 11.5),
+                    style: const TextStyle(color: _kInputHint, fontSize: 11.5),
                   ),
                   onTap: () {
                     onRoomToggled(room.id);
@@ -1253,6 +1419,21 @@ class _RoomSelector extends StatelessWidget {
             ),
           ),
           actions: [
+            TextButton(
+              onPressed: selectedRoomIds.isEmpty
+                  ? null
+                  : () {
+                      onClearRooms();
+                      setDialogState(() {});
+                    },
+              child: const Text(
+                'Clear',
+                style: TextStyle(
+                  color: Color(0xFF3B82F6),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
               child: const Text(
@@ -1307,14 +1488,21 @@ class _RoomSelector extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 1.5),
                   ),
                   const SizedBox(width: 10),
-                  const Text('Loading rooms...',
-                      style: TextStyle(color: _kInputHint, fontSize: 13)),
+                  const Text(
+                    'Loading rooms...',
+                    style: TextStyle(color: _kInputHint, fontSize: 13),
+                  ),
                 ] else if (vacantRooms.isEmpty) ...[
-                  const Icon(Icons.meeting_room_outlined,
-                      color: _kInputHint, size: 14),
+                  const Icon(
+                    Icons.meeting_room_outlined,
+                    color: _kInputHint,
+                    size: 14,
+                  ),
                   const SizedBox(width: 8),
-                  const Text('No vacant rooms available',
-                      style: TextStyle(color: _kInputHint, fontSize: 13)),
+                  const Text(
+                    'No rooms available',
+                    style: TextStyle(color: _kInputHint, fontSize: 13),
+                  ),
                 ] else ...[
                   Expanded(
                     child: Text(
@@ -1344,15 +1532,11 @@ class _RoomSelector extends StatelessWidget {
             runSpacing: 6,
             children: selectedRooms.map((room) {
               return Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: const Color(0xFF3B82F6).withOpacity(0.12),
                   borderRadius: BorderRadius.circular(7),
-                  border: Border.all(
-                    color: const Color(0xFF3B82F6),
-                    width: 1,
-                  ),
+                  border: Border.all(color: const Color(0xFF3B82F6), width: 1),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1459,7 +1643,9 @@ class _LeadGuestCard extends StatelessWidget {
                     onChanged: (v) => onOverseasToggled(v ?? false),
                     activeColor: const Color(0xFF3B82F6),
                     side: const BorderSide(
-                        color: AppColors.textGray, width: 1.4),
+                      color: AppColors.textGray,
+                      width: 1.4,
+                    ),
                     visualDensity: VisualDensity.compact,
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
@@ -1514,7 +1700,9 @@ class _LeadGuestCard extends StatelessWidget {
                     child: _EntryDropdownField(
                       value: leadCountry,
                       items: leadIsOverseas
-                          ? kCountryOptions.where((c) => c != 'Philippines').toList()
+                          ? kCountryOptions
+                                .where((c) => c != 'Philippines')
+                                .toList()
                           : kCountryOptions,
                       hint: 'Select country',
                       hasError: errors['leadCountry'] != null,
@@ -1580,7 +1768,9 @@ class _LeadGuestCard extends StatelessWidget {
                       child: _EntryDropdownField(
                         value: selectedProvinceCode,
                         items: provinces.map((p) => p.code).toList(),
-                        displayLabels: {for (final p in provinces) p.code: p.name},
+                        displayLabels: {
+                          for (final p in provinces) p.code: p.name,
+                        },
                         hint: 'Select province',
                         onChanged: onProvinceChanged,
                       ),
@@ -1595,7 +1785,9 @@ class _LeadGuestCard extends StatelessWidget {
                         child: _EntryDropdownField(
                           value: selectedCityCode,
                           items: cities.map((c) => c.code).toList(),
-                          displayLabels: {for (final c in cities) c.code: c.name},
+                          displayLabels: {
+                            for (final c in cities) c.code: c.name,
+                          },
                           hint: 'Select city/municipality',
                           onChanged: onCityChanged,
                         ),
@@ -1833,11 +2025,17 @@ class _SectionCard extends StatelessWidget {
 // ─── Field Column ─────────────────────────────────────────────────────────────
 
 class _FieldCol extends StatelessWidget {
-  const _FieldCol({required this.label, required this.child, this.errorText});
+  const _FieldCol({
+    required this.label,
+    required this.child,
+    this.errorText,
+    this.helper,
+  });
 
   final String label;
   final Widget child;
   final String? errorText;
+  final Widget? helper;
 
   @override
   Widget build(BuildContext context) {
@@ -1857,6 +2055,9 @@ class _FieldCol extends StatelessWidget {
         if (errorText != null) ...[
           const SizedBox(height: 5),
           _InlineError(message: errorText!),
+        ] else if (helper != null) ...[
+          const SizedBox(height: 5),
+          helper!,
         ],
       ],
     );

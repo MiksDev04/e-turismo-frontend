@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/services/session_service.dart';
 import '../../../core/services/offline_service.dart';
 import '../../../core/utils/datetime_utils.dart';
 import '../../../core/widgets/app_toast.dart';
@@ -31,6 +30,7 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
 
   String? _businessId;
   List<RoomData> _rooms = [];
+  RoomSummary? _summary;
   bool _isLoading = true;
   String? _loadError;
 
@@ -68,15 +68,15 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
   // ── Connectivity ──────────────────────────────────────────────────────────
 
   void _subscribeToConnectivity() {
-    _connectivitySub =
-        ConnectivityService.instance.onConnectivityChanged.listen((isOnline) {
-      if (!mounted) return;
-      if (isOnline && _isOffline) {
-        setState(() => _isOffline = false);
-      } else if (!isOnline && !_isOffline) {
-        setState(() => _isOffline = true);
-      }
-    });
+    _connectivitySub = ConnectivityService.instance.onConnectivityChanged
+        .listen((isOnline) {
+          if (!mounted) return;
+          if (isOnline && _isOffline) {
+            setState(() => _isOffline = false);
+          } else if (!isOnline && !_isOffline) {
+            setState(() => _isOffline = true);
+          }
+        });
   }
 
   // ── Sync completion subscription ───────────────────────────────────────
@@ -86,6 +86,7 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
       if (!mounted) return;
       if (state.status == SyncStatus.synced) {
         _loadRooms(showLoading: false);
+        _loadSummary();
       }
     });
   }
@@ -99,7 +100,8 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
     if (id == null) {
       setState(() {
         _isLoading = false;
-        _loadError = 'Business account not found. Please check your connection '
+        _loadError =
+            'Business account not found. Please check your connection '
             'and try again.';
       });
       return;
@@ -107,15 +109,16 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
 
     _businessId = id;
     if (_isLoading) await _loadRooms();
+    _loadSummary();
   }
 
   String? _serverStatus() => switch (_activeFilter) {
-        _Filter.all => null,
-        _Filter.vacant => 'vacant',
-        _Filter.occupied => 'occupied',
-        _Filter.unavailable => 'unavailable',
-        _Filter.reserved => 'reserved',
-      };
+    _Filter.all => null,
+    _Filter.vacant => 'vacant',
+    _Filter.occupied => 'occupied',
+    _Filter.unavailable => 'unavailable',
+    _Filter.reserved => 'reserved',
+  };
 
   Future<void> _loadRooms({bool showLoading = true}) async {
     if (_businessId == null) return;
@@ -148,6 +151,20 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
         _loadError = result.error;
       });
     }
+  }
+
+  Future<void> _loadSummary() async {
+    if (_businessId == null) return;
+    try {
+      final summary = await _api.fetchRoomSummary(_businessId!);
+      if (mounted) setState(() => _summary = summary);
+    } catch (e) {
+      debugPrint('⚠️ _loadSummary: $e');
+    }
+  }
+
+  Future<void> _refreshAll() async {
+    await Future.wait([_loadRooms(), _loadSummary()]);
   }
 
   // ── Status change ─────────────────────────────────────────────────────────
@@ -196,9 +213,12 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
         'Room ${room.roomNumber} marked as ${_labels[newStatus]?.toLowerCase()}.',
       );
       _loadRooms();
+      _loadSummary();
     } else {
       AppToast.warning(
-          context, result.error ?? 'Failed to update room status.');
+        context,
+        result.error ?? 'Failed to update room status.',
+      );
     }
   }
 
@@ -211,6 +231,7 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
     );
     if (updated != null && mounted) {
       _loadRooms();
+      _loadSummary();
     }
   }
 
@@ -227,26 +248,27 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
     );
     if (created == true && mounted) {
       _loadRooms();
+      _loadSummary();
     }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   Color _statusColor(String status) => switch (status) {
-        'vacant' => AppColors.accentGreen,
-        'occupied' => AppColors.primaryBlue,
-        'unavailable' => AppColors.accentOrange,
-        'reserved' => AppColors.accentPurple,
-        _ => AppColors.textGray,
-      };
+    'vacant' => AppColors.accentGreen,
+    'occupied' => AppColors.primaryBlue,
+    'unavailable' => AppColors.accentOrange,
+    'reserved' => AppColors.accentPurple,
+    _ => AppColors.textGray,
+  };
 
   IconData _statusIcon(String status) => switch (status) {
-        'vacant' => Icons.check_circle_outline_rounded,
-        'occupied' => Icons.person_rounded,
-        'unavailable' => Icons.block_rounded,
-        'reserved' => Icons.bookmark_outline_rounded,
-        _ => Icons.help_outline_rounded,
-      };
+    'vacant' => Icons.check_circle_outline_rounded,
+    'occupied' => Icons.person_rounded,
+    'unavailable' => Icons.block_rounded,
+    'reserved' => Icons.bookmark_outline_rounded,
+    _ => Icons.help_outline_rounded,
+  };
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
@@ -267,7 +289,7 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
                 child: RefreshIndicator(
                   color: AppColors.primaryCyan,
                   backgroundColor: AppColors.cardBackground,
-                  onRefresh: _loadRooms,
+                  onRefresh: _refreshAll,
                   child: SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: EdgeInsets.all(isNarrow ? 16 : 24),
@@ -275,10 +297,25 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _PageHeader(
-                          totalRooms: _totalItems,
+                          totalRooms: _summary?.totalCount ?? _totalItems,
                           onCreateRoom: _onAddRoom,
                           isOffline: _isOffline,
                         ),
+                        if (_summary != null) ...[
+                          const SizedBox(height: 14),
+                          _AvailabilitySummary(
+                            summary: _summary!,
+                            statusColor: _statusColor,
+                            activeFilter: _activeFilter,
+                            onFilterTap: (filter) {
+                              setState(() {
+                                _activeFilter = filter;
+                                _currentPage = 0;
+                              });
+                              _loadRooms();
+                            },
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         _FilterTabBar(
                           activeFilter: _activeFilter,
@@ -306,7 +343,11 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
 
   Widget _buildBody(bool isNarrow) {
     if (_isLoading) return const _LoadingState();
-    if (_loadError != null) return _ErrorState(message: _loadError!, onRetry: _businessId == null ? _init : _loadRooms);
+    if (_loadError != null)
+      return _ErrorState(
+        message: _loadError!,
+        onRetry: _businessId == null ? _init : _loadRooms,
+      );
     if (_rooms.isEmpty) return const _EmptyState();
 
     return Column(
@@ -586,6 +627,130 @@ class _CreateRoomButton extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Availability Summary ────────────────────────────────────────────────────
+
+class _AvailabilitySummary extends StatelessWidget {
+  const _AvailabilitySummary({
+    required this.summary,
+    required this.statusColor,
+    required this.activeFilter,
+    required this.onFilterTap,
+  });
+
+  final RoomSummary summary;
+  final Color Function(String) statusColor;
+  final _Filter activeFilter;
+  final ValueChanged<_Filter> onFilterTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _SummaryPill(
+          label: 'Vacant',
+          value: '${summary.vacantCount}',
+          detail: '${summary.vacantPax} pax',
+          color: statusColor('vacant'),
+          icon: Icons.check_circle_outline_rounded,
+          isActive: activeFilter == _Filter.vacant,
+          onTap: () => onFilterTap(_Filter.vacant),
+        ),
+        _SummaryPill(
+          label: 'Occupied',
+          value: '${summary.occupiedCount}',
+          color: statusColor('occupied'),
+          icon: Icons.person_rounded,
+          isActive: activeFilter == _Filter.occupied,
+          onTap: () => onFilterTap(_Filter.occupied),
+        ),
+        _SummaryPill(
+          label: 'Reserved',
+          value: '${summary.reservedCount}',
+          detail: '${summary.reservedPax} pax',
+          color: statusColor('reserved'),
+          icon: Icons.bookmark_outline_rounded,
+          isActive: activeFilter == _Filter.reserved,
+          onTap: () => onFilterTap(_Filter.reserved),
+        ),
+        _SummaryPill(
+          label: 'Unavailable',
+          value: '${summary.unavailableCount}',
+          color: statusColor('unavailable'),
+          icon: Icons.block_rounded,
+          isActive: activeFilter == _Filter.unavailable,
+          onTap: () => onFilterTap(_Filter.unavailable),
+        ),
+      ],
+    );
+  }
+}
+
+class _SummaryPill extends StatelessWidget {
+  const _SummaryPill({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.icon,
+    required this.isActive,
+    required this.onTap,
+    this.detail,
+  });
+
+  final String label;
+  final String value;
+  final String? detail;
+  final Color color;
+  final IconData icon;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? color.withOpacity(0.16) : AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isActive ? color.withOpacity(0.55) : AppColors.cardBorder,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: color),
+            const SizedBox(width: 7),
+            Text(
+              '$value $label',
+              style: const TextStyle(
+                color: AppColors.textWhite,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (detail != null) ...[
+              const SizedBox(width: 6),
+              Text(
+                detail!,
+                style: const TextStyle(
+                  color: AppColors.textGray,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -986,11 +1151,7 @@ class _NarrowLayout extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
-        _ActionButtons(
-          room: room,
-          statusColor: statusColor,
-          onEdit: onEdit,
-        ),
+        _ActionButtons(room: room, statusColor: statusColor, onEdit: onEdit),
       ],
     );
   }
@@ -1096,7 +1257,11 @@ class _OfflineBanner extends StatelessWidget {
       color: const Color(0xFF1A1A2E),
       child: Row(
         children: [
-          const Icon(Icons.wifi_off_rounded, color: Color(0xFF8A9BB5), size: 14),
+          const Icon(
+            Icons.wifi_off_rounded,
+            color: Color(0xFF8A9BB5),
+            size: 14,
+          ),
           const SizedBox(width: 8),
           const Expanded(
             child: Text(

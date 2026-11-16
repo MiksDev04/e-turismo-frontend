@@ -54,16 +54,22 @@ class BusinessRoomApi extends BaseApi {
   }
 
   Future<List<RoomData>> _fetchRoomsOnline(String businessId) async {
-    final response = await get('/api/business/rooms?businessId=$businessId&fetchAll=true');
+    final response = await get(
+      '/api/business/rooms?businessId=$businessId&fetchAll=true',
+    );
     final body = handleResponse(response) as Map<String, dynamic>;
     final data = body['data'] as List<dynamic>? ?? [];
 
-    final rooms = data.map((r) => RoomData(
-      id: r['id'] as String,
-      roomNumber: r['roomNumber'] as String,
-      capacity: r['capacity'] as int,
-      roomStatus: r['roomStatus'] as String? ?? 'vacant',
-    )).toList();
+    final rooms = data
+        .map(
+          (r) => RoomData(
+            id: r['id'] as String,
+            roomNumber: r['roomNumber'] as String,
+            capacity: r['capacity'] as int,
+            roomStatus: r['roomStatus'] as String? ?? 'vacant',
+          ),
+        )
+        .toList();
 
     // Cache locally
     if (!kIsWeb) {
@@ -81,14 +87,57 @@ class BusinessRoomApi extends BaseApi {
       whereArgs: [businessId],
       orderBy: 'room_number',
     );
-    return rows.map((r) => RoomData(
-      id: r['id'] as String,
-      roomNumber: r['room_number'] as String,
-      capacity: r['capacity'] as int,
-      roomStatus: r['room_status'] as String? ?? 'vacant',
-      createdAt: r['created_at'] as String?,
-      updatedAt: r['updated_at'] as String?,
-    )).toList();
+    return rows
+        .map(
+          (r) => RoomData(
+            id: r['id'] as String,
+            roomNumber: r['room_number'] as String,
+            capacity: r['capacity'] as int,
+            roomStatus: r['room_status'] as String? ?? 'vacant',
+            createdAt: r['created_at'] as String?,
+            updatedAt: r['updated_at'] as String?,
+          ),
+        )
+        .toList();
+  }
+
+  // ── Room availability summary ─────────────────────────────────────────────
+
+  /// Aggregates room counts and total pax per status for the availability
+  /// strip on the Rooms page. Reuses [fetchRooms] so it works online and
+  /// offline without an extra endpoint.
+  Future<RoomSummary> fetchRoomSummary(String businessId) async {
+    final rooms = await fetchRooms(businessId);
+
+    var vacantCount = 0, vacantPax = 0;
+    var occupiedCount = 0;
+    var reservedCount = 0, reservedPax = 0;
+    var unavailableCount = 0;
+
+    for (final room in rooms) {
+      switch (room.roomStatus) {
+        case 'vacant':
+          vacantCount++;
+          vacantPax += room.capacity;
+        case 'occupied':
+          occupiedCount++;
+        case 'reserved':
+          reservedCount++;
+          reservedPax += room.capacity;
+        case 'unavailable':
+          unavailableCount++;
+      }
+    }
+
+    return RoomSummary(
+      totalCount: rooms.length,
+      vacantCount: vacantCount,
+      vacantPax: vacantPax,
+      occupiedCount: occupiedCount,
+      reservedCount: reservedCount,
+      reservedPax: reservedPax,
+      unavailableCount: unavailableCount,
+    );
   }
 
   // ── Fetch Paginated Rooms ─────────────────────────────────────────────────
@@ -121,7 +170,9 @@ class BusinessRoomApi extends BaseApi {
         }
         return RoomsApiResult.failure('Cloud error: ${e.message}');
       } catch (e) {
-        debugPrint('⚠️ fetchRoomsPaginated: online failed ($e), falling back to local');
+        debugPrint(
+          '⚠️ fetchRoomsPaginated: online failed ($e), falling back to local',
+        );
       }
     }
     return _fetchRoomsPaginatedOffline(
@@ -151,23 +202,29 @@ class BusinessRoomApi extends BaseApi {
     final response = await get('/api/business/rooms?${params.join('&')}');
     final body = handleResponse(response) as Map<String, dynamic>;
 
-    final data = (body['data'] as List<dynamic>? ?? []).map((r) => RoomData(
-      id: r['id'] as String,
-      roomNumber: r['roomNumber'] as String,
-      capacity: r['capacity'] as int,
-      roomStatus: r['roomStatus'] as String? ?? 'vacant',
-      createdAt: r['createdAt'] as String?,
-      updatedAt: r['updatedAt'] as String?,
-    )).toList();
+    final data = (body['data'] as List<dynamic>? ?? [])
+        .map(
+          (r) => RoomData(
+            id: r['id'] as String,
+            roomNumber: r['roomNumber'] as String,
+            capacity: r['capacity'] as int,
+            roomStatus: r['roomStatus'] as String? ?? 'vacant',
+            createdAt: r['createdAt'] as String?,
+            updatedAt: r['updatedAt'] as String?,
+          ),
+        )
+        .toList();
 
     final totalCount = body['totalCount'] as int? ?? 0;
     final pageCount = body['pageCount'] as int? ?? 0;
 
-    return RoomsApiResult.success(RoomsPaginatedData(
-      data: data,
-      totalCount: totalCount,
-      pageCount: pageCount,
-    ));
+    return RoomsApiResult.success(
+      RoomsPaginatedData(
+        data: data,
+        totalCount: totalCount,
+        pageCount: pageCount,
+      ),
+    );
   }
 
   Future<RoomsApiResult<RoomsPaginatedData>> _fetchRoomsPaginatedOffline(
@@ -202,11 +259,9 @@ class BusinessRoomApi extends BaseApi {
       final pageCount = (totalCount / pageSize).ceil();
 
       if (totalCount == 0) {
-        return RoomsApiResult.success(const RoomsPaginatedData(
-          data: [],
-          totalCount: 0,
-          pageCount: 0,
-        ));
+        return RoomsApiResult.success(
+          const RoomsPaginatedData(data: [], totalCount: 0, pageCount: 0),
+        );
       }
 
       final offset = (page - 1) * pageSize;
@@ -219,27 +274,36 @@ class BusinessRoomApi extends BaseApi {
         offset: offset,
       );
 
-      final data = rows.map((r) => RoomData(
-        id: r['id'] as String,
-        roomNumber: r['room_number'] as String,
-        capacity: r['capacity'] as int,
-        roomStatus: r['room_status'] as String? ?? 'vacant',
-        createdAt: r['created_at'] as String?,
-        updatedAt: r['updated_at'] as String?,
-      )).toList();
+      final data = rows
+          .map(
+            (r) => RoomData(
+              id: r['id'] as String,
+              roomNumber: r['room_number'] as String,
+              capacity: r['capacity'] as int,
+              roomStatus: r['room_status'] as String? ?? 'vacant',
+              createdAt: r['created_at'] as String?,
+              updatedAt: r['updated_at'] as String?,
+            ),
+          )
+          .toList();
 
-      return RoomsApiResult.success(RoomsPaginatedData(
-        data: data,
-        totalCount: totalCount,
-        pageCount: pageCount,
-      ));
+      return RoomsApiResult.success(
+        RoomsPaginatedData(
+          data: data,
+          totalCount: totalCount,
+          pageCount: pageCount,
+        ),
+      );
     } catch (e) {
       debugPrint('❌ _fetchRoomsPaginatedOffline: $e');
       return RoomsApiResult.failure('Failed to load rooms locally.');
     }
   }
 
-  Future<void> _cacheRoomsLocally(String businessId, List<RoomData> rooms) async {
+  Future<void> _cacheRoomsLocally(
+    String businessId,
+    List<RoomData> rooms,
+  ) async {
     if (kIsWeb) return;
     try {
       final db = await LocalDatabase.instance.database;
@@ -259,21 +323,19 @@ class BusinessRoomApi extends BaseApi {
           }
         }
 
-        await db.insert(
-          LocalDatabase.tableLocalRooms,
-          {
-            'id':               room.id,
-            'business_id':      businessId,
-            'room_number':      room.roomNumber,
-            'capacity':         room.capacity,
-            'room_status':      room.roomStatus,
-            'created_at':       room.createdAt ?? DateTime.now().toUtc().toIso8601String(),
-            'updated_at':       room.updatedAt ?? DateTime.now().toUtc().toIso8601String(),
-            'sync_status':      LocalDatabase.syncSynced,
-            'local_updated_at': null,
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        await db.insert(LocalDatabase.tableLocalRooms, {
+          'id': room.id,
+          'business_id': businessId,
+          'room_number': room.roomNumber,
+          'capacity': room.capacity,
+          'room_status': room.roomStatus,
+          'created_at':
+              room.createdAt ?? DateTime.now().toUtc().toIso8601String(),
+          'updated_at':
+              room.updatedAt ?? DateTime.now().toUtc().toIso8601String(),
+          'sync_status': LocalDatabase.syncSynced,
+          'local_updated_at': null,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
     } catch (e) {
       debugPrint('⚠️ _cacheRoomsLocally: $e');
@@ -430,15 +492,9 @@ class BusinessRoomApi extends BaseApi {
     required String roomStatus,
   }) async {
     if (ConnectivityService.instance.isOnline && hasToken) {
-      return _updateRoomStatusOnline(
-        roomId: roomId,
-        roomStatus: roomStatus,
-      );
+      return _updateRoomStatusOnline(roomId: roomId, roomStatus: roomStatus);
     }
-    return _updateRoomStatusOffline(
-      roomId: roomId,
-      roomStatus: roomStatus,
-    );
+    return _updateRoomStatusOffline(roomId: roomId, roomStatus: roomStatus);
   }
 
   Future<RoomResult> _updateRoomStatusOnline({
@@ -455,7 +511,9 @@ class BusinessRoomApi extends BaseApi {
         localUpdatedAt: now,
       );
       if (!updated) {
-        debugPrint('⚠️ _updateRoomStatusOnline: room $roomId not found locally, will sync via API');
+        debugPrint(
+          '⚠️ _updateRoomStatusOnline: room $roomId not found locally, will sync via API',
+        );
       }
     }
 
@@ -475,7 +533,9 @@ class BusinessRoomApi extends BaseApi {
       if (e is ApiException && e.statusCode == 401) {
         return RoomResult.ok(syncedToCloud: false);
       }
-      debugPrint('⚠️ _updateRoomStatusOnline: API failed, queued for sync — $e');
+      debugPrint(
+        '⚠️ _updateRoomStatusOnline: API failed, queued for sync — $e',
+      );
       return RoomResult.ok(syncedToCloud: false);
     }
   }
@@ -523,35 +583,29 @@ class BusinessRoomApi extends BaseApi {
     // Ensure the business exists locally for FK constraint
     final current = SessionService.instance.current;
     if (current != null) {
-      await db.insert(
-        LocalDatabase.tableLocalBusinesses,
-        {
-          'id': businessId,
-          'profile_id': current.userId,
-          'business_name': current.businessName ?? 'Unknown',
-          'status': current.status ?? 'approved',
-        },
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
+      await db.insert(LocalDatabase.tableLocalBusinesses, {
+        'id': businessId,
+        'profile_id': current.userId,
+        'business_name': current.businessName ?? 'Unknown',
+        'status': current.status ?? 'approved',
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
     }
 
-    await db.insert(
-      LocalDatabase.tableLocalRooms,
-      {
-        'id':               roomId,
-        'business_id':      businessId,
-        'room_number':      roomNumber,
-        'capacity':         capacity,
-        'room_status':      'vacant',
-        'created_at':       DateTime.now().toUtc().toIso8601String(),
-        'updated_at':       DateTime.now().toUtc().toIso8601String(),
-        'sync_status':      syncStatus,
-        'local_updated_at': localUpdatedAt,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert(LocalDatabase.tableLocalRooms, {
+      'id': roomId,
+      'business_id': businessId,
+      'room_number': roomNumber,
+      'capacity': capacity,
+      'room_status': 'vacant',
+      'created_at': DateTime.now().toUtc().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+      'sync_status': syncStatus,
+      'local_updated_at': localUpdatedAt,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
 
-    debugPrint('💾 SQLite: saved room $roomId (status: $syncStatus, business: $businessId)');
+    debugPrint(
+      '💾 SQLite: saved room $roomId (status: $syncStatus, business: $businessId)',
+    );
   }
 
   Future<void> _updateLocalRoom({
@@ -565,10 +619,10 @@ class BusinessRoomApi extends BaseApi {
     await db.update(
       LocalDatabase.tableLocalRooms,
       {
-        'room_number':      roomNumber,
-        'capacity':         capacity,
-        'updated_at':       localUpdatedAt,
-        'sync_status':      syncStatus,
+        'room_number': roomNumber,
+        'capacity': capacity,
+        'updated_at': localUpdatedAt,
+        'sync_status': syncStatus,
         'local_updated_at': localUpdatedAt,
       },
       where: 'id = ?',
@@ -586,16 +640,18 @@ class BusinessRoomApi extends BaseApi {
     final rowsAffected = await db.update(
       LocalDatabase.tableLocalRooms,
       {
-        'room_status':      roomStatus,
-        'updated_at':       localUpdatedAt,
-        'sync_status':      syncStatus,
+        'room_status': roomStatus,
+        'updated_at': localUpdatedAt,
+        'sync_status': syncStatus,
         'local_updated_at': localUpdatedAt,
       },
       where: 'id = ?',
       whereArgs: [roomId],
     );
     if (rowsAffected == 0) {
-      debugPrint('⚠️ _updateLocalRoomStatus: room $roomId not found in local_rooms');
+      debugPrint(
+        '⚠️ _updateLocalRoomStatus: room $roomId not found in local_rooms',
+      );
     }
     return rowsAffected > 0;
   }
@@ -605,7 +661,7 @@ class BusinessRoomApi extends BaseApi {
     await db.update(
       LocalDatabase.tableLocalRooms,
       {
-        'sync_status':      LocalDatabase.syncSynced,
+        'sync_status': LocalDatabase.syncSynced,
         'local_updated_at': DateTime.now().toUtc().toIso8601String(),
       },
       where: 'id = ?',
@@ -641,6 +697,31 @@ class RoomData {
   final String roomStatus;
   final String? createdAt;
   final String? updatedAt;
+}
+
+class RoomSummary {
+  const RoomSummary({
+    required this.totalCount,
+    required this.vacantCount,
+    required this.vacantPax,
+    required this.occupiedCount,
+    required this.reservedCount,
+    required this.reservedPax,
+    required this.unavailableCount,
+  });
+
+  final int totalCount;
+  final int vacantCount;
+  final int vacantPax;
+  final int occupiedCount;
+  final int reservedCount;
+  final int reservedPax;
+  final int unavailableCount;
+
+  /// Rooms that can still take guests (vacant + reserved), matching the
+  /// rooms exposed by the guest-entry room picker.
+  int get availableCount => vacantCount + reservedCount;
+  int get availablePax => vacantPax + reservedPax;
 }
 
 class RoomResult {

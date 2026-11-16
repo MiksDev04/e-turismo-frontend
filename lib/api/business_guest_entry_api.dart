@@ -97,17 +97,21 @@ class BusinessGuestEntryApi extends BaseApi {
     }
 
     try {
-      final response = await get('/api/business/vacant-rooms?businessId=$businessId');
+      final response = await get(
+        '/api/business/vacant-rooms?businessId=$businessId',
+      );
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
         final data = body['data'] as List<dynamic>? ?? [];
         final rooms = data
-            .map((r) => RoomInfo(
-                  id: r['id'] as String,
-                  roomNumber: r['roomNumber'] as String,
-                  capacity: r['capacity'] as int,
-                  status: r['status'] as String? ?? 'vacant',
-                ))
+            .map(
+              (r) => RoomInfo(
+                id: r['id'] as String,
+                roomNumber: r['roomNumber'] as String,
+                capacity: r['capacity'] as int,
+                status: r['status'] as String? ?? 'vacant',
+              ),
+            )
             .toList();
 
         // Cache rooms locally for offline use
@@ -116,7 +120,9 @@ class BusinessGuestEntryApi extends BaseApi {
       }
       throw Exception('Failed to fetch rooms: ${response.statusCode}');
     } catch (e) {
-      debugPrint('⚠️ fetchVacantRooms: API failed, falling back to local cache — $e');
+      debugPrint(
+        '⚠️ fetchVacantRooms: API failed, falling back to local cache — $e',
+      );
       return _fetchVacantRoomsLocal(businessId);
     }
   }
@@ -130,16 +136,21 @@ class BusinessGuestEntryApi extends BaseApi {
       orderBy: 'room_number',
     );
     return rows
-        .map((r) => RoomInfo(
-              id: r['id'] as String,
-              roomNumber: r['room_number'] as String,
-              capacity: r['capacity'] as int,
-              status: r['room_status'] as String? ?? 'vacant',
-            ))
+        .map(
+          (r) => RoomInfo(
+            id: r['id'] as String,
+            roomNumber: r['room_number'] as String,
+            capacity: r['capacity'] as int,
+            status: r['room_status'] as String? ?? 'vacant',
+          ),
+        )
         .toList();
   }
 
-  Future<void> _cacheRoomsLocally(String businessId, List<RoomInfo> rooms) async {
+  Future<void> _cacheRoomsLocally(
+    String businessId,
+    List<RoomInfo> rooms,
+  ) async {
     if (kIsWeb) return;
     try {
       final db = await LocalDatabase.instance.database;
@@ -148,21 +159,17 @@ class BusinessGuestEntryApi extends BaseApi {
       // occupied-room data and guest_record_rooms relationships needed for
       // offline display.
       for (final room in rooms) {
-        await db.insert(
-          LocalDatabase.tableLocalRooms,
-          {
-            'id':               room.id,
-            'business_id':      businessId,
-            'room_number':      room.roomNumber,
-            'capacity':         room.capacity,
-            'room_status':      'vacant',
-            'created_at':       DateTime.now().toUtc().toIso8601String(),
-            'updated_at':       DateTime.now().toUtc().toIso8601String(),
-            'sync_status':      LocalDatabase.syncSynced,
-            'local_updated_at': null,
-          },
-          conflictAlgorithm: ConflictAlgorithm.ignore,
-        );
+        await db.insert(LocalDatabase.tableLocalRooms, {
+          'id': room.id,
+          'business_id': businessId,
+          'room_number': room.roomNumber,
+          'capacity': room.capacity,
+          'room_status': room.status,
+          'created_at': DateTime.now().toUtc().toIso8601String(),
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+          'sync_status': LocalDatabase.syncSynced,
+          'local_updated_at': null,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
       }
     } catch (e) {
       debugPrint('⚠️ _cacheRoomsLocally: $e');
@@ -184,10 +191,12 @@ class BusinessGuestEntryApi extends BaseApi {
   // ---------------------------------------------------------------------------
   Future<GuestEntryResult> _saveOnline(GuestEntryData data) async {
     final guestRecordId = _generateId();
-    final checkInStr  = _formatDate(data.checkIn);
+    final checkInStr = _formatDate(data.checkIn);
     final checkOutStr = _formatDate(data.checkOut);
-    final now         = DateTime.now().toUtc().toIso8601String();
-    final leadBirthStr = data.leadBirthdate != null ? _formatDate(data.leadBirthdate!) : null;
+    final now = DateTime.now().toUtc().toIso8601String();
+    final leadBirthStr = data.leadBirthdate != null
+        ? _formatDate(data.leadBirthdate!)
+        : null;
 
     // Drop incomplete rows (no guest counts or no origin) so they never
     // reach SQLite or the backend — keeps male/female tallies consistent.
@@ -212,30 +221,32 @@ class BusinessGuestEntryApi extends BaseApi {
     if (!kIsWeb) {
       try {
         await _upsertLocalRecord(
-          recordId:           guestRecordId,
-          businessId:         data.businessId,
-          checkIn:            checkInStr,
-          checkOut:           checkOutStr,
-          totalGuests:        totalGuestsDerived,
-          purposeOfVisit:     data.purposeOfVisit,
-          maleCount:          maleCountDerived,
-          femaleCount:        femaleCountDerived,
-          leadCountry:        data.leadCountry,
-          leadMunicipality:   data.leadMunicipality,
-          leadProvince:       data.leadProvince,
-          leadNationality:    data.leadNationality,
-          leadIsOverseas:     data.leadIsOverseas,
-          leadBirthdate:      leadBirthStr,
-          leadSex:            data.leadSex,
-          roomIds:            data.roomIds,
-          originGroups:       groups,
-          createdAt:          now,
-          syncStatus:         LocalDatabase.syncPendingCreate,
-          localUpdatedAt:     now,
+          recordId: guestRecordId,
+          businessId: data.businessId,
+          checkIn: checkInStr,
+          checkOut: checkOutStr,
+          totalGuests: totalGuestsDerived,
+          purposeOfVisit: data.purposeOfVisit,
+          maleCount: maleCountDerived,
+          femaleCount: femaleCountDerived,
+          leadCountry: data.leadCountry,
+          leadMunicipality: data.leadMunicipality,
+          leadProvince: data.leadProvince,
+          leadNationality: data.leadNationality,
+          leadIsOverseas: data.leadIsOverseas,
+          leadBirthdate: leadBirthStr,
+          leadSex: data.leadSex,
+          roomIds: data.roomIds,
+          originGroups: groups,
+          createdAt: now,
+          syncStatus: LocalDatabase.syncPendingCreate,
+          localUpdatedAt: now,
         );
       } catch (e) {
         debugPrint('❌ _saveOnline: local write failed — $e');
-        return GuestEntryResult.err('Failed to save guest entry. Please try again.');
+        return GuestEntryResult.err(
+          'Failed to save guest entry. Please try again.',
+        );
       }
     }
 
@@ -273,10 +284,10 @@ class BusinessGuestEntryApi extends BaseApi {
         await db.update(
           LocalDatabase.tableGuestRecords,
           {
-            'sync_status':      LocalDatabase.syncSynced,
+            'sync_status': LocalDatabase.syncSynced,
             'local_updated_at': DateTime.now().toUtc().toIso8601String(),
           },
-          where:     'id = ?',
+          where: 'id = ?',
           whereArgs: [guestRecordId],
         );
 
@@ -286,10 +297,8 @@ class BusinessGuestEntryApi extends BaseApi {
           for (final roomId in data.roomIds) {
             await db.update(
               LocalDatabase.tableLocalRooms,
-              {
-                'sync_status': LocalDatabase.syncSynced,
-              },
-              where:     'id = ? AND sync_status = ?',
+              {'sync_status': LocalDatabase.syncSynced},
+              where: 'id = ? AND sync_status = ?',
               whereArgs: [roomId, LocalDatabase.syncPendingUpdate],
             );
           }
@@ -301,11 +310,8 @@ class BusinessGuestEntryApi extends BaseApi {
         // guest-records page or a sync pull rebuilt them.
         await db.update(
           LocalDatabase.tableGuestRecordRooms,
-          {
-            'sync_status':      LocalDatabase.syncSynced,
-            'local_updated_at': null,
-          },
-          where:     'guest_record_id = ?',
+          {'sync_status': LocalDatabase.syncSynced, 'local_updated_at': null},
+          where: 'guest_record_id = ?',
           whereArgs: [guestRecordId],
         );
       }
@@ -316,7 +322,9 @@ class BusinessGuestEntryApi extends BaseApi {
         debugPrint('⚠️ _saveOnline: Unauthorized (401). Queuing for sync.');
         return GuestEntryResult.ok(syncedToCloud: false);
       }
-      debugPrint('⚠️ _saveOnline: Node API request failed, queued for sync — $e');
+      debugPrint(
+        '⚠️ _saveOnline: Node API request failed, queued for sync — $e',
+      );
       return GuestEntryResult.ok(syncedToCloud: false);
     }
   }
@@ -327,10 +335,12 @@ class BusinessGuestEntryApi extends BaseApi {
   Future<GuestEntryResult> _saveOffline(GuestEntryData data) async {
     try {
       final guestRecordId = _generateId();
-      final checkInStr    = _formatDate(data.checkIn);
-      final checkOutStr   = _formatDate(data.checkOut);
-      final now           = DateTime.now().toUtc().toIso8601String();
-      final leadBirthStr  = data.leadBirthdate != null ? _formatDate(data.leadBirthdate!) : null;
+      final checkInStr = _formatDate(data.checkIn);
+      final checkOutStr = _formatDate(data.checkOut);
+      final now = DateTime.now().toUtc().toIso8601String();
+      final leadBirthStr = data.leadBirthdate != null
+          ? _formatDate(data.leadBirthdate!)
+          : null;
 
       // Drop incomplete rows (no guest counts or no origin) so they never
       // reach SQLite — the sync push would otherwise be rejected by the
@@ -344,7 +354,10 @@ class BusinessGuestEntryApi extends BaseApi {
 
       if (hasGroups) {
         maleCountDerived = groups.fold<int>(0, (sum, g) => sum + g.maleCount);
-        femaleCountDerived = groups.fold<int>(0, (sum, g) => sum + g.femaleCount);
+        femaleCountDerived = groups.fold<int>(
+          0,
+          (sum, g) => sum + g.femaleCount,
+        );
         totalGuestsDerived = maleCountDerived + femaleCountDerived;
       } else {
         maleCountDerived = data.maleCount ?? 0;
@@ -353,32 +366,34 @@ class BusinessGuestEntryApi extends BaseApi {
       }
 
       await _upsertLocalRecord(
-        recordId:           guestRecordId,
-        businessId:         data.businessId,
-        checkIn:            checkInStr,
-        checkOut:           checkOutStr,
-        totalGuests:        totalGuestsDerived,
-        purposeOfVisit:     data.purposeOfVisit,
-        maleCount:          maleCountDerived,
-        femaleCount:        femaleCountDerived,
-        leadCountry:        data.leadCountry,
-        leadMunicipality:   data.leadMunicipality,
-        leadProvince:       data.leadProvince,
-        leadNationality:    data.leadNationality,
-        leadIsOverseas:     data.leadIsOverseas,
-        leadBirthdate:      leadBirthStr,
-        leadSex:            data.leadSex,
-        roomIds:            data.roomIds,
-        originGroups:       groups,
-        createdAt:          now,
-        syncStatus:         LocalDatabase.syncPendingCreate,
-        localUpdatedAt:     now,
+        recordId: guestRecordId,
+        businessId: data.businessId,
+        checkIn: checkInStr,
+        checkOut: checkOutStr,
+        totalGuests: totalGuestsDerived,
+        purposeOfVisit: data.purposeOfVisit,
+        maleCount: maleCountDerived,
+        femaleCount: femaleCountDerived,
+        leadCountry: data.leadCountry,
+        leadMunicipality: data.leadMunicipality,
+        leadProvince: data.leadProvince,
+        leadNationality: data.leadNationality,
+        leadIsOverseas: data.leadIsOverseas,
+        leadBirthdate: leadBirthStr,
+        leadSex: data.leadSex,
+        roomIds: data.roomIds,
+        originGroups: groups,
+        createdAt: now,
+        syncStatus: LocalDatabase.syncPendingCreate,
+        localUpdatedAt: now,
       );
 
       return GuestEntryResult.ok();
     } catch (e) {
       debugPrint('❌ saveGuestEntry (offline) error: $e');
-      return GuestEntryResult.err('Failed to save guest entry locally. Please try again.');
+      return GuestEntryResult.err(
+        'Failed to save guest entry locally. Please try again.',
+      );
     }
   }
 
@@ -418,7 +433,10 @@ class BusinessGuestEntryApi extends BaseApi {
 
     if (originGroups != null && originGroups.isNotEmpty) {
       maleCountVal = originGroups.fold<int>(0, (sum, g) => sum + g.maleCount);
-      femaleCountVal = originGroups.fold<int>(0, (sum, g) => sum + g.femaleCount);
+      femaleCountVal = originGroups.fold<int>(
+        0,
+        (sum, g) => sum + g.femaleCount,
+      );
       totalGuestsVal = maleCountVal + femaleCountVal;
     } else if (maleCountVal == 0 && femaleCountVal == 0) {
       maleCountVal = (totalGuestsVal * 0.471).round();
@@ -431,30 +449,22 @@ class BusinessGuestEntryApi extends BaseApi {
 
     // Ensure the profile and business exist locally to satisfy foreign key constraints
     if (current != null) {
-      await db.insert(
-        LocalDatabase.tableLocalProfiles,
-        {
-          'id': current.userId,
-          'username': current.username ?? current.email,
-          'full_name': current.fullName,
-          'email': current.email,
-          'phone': current.phone,
-          'role': current.role,
-          'password_hash': 'temp_hash',
-        },
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
+      await db.insert(LocalDatabase.tableLocalProfiles, {
+        'id': current.userId,
+        'username': current.username ?? current.email,
+        'full_name': current.fullName,
+        'email': current.email,
+        'phone': current.phone,
+        'role': current.role,
+        'password_hash': 'temp_hash',
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
 
-      await db.insert(
-        LocalDatabase.tableLocalBusinesses,
-        {
-          'id': businessId,
-          'profile_id': current.userId,
-          'business_name': current.businessName ?? 'Unknown',
-          'status': current.status ?? 'approved',
-        },
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
+      await db.insert(LocalDatabase.tableLocalBusinesses, {
+        'id': businessId,
+        'profile_id': current.userId,
+        'business_name': current.businessName ?? 'Unknown',
+        'status': current.status ?? 'approved',
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
     }
 
     // Ensure local_rooms entries exist for the room IDs being assigned,
@@ -486,44 +496,40 @@ class BusinessGuestEntryApi extends BaseApi {
         await db.update(
           LocalDatabase.tableLocalRooms,
           {
-            'room_status':      'occupied',
-            'updated_at':       createdAt,
-            'sync_status':      LocalDatabase.syncPendingUpdate,
+            'room_status': 'occupied',
+            'updated_at': createdAt,
+            'sync_status': LocalDatabase.syncPendingUpdate,
             'local_updated_at': createdAt,
           },
-          where:     'id = ? AND room_status != ?',
+          where: 'id = ? AND room_status != ?',
           whereArgs: [roomId, 'occupied'],
         );
       }
     }
 
-    await db.insert(
-      LocalDatabase.tableGuestRecords,
-      {
-        'id':                      recordId,
-        'business_id':             businessId,
-        'check_in':                checkIn,
-        'check_out':               checkOut,
-        'total_guests':            totalGuestsVal,
-        'male_count':              maleCountVal,
-        'female_count':            femaleCountVal,
-        'purpose_of_visit':        purposeOfVisit,
-        'lead_country':            leadCountry,
-        'lead_city_municipality':  leadMunicipality,
-        'lead_province':           leadProvince,
-        'lead_nationality':        leadNationality,
-        'lead_is_overseas':        leadIsOverseas ? 1 : 0,
-        'lead_birthdate':          leadBirthdate,
-        'lead_sex':                leadSex?.toLowerCase(),
-        'status':                  'active',
-        'is_deleted':              0,
-        'created_at':              createdAt,
-        'updated_at':              createdAt,
-        'sync_status':             syncStatus,
-        'local_updated_at':        localUpdatedAt,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert(LocalDatabase.tableGuestRecords, {
+      'id': recordId,
+      'business_id': businessId,
+      'check_in': checkIn,
+      'check_out': checkOut,
+      'total_guests': totalGuestsVal,
+      'male_count': maleCountVal,
+      'female_count': femaleCountVal,
+      'purpose_of_visit': purposeOfVisit,
+      'lead_country': leadCountry,
+      'lead_city_municipality': leadMunicipality,
+      'lead_province': leadProvince,
+      'lead_nationality': leadNationality,
+      'lead_is_overseas': leadIsOverseas ? 1 : 0,
+      'lead_birthdate': leadBirthdate,
+      'lead_sex': leadSex?.toLowerCase(),
+      'status': 'active',
+      'is_deleted': 0,
+      'created_at': createdAt,
+      'updated_at': createdAt,
+      'sync_status': syncStatus,
+      'local_updated_at': localUpdatedAt,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
 
     // Write room assignments to junction table
     if (roomIds != null && roomIds.isNotEmpty) {
@@ -535,20 +541,16 @@ class BusinessGuestEntryApi extends BaseApi {
       );
       for (final roomId in roomIds) {
         final junctionId = _generateId();
-        await db.insert(
-          LocalDatabase.tableGuestRecordRooms,
-          {
-            'id':               junctionId,
-            'guest_record_id':  recordId,
-            'room_id':          roomId,
-            'status':           'active',
-            'created_at':       createdAt,
-            'updated_at':       localUpdatedAt,
-            'sync_status':      syncStatus,
-            'local_updated_at': localUpdatedAt,
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        await db.insert(LocalDatabase.tableGuestRecordRooms, {
+          'id': junctionId,
+          'guest_record_id': recordId,
+          'room_id': roomId,
+          'status': 'active',
+          'created_at': createdAt,
+          'updated_at': localUpdatedAt,
+          'sync_status': syncStatus,
+          'local_updated_at': localUpdatedAt,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
     }
 
@@ -560,28 +562,26 @@ class BusinessGuestEntryApi extends BaseApi {
         whereArgs: [recordId],
       );
       for (final group in originGroups) {
-        await db.insert(
-          LocalDatabase.tableGuestOriginBreakdowns,
-          {
-            'id':                  _generateId(),
-            'guest_record_id':     recordId,
-            'country':             group.country,
-            'nationality':         group.nationality,
-            'is_overseas':         group.isOverseas ? 1 : 0,
-            'province':            group.province,
-            'city_municipality':   group.cityMunicipality,
-            'male_count':          group.maleCount,
-            'female_count':        group.femaleCount,
-            'created_at':          createdAt,
-            'updated_at':          localUpdatedAt,
-            'deleted_at':          null,
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        await db.insert(LocalDatabase.tableGuestOriginBreakdowns, {
+          'id': _generateId(),
+          'guest_record_id': recordId,
+          'country': group.country,
+          'nationality': group.nationality,
+          'is_overseas': group.isOverseas ? 1 : 0,
+          'province': group.province,
+          'city_municipality': group.cityMunicipality,
+          'male_count': group.maleCount,
+          'female_count': group.femaleCount,
+          'created_at': createdAt,
+          'updated_at': localUpdatedAt,
+          'deleted_at': null,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
     }
 
-    debugPrint('💾 SQLite: saved record $recordId (status: $syncStatus, business: $businessId)');
+    debugPrint(
+      '💾 SQLite: saved record $recordId (status: $syncStatus, business: $businessId)',
+    );
   }
 
   // ---------------------------------------------------------------------------
