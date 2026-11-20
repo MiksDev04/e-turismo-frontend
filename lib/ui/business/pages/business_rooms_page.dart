@@ -301,24 +301,10 @@ class _BusinessRoomsPageState extends State<BusinessRoomsPage> {
                           onCreateRoom: _onAddRoom,
                           isOffline: _isOffline,
                         ),
-                        if (_summary != null) ...[
-                          const SizedBox(height: 14),
-                          _AvailabilitySummary(
-                            summary: _summary!,
-                            statusColor: _statusColor,
-                            activeFilter: _activeFilter,
-                            onFilterTap: (filter) {
-                              setState(() {
-                                _activeFilter = filter;
-                                _currentPage = 0;
-                              });
-                              _loadRooms();
-                            },
-                          ),
-                        ],
                         const SizedBox(height: 16),
                         _FilterTabBar(
                           activeFilter: _activeFilter,
+                          summary: _summary,
                           onChanged: (f) {
                             setState(() {
                               _activeFilter = f;
@@ -634,137 +620,21 @@ class _CreateRoomButton extends StatelessWidget {
   }
 }
 
-// ─── Availability Summary ────────────────────────────────────────────────────
-
-class _AvailabilitySummary extends StatelessWidget {
-  const _AvailabilitySummary({
-    required this.summary,
-    required this.statusColor,
-    required this.activeFilter,
-    required this.onFilterTap,
-  });
-
-  final RoomSummary summary;
-  final Color Function(String) statusColor;
-  final _Filter activeFilter;
-  final ValueChanged<_Filter> onFilterTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        _SummaryPill(
-          label: 'Vacant',
-          value: '${summary.vacantCount}',
-          detail: '${summary.vacantPax} pax',
-          color: statusColor('vacant'),
-          icon: Icons.check_circle_outline_rounded,
-          isActive: activeFilter == _Filter.vacant,
-          onTap: () => onFilterTap(_Filter.vacant),
-        ),
-        _SummaryPill(
-          label: 'Occupied',
-          value: '${summary.occupiedCount}',
-          color: statusColor('occupied'),
-          icon: Icons.person_rounded,
-          isActive: activeFilter == _Filter.occupied,
-          onTap: () => onFilterTap(_Filter.occupied),
-        ),
-        _SummaryPill(
-          label: 'Reserved',
-          value: '${summary.reservedCount}',
-          detail: '${summary.reservedPax} pax',
-          color: statusColor('reserved'),
-          icon: Icons.bookmark_outline_rounded,
-          isActive: activeFilter == _Filter.reserved,
-          onTap: () => onFilterTap(_Filter.reserved),
-        ),
-        _SummaryPill(
-          label: 'Unavailable',
-          value: '${summary.unavailableCount}',
-          color: statusColor('unavailable'),
-          icon: Icons.block_rounded,
-          isActive: activeFilter == _Filter.unavailable,
-          onTap: () => onFilterTap(_Filter.unavailable),
-        ),
-      ],
-    );
-  }
-}
-
-class _SummaryPill extends StatelessWidget {
-  const _SummaryPill({
-    required this.label,
-    required this.value,
-    required this.color,
-    required this.icon,
-    required this.isActive,
-    required this.onTap,
-    this.detail,
-  });
-
-  final String label;
-  final String value;
-  final String? detail;
-  final Color color;
-  final IconData icon;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: isActive ? color.withOpacity(0.16) : AppColors.cardBackground,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isActive ? color.withOpacity(0.55) : AppColors.cardBorder,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 13, color: color),
-            const SizedBox(width: 7),
-            Text(
-              '$value $label',
-              style: const TextStyle(
-                color: AppColors.textWhite,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            if (detail != null) ...[
-              const SizedBox(width: 6),
-              Text(
-                detail!,
-                style: const TextStyle(
-                  color: AppColors.textGray,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // ─── Filter Tab Bar ───────────────────────────────────────────────────────────
 
 class _FilterTabBar extends StatelessWidget {
-  const _FilterTabBar({required this.activeFilter, required this.onChanged});
+  const _FilterTabBar({
+    required this.activeFilter,
+    required this.onChanged,
+    this.summary,
+  });
 
   final _Filter activeFilter;
   final ValueChanged<_Filter> onChanged;
+
+  /// Per-status room counts shown inside each chip. `null` while the summary
+  /// is still loading, in which case no count badge is rendered.
+  final RoomSummary? summary;
 
   @override
   Widget build(BuildContext context) {
@@ -776,31 +646,31 @@ class _FilterTabBar extends StatelessWidget {
         children: [
           _FilterChip(
             label: 'All',
-            emoji: null,
+            count: summary?.totalCount,
             isActive: activeFilter == _Filter.all,
             onTap: () => onChanged(_Filter.all),
           ),
           _FilterChip(
             label: 'Vacant',
-            emoji: '✅',
+            count: summary?.vacantCount,
             isActive: activeFilter == _Filter.vacant,
             onTap: () => onChanged(_Filter.vacant),
           ),
           _FilterChip(
             label: 'Occupied',
-            emoji: '🛏️',
+            count: summary?.occupiedCount,
             isActive: activeFilter == _Filter.occupied,
             onTap: () => onChanged(_Filter.occupied),
           ),
           _FilterChip(
             label: 'Unavailable',
-            emoji: '🔧',
+            count: summary?.unavailableCount,
             isActive: activeFilter == _Filter.unavailable,
             onTap: () => onChanged(_Filter.unavailable),
           ),
           _FilterChip(
             label: 'Reserved',
-            emoji: '📌',
+            count: summary?.reservedCount,
             isActive: activeFilter == _Filter.reserved,
             onTap: () => onChanged(_Filter.reserved),
           ),
@@ -813,13 +683,13 @@ class _FilterTabBar extends StatelessWidget {
 class _FilterChip extends StatelessWidget {
   const _FilterChip({
     required this.label,
-    required this.emoji,
     required this.isActive,
     required this.onTap,
+    this.count,
   });
 
   final String label;
-  final String? emoji;
+  final int? count;
   final bool isActive;
   final VoidCallback onTap;
 
@@ -845,10 +715,6 @@ class _FilterChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (emoji != null) ...[
-              Text(emoji!, style: const TextStyle(fontSize: 10)),
-              const SizedBox(width: 5),
-            ],
             Text(
               label,
               style: TextStyle(
@@ -857,6 +723,26 @@ class _FilterChip extends StatelessWidget {
                 fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
               ),
             ),
+            if (count != null) ...[
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: isActive
+                      ? Colors.white.withOpacity(0.25)
+                      : AppColors.cardBorder,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    color: isActive ? Colors.white : AppColors.textGray,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

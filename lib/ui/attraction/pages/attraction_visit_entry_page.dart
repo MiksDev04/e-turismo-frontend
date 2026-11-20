@@ -34,7 +34,7 @@ class AttractionVisitEntryPage extends StatefulWidget {
 class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
   final _api = AttractionVisitEntryApi();
 
-  DateTime? _visitDate;
+  DateTime _visitDate = _startOfToday();
   final _guestCountCtrl = TextEditingController();
   final _maleCountCtrl = TextEditingController();
   final _femaleCountCtrl = TextEditingController();
@@ -55,7 +55,6 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
   @override
   void initState() {
     super.initState();
-    _visitDate = DateTime.now();
     _isOffline = !ConnectivityService.instance.isOnline;
     _subscribeToConnectivity();
     _loadPsgcIfAvailable();
@@ -104,11 +103,17 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
     }
   }
 
+  /// Today's date with the time component stripped. Visit entries are always
+  /// recorded against the current calendar date.
+  static DateTime _startOfToday() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
   String _fmtVisitDate() {
-    if (_visitDate == null) return "";
-    return "${_visitDate!.year.toString().padLeft(4, '0')}-"
-        "${_visitDate!.month.toString().padLeft(2, '0')}-"
-        "${_visitDate!.day.toString().padLeft(2, '0')}";
+    return "${_visitDate.year.toString().padLeft(4, '0')}-"
+        "${_visitDate.month.toString().padLeft(2, '0')}-"
+        "${_visitDate.day.toString().padLeft(2, '0')}";
   }
 
   void _recomputeSexCount() {
@@ -186,7 +191,7 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
 
   void _clearForm() {
     setState(() {
-      _visitDate = DateTime.now();
+      _visitDate = _startOfToday();
       _guestCountCtrl.clear();
       _maleCountCtrl.clear();
       _femaleCountCtrl.clear();
@@ -202,14 +207,6 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
   bool _validateAndSetErrors() {
     final errors = <String, String?>{};
     bool hasError = false;
-
-    if (_visitDate == null) {
-      errors["visitDate"] = "Please select a visit date.";
-      hasError = true;
-    } else if (_visitDate!.isAfter(DateTime.now())) {
-      errors["visitDate"] = "Visit date cannot be in the future.";
-      hasError = true;
-    }
 
     final guests = int.tryParse(_guestCountCtrl.text);
     if (guests == null || guests <= 0) {
@@ -239,6 +236,9 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
   }
 
   Future<void> _save() async {
+    // Re-read the clock in case the form stayed open past midnight.
+    setState(() => _visitDate = _startOfToday());
+
     final isValid = _validateAndSetErrors();
     if (!isValid) return;
 
@@ -268,7 +268,7 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
 
     final result = await _api.saveVisitEntry(
       VisitEntryData(
-        visitDate: _visitDate!,
+        visitDate: _visitDate,
         guestCount: _guestCount,
         isForeign: _isForeign,
         country: _isForeign ? _selectedCountry : null,
@@ -292,39 +292,6 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
     } else if (result.error != null) {
       AppToast.warning(context, result.error!);
     }
-  }
-
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _visitDate ?? today,
-      firstDate: DateTime(2020),
-      lastDate: today,
-      builder: (ctx, child) => Theme(
-        data: ThemeData(
-          useMaterial3: true,
-          colorScheme: const ColorScheme.light(
-            primary: Color(0xFF3B82F6),
-            onPrimary: Colors.white,
-            surface: Colors.white,
-            onSurface: Color(0xFF111827),
-          ),
-          dialogTheme: DialogThemeData(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        ),
-        child: child!,
-      ),
-    );
-    if (picked == null) return;
-    setState(() {
-      _visitDate = picked;
-    });
-    _clearFieldError("visitDate");
   }
 
   @override
@@ -381,12 +348,9 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
                         const SizedBox(height: 12),
                         if (isMobile) ...[
                           _FieldCol(
-                            label: "Visit Date *",
-                            errorText: _errors["visitDate"],
-                            child: _EntryDateField(
+                            label: "Visit Date",
+                            child: _EntryReadOnlyField(
                               value: _fmtVisitDate(),
-                              hasError: _errors["visitDate"] != null,
-                              onTap: _pickDate,
                             ),
                           ),
                           const SizedBox(height: 14),
@@ -410,12 +374,9 @@ class _AttractionVisitEntryPageState extends State<AttractionVisitEntryPage> {
                             children: [
                               Expanded(
                                 child: _FieldCol(
-                                  label: "Visit Date *",
-                                  errorText: _errors["visitDate"],
-                                  child: _EntryDateField(
+                                  label: "Visit Date",
+                                  child: _EntryReadOnlyField(
                                     value: _fmtVisitDate(),
-                                    hasError: _errors["visitDate"] != null,
-                                    onTap: _pickDate,
                                   ),
                                 ),
                               ),
@@ -981,57 +942,6 @@ InputDecoration _lightDecoration(
       borderSide: BorderSide(color: focusColor, width: 1.4),
     ),
   );
-}
-
-// --- Date Field ------------------------------------------------------------------------------
-
-class _EntryDateField extends StatelessWidget {
-  const _EntryDateField({
-    required this.value,
-    required this.onTap,
-    this.hasError = false,
-  });
-  final String value;
-  final VoidCallback onTap;
-  final bool hasError;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: _kFieldHeight,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: hasError
-              ? AppColors.accentRed.withOpacity(0.04)
-              : _kInputFill,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: hasError ? AppColors.accentRed : _kInputBorder,
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                value.isEmpty ? "yyyy-mm-dd" : value,
-                style: TextStyle(
-                  color: value.isEmpty ? _kInputHint : _kInputText,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-            Icon(
-              Icons.calendar_today_outlined,
-              color: hasError ? AppColors.accentRed : _kInputHint,
-              size: 14,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 // --- Read-only Field ------------------------------------------------------------------------------
