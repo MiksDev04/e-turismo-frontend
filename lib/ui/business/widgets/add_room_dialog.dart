@@ -39,6 +39,7 @@ class _AddRoomDialog extends StatefulWidget {
 }
 
 class _AddRoomDialogState extends State<_AddRoomDialog> {
+  static const int _maxCapacity = 50;
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _capacityCtrl = TextEditingController();
@@ -262,7 +263,7 @@ class _AddRoomDialogState extends State<_AddRoomDialog> {
                         const SizedBox(height: 6),
                         _buildField(
                           controller: _capacityCtrl,
-                          hint: 'e.g. 4',
+                          hint: '1 – 50',
                           keyboardType: TextInputType.number,
                           inputFormatters: [
                             FilteringTextInputFormatter.digitsOnly,
@@ -271,6 +272,9 @@ class _AddRoomDialogState extends State<_AddRoomDialog> {
                             final cap = int.tryParse((v ?? '').trim());
                             if (cap == null || cap < 1) {
                               return 'Capacity must be at least 1.';
+                            }
+                            if (cap > _maxCapacity) {
+                              return 'Capacity cannot exceed 50 pax.';
                             }
                             return null;
                           },

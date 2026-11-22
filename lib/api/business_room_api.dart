@@ -85,7 +85,8 @@ class BusinessRoomApi extends BaseApi {
       LocalDatabase.tableLocalRooms,
       where: 'business_id = ?',
       whereArgs: [businessId],
-      orderBy: 'room_number',
+      orderBy:
+          '(CAST(room_number AS INTEGER) = 0), CAST(room_number AS INTEGER), room_number COLLATE NOCASE',
     );
     return rows
         .map(
@@ -269,7 +270,8 @@ class BusinessRoomApi extends BaseApi {
         LocalDatabase.tableLocalRooms,
         where: whereClause,
         whereArgs: whereArgs,
-        orderBy: 'room_number',
+        orderBy:
+            '(CAST(room_number AS INTEGER) = 0), CAST(room_number AS INTEGER), room_number COLLATE NOCASE',
         limit: pageSize,
         offset: offset,
       );

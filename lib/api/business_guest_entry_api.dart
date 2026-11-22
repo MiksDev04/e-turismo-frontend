@@ -133,7 +133,8 @@ class BusinessGuestEntryApi extends BaseApi {
       LocalDatabase.tableLocalRooms,
       where: 'business_id = ? AND room_status IN (?, ?)',
       whereArgs: [businessId, 'vacant', 'reserved'],
-      orderBy: 'room_number',
+      orderBy:
+          '(CAST(room_number AS INTEGER) = 0), CAST(room_number AS INTEGER), room_number COLLATE NOCASE',
     );
     return rows
         .map(

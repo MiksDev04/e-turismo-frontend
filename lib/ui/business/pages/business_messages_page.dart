@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:app/ui/shared/pages/error_page.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../api/messages_api.dart';
-import '../../../api/login_api.dart';
 import '../../../core/services/connectivity_service.dart';
 import '../../../core/services/session_service.dart';
 import '../widgets/message_view_dialog.dart';
@@ -156,18 +155,8 @@ class _BusinessMessagesPageState extends State<BusinessMessagesPage> {
     var session = await SessionService.instance.loadAndCache();
     if (!mounted) return;
 
-    // Check if we need to auto-authenticate (offline to online transition)
-    if (session != null && (session.token == null || session.isOfflineSession)) {
-      if (session.username != null && session.password != null) {
-        final success = await LoginApi().backgroundAuth(
-          username: session.username!,
-          password: session.password!,
-        );
-        if (success) {
-          session = SessionService.instance.current;
-        }
-      }
-    }
+    // Background re-auth is handled centrally by BaseApi on the first 401,
+    // so this page no longer calls /api/auth/login itself.
 
     setState(() => _businessId = session?.businessId);
 

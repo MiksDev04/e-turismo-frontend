@@ -10,13 +10,11 @@ import '../../business/widgets/business_document_preview_modal.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../core/utils/password_validator.dart';
-import '../../../core/services/session_service.dart';
 import '../../../core/services/connectivity_service.dart';
 import '../../../core/services/document_service.dart';
 import '../../shared/layouts/attraction_layout.dart';
 import '../../business/widgets/offline_state.dart';
 import '../../../api/attraction_profile_api.dart';
-import '../../../api/login_api.dart';
 
 // ─── San Pablo barangays ──────────────────────────────────────────────────────
 
@@ -223,27 +221,16 @@ class _AttractionProfilePageState extends State<AttractionProfilePage> {
     });
 
     // ── Pre-check connectivity ─────────────────────────────────────────────
-    final online = await ConnectivityService.instance.isOnline;
+    final online = ConnectivityService.instance.isOnline;
     if (!mounted) return;
     if (!online) {
       setState(() { _isOffline = true; _isLoading = false; });
       return;
     }
 
-    var session = await SessionService.instance.loadAndCache();
-
-    // Check if we need to auto-authenticate (offline to online transition)
-    if (session != null && (session.token == null || session.isOfflineSession)) {
-      if (session.username != null && session.password != null) {
-        final success = await LoginApi().backgroundAuth(
-          username: session.username!,
-          password: session.password!,
-        );
-        if (success) {
-          session = SessionService.instance.current;
-        }
-      }
-    }
+    // Background re-auth (missing token / offline session) is handled
+    // centrally by BaseApi on the first 401, so this page no longer calls
+    // /api/auth/login itself.
 
     // ── Fetch ──────────────────────────────────────────────────────────────
     try {

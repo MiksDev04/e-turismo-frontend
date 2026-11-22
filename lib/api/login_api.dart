@@ -38,14 +38,15 @@ class LoginApi extends BaseApi {
     required String password,
   }) async {
     try {
-      final response = await post('/api/auth/login', {
-        'username': username,
-        'password': password,
-      });
+      // Shared gate: concurrent callers reuse one request, and a refusal backs
+      // off instead of hammering /api/auth/login (which shares the manual
+      // login rate-limit bucket).
+      final data = await guardedLogin(
+        username: username,
+        password: password,
+      );
+      if (data == null) return false;
 
-      if (response.statusCode != 200) return false;
-
-      final data = jsonDecode(response.body);
       final user = data['user'];
       final biz = data['business'];
       final att = data['attraction'];
@@ -321,6 +322,9 @@ class LoginApi extends BaseApi {
 
       await SessionService.instance.save(session);
       await SessionService.instance.loadAndCache();
+
+      // A real login succeeded, so clear any background back-off.
+      BaseApi.resetReauthGate();
 
       return LoginResult.ok(role);
     } on ApiException catch (e) {

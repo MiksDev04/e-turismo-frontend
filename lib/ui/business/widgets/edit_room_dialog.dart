@@ -39,6 +39,7 @@ class _EditRoomDialog extends StatefulWidget {
 }
 
 class _EditRoomDialogState extends State<_EditRoomDialog> {
+  static const int _maxCapacity = 50;
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl;
   late final TextEditingController _capacityCtrl;
@@ -288,7 +289,7 @@ class _EditRoomDialogState extends State<_EditRoomDialog> {
                         const SizedBox(height: 6),
                         _buildField(
                           controller: _capacityCtrl,
-                          hint: 'e.g. 4',
+                          hint: '1 – 50',
                           keyboardType: TextInputType.number,
                           inputFormatters: [
                             FilteringTextInputFormatter.digitsOnly,
@@ -297,6 +298,9 @@ class _EditRoomDialogState extends State<_EditRoomDialog> {
                             final cap = int.tryParse((v ?? '').trim());
                             if (cap == null || cap < 1) {
                               return 'Capacity must be at least 1.';
+                            }
+                            if (cap > _maxCapacity) {
+                              return 'Capacity cannot exceed 50 pax.';
                             }
                             return null;
                           },
