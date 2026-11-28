@@ -27,7 +27,8 @@ void main() async {
 
   if (!kIsWeb) {
     try {
-      await dotenv.load(fileName: ".env");
+      await dotenv.load(fileName: "app.env");
+      debugPrint('ENV loaded. keys: ${dotenv.env.keys.toList()}');
     } catch (e) {
       debugPrint("Warning: .env file not found: $e");
     }
